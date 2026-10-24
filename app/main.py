@@ -30,6 +30,9 @@ LOOP_SECONDS = int(os.environ.get("LOOP_SECONDS", "60"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("fangarr")
+# httpx skriver hele adressen i loggen – for Telegram indeholder den bot-tokenet. Vis kun advarsler.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 DEFAULT_SETTINGS = {
     "dry_run": True,            # prøvetilstand: logger kun, tilføjer intet
