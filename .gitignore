@@ -1,0 +1,7 @@
+# Lokale filer på serveren – må aldrig komme i git
+fangarr.env
+*.env
+data/
+docker-compose.yml
+__pycache__/
+*.pyc

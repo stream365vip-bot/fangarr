@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fangarr</title>
+<style>
+  :root {
+    --bg: #15171c; --panel: #1e2128; --panel2: #262a33; --line: #343945;
+    --text: #e8eaef; --muted: #9aa1ae; --accent: #e8913a; --accent-ink: #1a1206;
+    --ok: #4cb782; --warn: #e2b340; --bad: #e0605a; --info: #6aa5e8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+           padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 19px; margin: 0; letter-spacing: .2px; }
+  header h1 span { color: var(--accent); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 4px 10px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  .chip b { color: var(--text); font-weight: 600; }
+  .chip.dry { background: #3a2f12; border-color: #6b5420; color: var(--warn); }
+  .chip.live { background: #13321f; border-color: #255c3a; color: var(--ok); }
+  nav { display: flex; gap: 4px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
+  nav button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted);
+               padding: 12px 14px; font: inherit; cursor: pointer; white-space: nowrap; }
+  nav button.on { color: var(--text); border-bottom-color: var(--accent); }
+  main { max-width: 1050px; margin: 0 auto; padding: 22px 16px 60px; }
+  section { display: none; } section.on { display: block; }
+  h2 { font-size: 17px; margin: 0 0 12px; }
+  p.hint { color: var(--muted); margin: 4px 0 16px; font-size: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+  .rule { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start; }
+  .rule.off { opacity: .55; }
+  .rule h3 { margin: 0 0 6px; font-size: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .tag { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--panel2); color: var(--muted); border: 1px solid var(--line); }
+  .tag.s { color: var(--info); } .tag.m { color: var(--accent); }
+  .facts { color: var(--muted); font-size: 13.5px; }
+  .facts b { color: var(--text); font-weight: 500; }
+  .btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  button.b { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+             padding: 7px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+  button.b:hover { border-color: #4a5160; }
+  a.b { display: inline-block; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; font-size: 14px; }
+  button.b.pri { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button.b.danger { color: var(--bad); }
+  button.b:disabled { opacity: .5; cursor: default; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input[type=text], input[type=number], select, textarea {
+    width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; font: inherit; }
+  input:focus, select:focus { outline: 2px solid #8a5a26; border-color: var(--accent); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  .field { margin-bottom: 4px; }
+  .small { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .pick { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pick label { margin: 0; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+                border: 1px solid var(--line); background: var(--panel2); color: var(--text); cursor: pointer; font-size: 13.5px; }
+  .pick input { display: none; }
+  .pick label.on { background: #3b2a14; border-color: var(--accent); color: #ffd7ae; }
+  .pick.no label.on { background: #3a1716; border-color: var(--bad); color: #ffc1bd; }
+  fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 0 0 14px; }
+  legend { padding: 0 6px; color: var(--text); font-weight: 600; font-size: 14px; }
+  .check { display: flex; gap: 8px; align-items: center; color: var(--text); font-size: 14.5px; }
+  .check input { width: 18px; height: 18px; accent-color: var(--accent); }
+  dialog { width: min(860px, 96vw); max-height: 92vh; background: var(--panel); color: var(--text);
+           border: 1px solid var(--line); border-radius: 12px; padding: 0; }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  .dlg-head, .dlg-foot { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .dlg-foot { border-top: 1px solid var(--line); border-bottom: 0; position: sticky; bottom: 0; background: var(--panel); }
+  .dlg-body { padding: 18px; overflow-y: auto; max-height: calc(92vh - 130px); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--panel); }
+  .d { font-weight: 600; white-space: nowrap; }
+  .d-tilføjet { color: var(--ok); } .d-ville { color: var(--warn); } .d-fejl { color: var(--bad); }
+  .d-afvist, .d-findes { color: var(--muted); } .d-loft, .d-plads { color: var(--warn); }
+  .result { border-left: 4px solid var(--line); }
+  .result.good { border-left-color: var(--ok); } .result.meh { border-left-color: var(--warn); } .result.bad { border-left-color: var(--bad); }
+  ul.checks { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13.5px; }
+  pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; font-size: 13px; }
+  .warn { background: #3a2f12; border: 1px solid #6b5420; color: #f3d48a; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line);
+           padding: 10px 16px; border-radius: 10px; display: none; z-index: 20; max-width: 90vw; }
+  .empty { text-align: center; color: var(--muted); padding: 30px 10px; }
+  .bar { height: 6px; background: var(--panel2); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+  .bar i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+  .num { text-align: right; white-space: nowrap; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  @media (max-width: 620px) { .rule { grid-template-columns: 1fr; } .btns { justify-content: flex-start; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Fang<span>arr</span></h1>
+  <div class="chips" id="status"></div>
+</header>
+<nav>
+  <button data-tab="rules" class="on">Regler</button>
+  <button data-tab="test">Test en titel</button>
+  <button data-tab="wait">Venteliste</button>
+  <button data-tab="prem">Premierer</button>
+  <button data-tab="stats">Statistik</button>
+  <button data-tab="log">Log</button>
+  <button data-tab="autobrr">autobrr</button>
+  <button data-tab="settings">Indstillinger</button>
+</nav>
+<main>
+  <section id="rules" class="on">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <h2>Regler</h2>
+        <p class="hint" style="margin:0">Reglerne tjekkes oppefra. Den første regel, der passer, bestemmer hvor titlen lægges.</p>
+      </div>
+      <button class="b pri" onclick="editRule()">+ Ny regel</button>
+    </div>
+    <div id="ruleList"></div>
+  </section>
+
+  <section id="test">
+    <h2>Test en titel</h2>
+    <p class="hint">Se hvad der ville ske med en udgivelse – uden at noget bliver tilføjet eller logget.</p>
+    <div class="card">
+      <div class="grid">
+        <div class="field"><label>Type</label>
+          <select id="t_media"><option value="series">Serie</option><option value="movie">Film</option></select></div>
+        <div class="field"><label>Titel</label><input type="text" id="t_title" placeholder="f.eks. Borgen"></div>
+        <div class="field"><label>År (kan være tomt)</label><input type="text" inputmode="numeric" id="t_year" placeholder="f.eks. 2022"></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label>Udgivelsesnavn</label>
+        <input type="text" id="t_release" placeholder="f.eks. Borgen.S04E01.NORDiC.1080p.WEB.h264-GRP"></div>
+      <div class="row" style="margin:14px 0 0"><button class="b pri" id="testBtn" onclick="runTest()">Test</button></div>
+    </div>
+    <div id="testResult"></div>
+
+    <h2 style="margin-top:28px">Prøv en regel på historikken</h2>
+    <p class="hint">Kør en regel på de udgivelser, autobrr har set de seneste dage, og se hvad den ville have fanget. Intet bliver tilføjet.
+      autobrr gemmer kun udgivelser, der har passet et af dine filtre, så historikken viser det, dine filtre har ladet igennem.</p>
+    <div class="card">
+      <div class="grid">
+        <div class="field"><label>Regel</label><select id="sim_rule"></select></div>
+        <div class="field"><label>Antal dage tilbage (1–30)</label><input type="text" inputmode="numeric" id="sim_days" value="7"></div>
+      </div>
+      <div class="row" style="margin:14px 0 0"><button class="b pri" id="simBtn" onclick="runSim()">Prøv reglen</button>
+        <select id="simFilter" onchange="renderSim()" style="width:auto"><option value="">Alle resultater</option><option value="hit">Kun dem den ville fange</option><option value="miss">Kun afviste</option></select></div>
+      <div id="simProg"></div>
+    </div>
+    <div id="simResult"></div>
+  </section>
+
+  <section id="prem">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <h2>Kommende danske premierer</h2>
+        <p class="hint" style="margin:0">Nye serier og programmer på danske kanaler og streamingtjenester de næste 3 uger (fra TVmaze).
+          <b>Tilføj nu</b> lægger serien i Sonarr med det samme. <b>Følg</b> sætter den på ventelisten, så den tilføjes, så snart TheTVDB har den.</p>
+      </div>
+      <button class="b" onclick="loadPrem(1)">Hent igen</button>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label style="margin:0">Brug reglen</label><select id="prem_rule" style="width:auto"></select>
+      <span class="small">Reglen bestemmer mappe, kvalitet, overvågning og mærke.</span>
+    </div>
+    <div class="row"><input type="text" id="prem_q" placeholder="Søg i titel, kanal eller genre" oninput="renderPrem()" style="max-width:320px">
+      <label class="check" style="margin:0"><input type="checkbox" id="prem_hide" onchange="renderPrem()" checked> Skjul dem, der allerede findes</label></div>
+    <div class="small" id="premInfo"></div>
+    <div class="card" style="padding:0; overflow-x:auto; margin-top:8px"><table>
+      <thead><tr><th>Dato</th><th>Titel</th><th>Kanal</th><th>Sprog / genre</th><th></th></tr></thead>
+      <tbody id="premBody"></tbody></table></div>
+  </section>
+
+  <section id="stats">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <h2>Statistik</h2>
+        <p class="hint" style="margin:0">Hvad Fangarr har tilføjet (alt med Fangarr-mærker i Sonarr/Radarr), hvor meget det fylder, og hvor meget det er set ifølge Tracearr.</p>
+      </div>
+      <button class="b pri" id="statBtn" onclick="refreshStats()">Beregn nu</button>
+    </div>
+    <div id="statNote"></div>
+    <div id="statProg"></div>
+    <div id="statRules"></div>
+    <div class="row" style="margin-top:8px"><select id="statFilter" onchange="renderStats()" style="width:auto">
+      <option value="">Alle titler</option><option value="stale">Ingen har set dem efter 30 dage</option><option value="unwatched">Aldrig set</option></select></div>
+    <div class="card" style="padding:0; overflow-x:auto"><table>
+      <thead><tr><th>Titel</th><th>Regel</th><th>Tilføjet</th><th class="num">GB</th><th class="num">Afspilninger</th><th class="num">Seere</th><th class="num">Sidste 30 dage</th></tr></thead>
+      <tbody id="statBody"></tbody></table></div>
+  </section>
+
+  <section id="log">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0">Log</h2>
+      <div class="row" style="margin:0">
+        <select id="logFilter" onchange="renderLog()" style="width:auto">
+          <option value="">Alle beslutninger</option>
+          <option value="tilføjet">Tilføjet</option>
+          <option value="ville tilføje">Ville tilføje</option>
+          <option value="afvist">Afvist</option>
+          <option value="findes allerede">Findes allerede</option>
+          <option value="venteliste">Venteliste</option>
+          <option value="udløbet">Opgivet (venteliste)</option>
+          <option value="afvist i Seerr">Afvist i Seerr</option>
+          <option value="anmodet i Seerr">Anmodet i Seerr</option>
+          <option value="fejl">Fejl</option>
+        </select>
+        <button class="b" onclick="loadLog()">Opdatér</button>
+      </div>
+    </div>
+    <div class="chips" id="logSummary" style="margin-bottom:12px"></div>
+    <div class="card" style="padding:0; overflow-x:auto"><table>
+      <thead><tr><th>Tid</th><th>Type</th><th>Titel</th><th>Beslutning</th><th>Regel</th><th>Detaljer</th></tr></thead>
+      <tbody id="logBody"></tbody></table></div>
+  </section>
+
+  <section id="wait">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <h2>Venteliste</h2>
+        <p class="hint" style="margin:0">Udgivelser, hvor TheTVDB/TMDb endnu ikke har titlen eller de oplysninger, reglen kræver. Fangarr prøver igen automatisk.</p>
+      </div>
+      <button class="b" onclick="loadWait()">Opdatér</button>
+    </div>
+    <div class="card" style="padding:0; overflow-x:auto; margin-top:12px"><table>
+      <thead><tr><th>Titel</th><th>Status</th><th>Forsøg</th><th>Næste forsøg</th><th>Seneste grund</th><th></th></tr></thead>
+      <tbody id="waitBody"></tbody></table></div>
+  </section>
+
+  <section id="autobrr">
+    <h2>Filtre i autobrr</h2>
+    <p class="hint">Fangarr laver filtrene til autobrr ud fra dine regler. Ord som NORDiC og DANiSH hentes fra reglernes "skal indeholde".</p>
+    <div id="abStatus"></div>
+    <div id="abCards"></div>
+  </section>
+
+  <section id="settings">
+    <h2>Indstillinger</h2>
+    <div class="card">
+      <div id="dryWarn"></div>
+      <label class="check"><input type="checkbox" id="s_dry_run"> Prøvetilstand (logger kun, hvad der ville blive tilføjet)</label>
+      <div class="grid" style="margin-top:16px">
+        <div class="field"><label>Højst nye serier pr. døgn</label><input type="text" inputmode="numeric" id="s_max_series_per_day"></div>
+        <div class="field"><label>Højst nye film pr. døgn</label><input type="text" inputmode="numeric" id="s_max_movies_per_day"></div>
+        <div class="field"><label>Tilføj intet når disken er fyldt over (%)</label><input type="text" inputmode="numeric" id="s_max_disk_pct"></div>
+        <div class="field"><label>Dagligt resumé til Telegram kl. (0–23, -1 = fra)</label><input type="text" inputmode="numeric" id="s_summary_hour"></div>
+      </div>
+      <h2 style="margin-top:22px">Venteliste</h2>
+      <div class="grid">
+        <div class="field"><label>Prøv igen hver (timer)</label><input type="text" inputmode="numeric" id="s_wait_hours"></div>
+        <div class="field"><label>Giv op efter (dage)</label><input type="text" inputmode="numeric" id="s_wait_days"></div>
+        <div class="field"><label>Opdatér nye serier i Sonarr hver (timer, 0 = fra)</label><input type="text" inputmode="numeric" id="s_refresh_hours"></div>
+        <div class="field"><label>… de første (dage)</label><input type="text" inputmode="numeric" id="s_refresh_days"></div>
+      </div>
+      <div class="small">Nye serier fra Fangarr opdateres oftere i Sonarr, så afsnit, der først kommer på TheTVDB efter udsendelsen, bliver importeret hurtigere.</div>
+      <label class="check" style="margin-top:14px"><input type="checkbox" id="s_pass_existing"> Lad autobrr fortsætte, hvis titlen allerede findes i Sonarr/Radarr</label>
+      <div class="small">Slået fra: autobrr stopper altid, og Sonarr/Radarr henter selv via Prowlarr.</div>
+      <h2 style="margin-top:22px">Seerr</h2>
+      <label class="check"><input type="checkbox" id="s_seerr_check"> Spring titler over, som er afvist eller venter på godkendelse i Seerr</label>
+      <div class="small" id="seerrInfo"></div>
+      <h2 style="margin-top:22px">Natlig eksport</h2>
+      <div class="grid">
+        <div class="field"><label>Gem eksportfil kl. (0–23, -1 = fra)</label><input type="text" inputmode="numeric" id="s_backup_hour"></div>
+        <div class="field"><label>Behold antal filer</label><input type="text" inputmode="numeric" id="s_backup_keep"></div>
+      </div>
+      <div class="small">Filerne lægges i /opt/fangarr/data/backup på feeder, så de kommer med i Saltbox' natlige backup af /opt, når den er sat op.</div>
+      <div class="row" style="margin-top:16px"><button class="b pri" onclick="saveSettings()">Gem indstillinger</button></div>
+    </div>
+    <div class="card">
+      <h2>Eksport og import</h2>
+      <p class="hint">Eksporten indeholder regler, indstillinger, autobrr-valg og ventelisten – ingen API-nøgler. Import <b>erstatter</b> dine regler og indstillinger, så eksportér først, hvis du vil kunne gå tilbage.</p>
+      <div class="row">
+        <a class="b" href="/api/export" download style="text-decoration:none">Hent eksportfil</a>
+        <button class="b" onclick="$('impFile').click()">Importér fil…</button>
+        <input type="file" id="impFile" accept=".json,application/json" style="display:none" onchange="importFile(this)">
+        <button class="b" onclick="backupNow()">Gem eksport på serveren nu</button>
+      </div>
+      <div id="backupList" class="small"></div>
+    </div>
+    <div class="small" id="version" style="text-align:right"></div>
+    </section>
+</main>
+
+<dialog id="dlg">
+  <form method="dialog" onsubmit="return false">
+    <div class="dlg-head"><b id="dlgTitle">Ny regel</b><button class="b" onclick="dlg.close()">Luk</button></div>
+    <div class="dlg-body">
+      <fieldset><legend>Grundlæggende</legend>
+        <div class="grid">
+          <div class="field"><label>Navn</label><input type="text" id="r_name" placeholder="f.eks. Nordiske dramaserier"></div>
+          <div class="field"><label>Type</label><select id="r_media" onchange="mediaChanged()">
+            <option value="series">Serier</option><option value="movie">Film</option></select></div>
+          <div class="field"><label>Sonarr/Radarr</label><select id="r_instance" onchange="loadOptions()"></select></div>
+        </div>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="r_active" checked> Aktiv</label>
+      </fieldset>
+
+      <fieldset><legend>Udgivelsen (navnet fra trackeren)</legend>
+        <div class="grid">
+          <div class="field"><label>Skal indeholde et af disse ord</label><input type="text" id="r_release_contains" placeholder="NORDiC, DANiSH">
+            <div class="small">Adskil med komma. Tomt = alle.</div></div>
+          <div class="field"><label>Må ikke indeholde</label><input type="text" id="r_release_excludes" placeholder="SWEDiSH, FiNNiSH">
+            <div class="small">Adskil med komma.</div></div>
+        </div>
+      </fieldset>
+
+      <fieldset><legend>Titlen (fra TheTVDB/TMDb via Sonarr/Radarr)</legend>
+        <label>Originalsprog <span class="small">– ingen valgt = alle sprog</span></label>
+        <div class="pick" id="p_languages"></div>
+        <input type="text" id="r_languages_extra" placeholder="Andre sprog (på engelsk, adskil med komma)" style="margin-top:8px">
+
+        <label style="margin-top:16px">Genre – mindst én af <span class="small">– ingen valgt = alle genrer</span></label>
+        <div class="pick" id="p_genres_any"></div>
+
+        <label style="margin-top:16px">Udeluk genrer</label>
+        <div class="pick no" id="p_genres_none"></div>
+
+        <div class="grid" style="margin-top:16px">
+          <div class="field"><label>År fra</label><input type="text" inputmode="numeric" id="r_year_min" placeholder="f.eks. 2015"></div>
+          <div class="field"><label>År til</label><input type="text" inputmode="numeric" id="r_year_max" placeholder="tomt = ingen grænse"></div>
+          <div class="field"><label>Mindste rating (0–10)</label><input type="text" inputmode="decimal" id="r_min_rating" placeholder="f.eks. 6.5">
+            <div class="small">Serier: Sonarrs rating. Film: IMDb (ellers TMDb). Komma eller punktum.</div></div>
+        </div>
+        <div class="field" style="margin-top:14px"><label id="netLabel">Tv-kanal / netværk – en af</label>
+          <input type="text" id="r_networks_any" placeholder="DR1, DR2, TV 2, TV3, Kanal 5, Viaplay">
+          <div class="small">Adskil med komma. Delvist navn er nok ("TV 2" passer også "TV 2 Charlie"). Tomt = alle.</div></div>
+      </fieldset>
+
+      <fieldset><legend>Hvor og hvordan den tilføjes</legend>
+        <div class="grid">
+          <div class="field"><label>Mappe</label><select id="r_root_folder"></select></div>
+          <div class="field"><label>Kvalitetsprofil</label><select id="r_quality_profile_id"></select></div>
+          <div class="field" id="monitorField"><label>Overvåg</label><select id="r_monitor">
+            <option value="latestSeason">Kun nyeste sæson</option>
+            <option value="future">Kun fremtidige afsnit</option>
+            <option value="firstSeason">Kun første sæson</option>
+            <option value="all">Alle sæsoner</option>
+            <option value="none">Intet (kun tilføj)</option></select></div>
+          <div class="field" id="availField" style="display:none"><label>Hent når filmen er</label><select id="r_minimum_availability">
+            <option value="released">Udgivet</option><option value="inCinemas">I biografen</option><option value="announced">Annonceret</option></select></div>
+          <div class="field"><label>Mærke (tag)</label><input type="text" id="r_tag" placeholder="auto-fangarr">
+            <div class="small">Så du (og Maintainerr) kan finde det, Fangarr har tilføjet.</div></div>
+        </div>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="r_search" checked> Søg straks efter titlen</label>
+        <label class="check" style="margin-top:10px"><input type="checkbox" id="r_wait"> Vent på TheTVDB/TMDb, hvis titlen eller oplysningerne mangler endnu</label>
+        <div class="small">Udgivelsen kommer på ventelisten og prøves igen, indtil TheTVDB/TMDb har den. God til danske tv-programmer.</div>
+        <div class="small" id="optMsg"></div>
+      </fieldset>
+    </div>
+    <div class="dlg-foot">
+      <span class="small" id="dlgErr" style="color:var(--bad)"></span>
+      <div class="btns"><button class="b" onclick="dlg.close()">Annullér</button><button class="b pri" onclick="saveRule()">Gem regel</button></div>
+    </div>
+  </form>
+</dialog>
+<div id="toast"></div>
+
+<script>
+const LANGS = ["Danish","Swedish","Norwegian","Finnish","Icelandic","English","German","French","Spanish","Italian","Dutch","Polish","Japanese","Korean"];
+const LANG_DA = {Danish:"Dansk",Swedish:"Svensk",Norwegian:"Norsk",Finnish:"Finsk",Icelandic:"Islandsk",English:"Engelsk",German:"Tysk",French:"Fransk",Spanish:"Spansk",Italian:"Italiensk",Dutch:"Hollandsk",Polish:"Polsk",Japanese:"Japansk",Korean:"Koreansk"};
+const GENRES = {
+  series: ["Drama","Crime","Thriller","Mystery","Comedy","Documentary","Reality","Mini-Series","Action","Adventure","Science Fiction","Fantasy","Family","Children","Animation","Romance","Horror","War","Western","Soap","Talk Show","Game Show","News","Sport","Food","Travel","Home and Garden"],
+  movie: ["Drama","Crime","Thriller","Mystery","Comedy","Documentary","Action","Adventure","Science Fiction","Fantasy","Family","Animation","Romance","Horror","War","History","Music","Western","TV Movie"]
+};
+const GENRE_DA = {"Drama":"Drama","Crime":"Krimi","Thriller":"Thriller","Mystery":"Mysterie","Comedy":"Komedie","Documentary":"Dokumentar","Reality":"Reality","Mini-Series":"Miniserie","Action":"Action","Adventure":"Eventyr","Science Fiction":"Science fiction","Fantasy":"Fantasy","Family":"Familie","Children":"Børn","Animation":"Animation","Romance":"Romantik","Horror":"Gys","War":"Krig","Western":"Western","Soap":"Sæbeopera","Talk Show":"Talkshow","Game Show":"Quiz/gameshow","News":"Nyheder","Sport":"Sport","Food":"Mad","Travel":"Rejser","Home and Garden":"Hus og have","History":"Historie","Music":"Musik","TV Movie":"Tv-film"};
+const MONITOR_DA = {latestSeason:"nyeste sæson",future:"fremtidige afsnit",firstSeason:"første sæson",all:"alle sæsoner",none:"intet"};
+
+let S = null, editing = null, logRows = [], AB = null;
+const SET_NUM = ["max_series_per_day", "max_movies_per_day", "max_disk_pct", "summary_hour", "wait_hours", "wait_days", "refresh_hours", "refresh_days", "backup_hour", "backup_keep"];
+const $ = id => document.getElementById(id);
+const dlg = $("dlg");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function toast(msg, bad) {
+  const t = $("toast"); t.textContent = msg; t.style.color = bad ? "var(--bad)" : "var(--text)";
+  t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 3500);
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, {headers: {"Content-Type": "application/json"}, ...opts});
+  let data = null; try { data = await r.json(); } catch (e) {}
+  if (!r.ok) throw new Error((data && data.detail) || ("Fejl " + r.status));
+  return data;
+}
+
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll("main section").forEach(s => s.classList.toggle("on", s.id === b.dataset.tab));
+  if (b.dataset.tab === "log") loadLog();
+  if (b.dataset.tab === "wait") loadWait();
+  if (b.dataset.tab === "autobrr") loadAutobrr();
+  if (b.dataset.tab === "prem") loadPrem(0);
+  if (b.dataset.tab === "stats") loadStats();
+  if (b.dataset.tab === "settings") loadBackups();
+  if (b.dataset.tab === "test") fillRuleSelect("sim_rule", null);
+});
+
+async function load() {
+  try { S = await api("/api/state"); } catch (e) { toast(e.message, true); return; }
+  renderStatus(); renderRules(); renderSettings();
+}
+function renderStatus() {
+  const s = S.settings;
+  $("status").innerHTML =
+    (s.dry_run ? '<span class="chip dry">Prøvetilstand</span>' : '<span class="chip live">Tilføjer for alvor</span>') +
+    `<span class="chip">Disk <b>${S.disk_pct ?? "?"} %</b> / grænse ${s.max_disk_pct} %</span>` +
+    `<span class="chip">I dag: <b>${S.today.series}</b>/${s.max_series_per_day} serier · <b>${S.today.movie}</b>/${s.max_movies_per_day} film</span>` +
+    `<span class="chip">Venteliste: <b>${S.waiting}</b></span>`;
+}
+function list(a) { return (a && a.length) ? a.join(", ") : null; }
+function renderRules() {
+  const el = $("ruleList");
+  if (!S.instances.length) {
+    el.innerHTML = '<div class="card warn">Ingen Sonarr/Radarr er sat op. Tjek ARR_INSTANCES og API-nøglerne i fangarr.env.</div>';
+    return;
+  }
+  if (!S.rules.length) { el.innerHTML = '<div class="card empty">Ingen regler endnu. Tryk “+ Ny regel”.</div>'; return; }
+  el.innerHTML = S.rules.map((r, i) => {
+    const f = [];
+    if (list(r.release_contains)) f.push(`Udgivelse med <b>${esc(list(r.release_contains))}</b>`);
+    if (list(r.release_excludes)) f.push(`ikke <b>${esc(list(r.release_excludes))}</b>`);
+    if (list(r.languages)) f.push(`sprog <b>${esc(r.languages.map(l => LANG_DA[l] || l).join(", "))}</b>`);
+    if (list(r.genres_any)) f.push(`genre <b>${esc(r.genres_any.map(g => GENRE_DA[g] || g).join(", "))}</b>`);
+    if (list(r.genres_none)) f.push(`ikke <b>${esc(r.genres_none.map(g => GENRE_DA[g] || g).join(", "))}</b>`);
+    if (r.year_min || r.year_max) f.push(`år <b>${r.year_min || "…"}–${r.year_max || "…"}</b>`);
+    if (r.min_rating) f.push(`rating mindst <b>${r.min_rating}</b>`);
+    if (list(r.networks_any)) f.push(`kanal <b>${esc(list(r.networks_any))}</b>`);
+    const where = `→ <b>${esc(r.instance)}</b> › <b>${esc(r.root_folder)}</b>` +
+      (r.media === "series" ? ` · overvåg ${MONITOR_DA[r.monitor] || r.monitor}` : "") +
+      ` · mærke <b>${esc(r.tag || "auto-fangarr")}</b>`;
+    return `<div class="card rule ${r.active ? "" : "off"}">
+      <div><h3>${i + 1}. ${esc(r.name)} <span class="tag ${r.media === "series" ? "s" : "m"}">${r.media === "series" ? "Serier" : "Film"}</span>
+        ${r.active ? "" : '<span class="tag">Slået fra</span>'}${r.wait ? '<span class="tag">Venter på TheTVDB</span>' : ""}</h3>
+        <div class="facts">${f.length ? f.join(" · ") : "Ingen krav – alt passer"}</div>
+        <div class="facts" style="margin-top:4px">${where}</div></div>
+      <div class="btns">
+        <button class="b" title="Flyt op" onclick="move(${i},-1)" ${i ? "" : "disabled"}>↑</button>
+        <button class="b" title="Flyt ned" onclick="move(${i},1)" ${i < S.rules.length - 1 ? "" : "disabled"}>↓</button>
+        <button class="b" onclick="toggleRule(${r.id})">${r.active ? "Slå fra" : "Slå til"}</button>
+        <button class="b" onclick="editRule(${r.id})">Redigér</button>
+        <button class="b danger" onclick="delRule(${r.id})">Slet</button></div></div>`;
+  }).join("");
+}
+
+function pickHtml(id, values, labels, chosen) {
+  $(id).innerHTML = values.map(v =>
+    `<label class="${chosen.includes(v) ? "on" : ""}"><input type="checkbox" value="${esc(v)}" ${chosen.includes(v) ? "checked" : ""}>${esc(labels[v] || v)}</label>`).join("");
+  $(id).querySelectorAll("input").forEach(i => i.onchange = () => i.parentElement.classList.toggle("on", i.checked));
+}
+function picked(id) { return [...$(id).querySelectorAll("input:checked")].map(i => i.value); }
+const csv = v => (v || "").split(",").map(x => x.trim()).filter(Boolean);
+
+function mediaChanged(r) {
+  const media = $("r_media").value;
+  const inst = S.instances.filter(i => i.type === (media === "movie" ? "radarr" : "sonarr"));
+  $("r_instance").innerHTML = inst.map(i => `<option>${esc(i.name)}</option>`).join("") || '<option value="">(ingen fundet)</option>';
+  if (r && r.instance) $("r_instance").value = r.instance;
+  const keepA = r ? (r.genres_any || []) : picked("p_genres_any");
+  const keepN = r ? (r.genres_none || []) : picked("p_genres_none");
+  const all = [...new Set([...GENRES[media], ...keepA, ...keepN])];
+  pickHtml("p_genres_any", all, GENRE_DA, keepA);
+  pickHtml("p_genres_none", all, GENRE_DA, keepN);
+  $("monitorField").style.display = media === "series" ? "" : "none";
+  $("availField").style.display = media === "movie" ? "" : "none";
+  $("netLabel").textContent = media === "series" ? "Tv-kanal / netværk – en af" : "Filmselskab – et af";
+  loadOptions(r);
+}
+async function loadOptions(r) {
+  const name = $("r_instance").value;
+  $("r_root_folder").innerHTML = ""; $("r_quality_profile_id").innerHTML = ""; $("optMsg").textContent = "";
+  if (!name) return;
+  try {
+    const o = await api(`/api/instance/${encodeURIComponent(name)}/options`);
+    $("r_root_folder").innerHTML = o.root_folders.map(p => `<option>${esc(p)}</option>`).join("");
+    $("r_quality_profile_id").innerHTML = o.profiles.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+    if (r && r.root_folder) $("r_root_folder").value = r.root_folder;
+    if (r && r.quality_profile_id) $("r_quality_profile_id").value = String(r.quality_profile_id);
+  } catch (e) { $("optMsg").textContent = "Kunne ikke hente mapper/profiler: " + e.message; }
+}
+
+function editRule(id) {
+  const r = id ? S.rules.find(x => x.id === id) : {active: true, search: true, media: "series", monitor: "latestSeason",
+            minimum_availability: "released", tag: "auto-fangarr", release_contains: ["NORDiC", "DANiSH"]};
+  editing = id || null;
+  $("dlgTitle").textContent = id ? "Redigér regel" : "Ny regel";
+  $("dlgErr").textContent = "";
+  $("r_name").value = r.name || "";
+  $("r_media").value = r.media;
+  $("r_active").checked = !!r.active;
+  $("r_release_contains").value = (r.release_contains || []).join(", ");
+  $("r_release_excludes").value = (r.release_excludes || []).join(", ");
+  const langs = r.languages || [];
+  pickHtml("p_languages", LANGS, LANG_DA, langs);
+  $("r_languages_extra").value = langs.filter(l => !LANGS.includes(l)).join(", ");
+  $("r_year_min").value = r.year_min || "";
+  $("r_year_max").value = r.year_max || "";
+  $("r_min_rating").value = r.min_rating || "";
+  $("r_networks_any").value = (r.networks_any || []).join(", ");
+  $("r_monitor").value = r.monitor || "latestSeason";
+  $("r_minimum_availability").value = r.minimum_availability || "released";
+  $("r_tag").value = r.tag || "";
+  $("r_search").checked = r.search !== false;
+  $("r_wait").checked = !!r.wait;
+  mediaChanged(r);
+  dlg.showModal();
+}
+async function saveRule() {
+  const body = {
+    name: $("r_name").value, media: $("r_media").value, instance: $("r_instance").value, active: $("r_active").checked,
+    release_contains: csv($("r_release_contains").value), release_excludes: csv($("r_release_excludes").value),
+    languages: [...picked("p_languages"), ...csv($("r_languages_extra").value)],
+    genres_any: picked("p_genres_any"), genres_none: picked("p_genres_none"),
+    year_min: $("r_year_min").value, year_max: $("r_year_max").value,
+    min_rating: $("r_min_rating").value.replace(",", "."),
+    networks_any: csv($("r_networks_any").value),
+    root_folder: $("r_root_folder").value, quality_profile_id: $("r_quality_profile_id").value,
+    monitor: $("r_monitor").value, minimum_availability: $("r_minimum_availability").value,
+    tag: $("r_tag").value, search: $("r_search").checked, wait: $("r_wait").checked,
+  };
+  try {
+    S.rules = await api(editing ? `/api/rules/${editing}` : "/api/rules", {method: editing ? "PUT" : "POST", body: JSON.stringify(body)});
+    dlg.close(); renderRules(); toast("Reglen er gemt");
+  } catch (e) { $("dlgErr").textContent = e.message; }
+}
+async function delRule(id) {
+  const r = S.rules.find(x => x.id === id);
+  if (!confirm(`Slet reglen “${r.name}”?`)) return;
+  S.rules = await api(`/api/rules/${id}`, {method: "DELETE"}); renderRules(); toast("Reglen er slettet");
+}
+async function toggleRule(id) {
+  const r = {...S.rules.find(x => x.id === id)}; r.active = !r.active;
+  try { S.rules = await api(`/api/rules/${id}`, {method: "PUT", body: JSON.stringify(r)}); renderRules(); }
+  catch (e) { toast(e.message, true); }
+}
+async function move(i, d) {
+  const ids = S.rules.map(r => r.id); [ids[i], ids[i + d]] = [ids[i + d], ids[i]];
+  S.rules = await api("/api/rules/order", {method: "POST", body: JSON.stringify({ids})}); renderRules();
+}
+
+async function runTest() {
+  const p = {media: $("t_media").value, title: $("t_title").value, year: $("t_year").value, release: $("t_release").value};
+  $("testResult").innerHTML = '<div class="card empty">Tester…</div>';
+  try {
+    const r = await api("/api/test", {method: "POST", body: JSON.stringify(p)});
+    const cls = r.decision === "ville tilføje" ? "good" : (r.decision === "fejl" ? "bad" : "meh");
+    if (r.decision === "venteliste") r.decision = "ville komme på ventelisten";
+    const m = r.match;
+    $("testResult").innerHTML = `<div class="card result ${cls}">
+      <h2>${esc(r.decision[0].toUpperCase() + r.decision.slice(1))}${r.rule ? " – " + esc(r.rule) : ""}</h2>
+      <div class="facts">${esc(r.detail)}</div>
+      ${m ? `<div class="facts" style="margin-top:10px">Fundet: <b>${esc(m.title)} (${m.year || "?"})</b> · sprog <b>${esc(LANG_DA[m.language] || m.language || "?")}</b>
+        · genrer <b>${esc(m.genres.map(g => GENRE_DA[g] || g).join(", ") || "ingen")}</b> · ${r.media === "series" ? "kanal" : "selskab"} <b>${esc(m.network || "?")}</b>
+        · rating <b>${m.rating || "ingen"}</b>${m.exists ? " · <b>findes allerede</b>" : ""}</div>` : ""}
+      ${r.checks.length ? `<ul class="checks">${r.checks.map(c => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}</div>`;
+  } catch (e) { $("testResult").innerHTML = `<div class="card result bad">${esc(e.message)}</div>`; }
+}
+
+async function loadLog() {
+  try {
+    const [rows, sum] = await Promise.all([api("/api/log?limit=500"), api("/api/log/summary")]);
+    logRows = rows; renderLog();
+    const order = ["tilføjet", "ville tilføje", "venteliste", "findes allerede", "afvist", "loft nået", "for lidt plads", "udløbet", "fejl"];
+    const keys = [...order.filter(k => sum[k]), ...Object.keys(sum).filter(k => !order.includes(k))];
+    $("logSummary").innerHTML = '<span class="chip">Sidste døgn:</span>' +
+      (keys.length ? keys.map(k => `<span class="chip">${esc(k)} <b>${sum[k]}</b></span>`).join("") : '<span class="chip">intet</span>');
+  } catch (e) { toast(e.message, true); }
+}
+function dcls(d) {
+  if (d === "tilføjet") return "d-tilføjet"; if (d === "ville tilføje") return "d-ville"; if (d === "fejl") return "d-fejl";
+  if (d === "venteliste") return "d-ville"; if (d === "udløbet") return "d-loft";
+  if (d === "loft nået") return "d-loft"; if (d === "for lidt plads") return "d-plads"; if (d === "findes allerede") return "d-findes"; return "d-afvist";
+}
+function renderLog() {
+  const f = $("logFilter").value;
+  const rows = logRows.filter(r => !f || r.decision === f);
+  $("logBody").innerHTML = rows.length ? rows.map(r => `<tr>
+    <td style="white-space:nowrap">${esc(r.ts.replace("T", " ").slice(0, 16))}</td>
+    <td>${r.media === "movie" ? "Film" : "Serie"}</td>
+    <td><b>${esc(r.title)}</b>${r.year ? " (" + r.year + ")" : ""}<div class="small">${esc(r.release)}</div></td>
+    <td class="d ${dcls(r.decision)}">${esc(r.decision)}</td>
+    <td>${esc(r.rule)}</td><td>${esc(r.detail)}${r.info ? `<div class="small" style="margin-top:4px">Fundet: ${esc(r.info)}</div>` : ""}</td></tr>`).join("")
+    : '<tr><td colspan="6" class="empty">Intet i loggen endnu.</td></tr>';
+}
+
+function renderSettings() {
+  const s = S.settings;
+  SET_NUM.forEach(k => $("s_" + k).value = s[k]);
+  $("s_dry_run").checked = !!s.dry_run;
+  $("s_pass_existing").checked = !!s.pass_existing;
+  $("s_seerr_check").checked = !!s.seerr_check;
+  $("seerrInfo").textContent = S.features.seerr ? "Seerr er forbundet." : "Seerr er ikke forbundet – tilføj SEERR_URL og SEERR_APIKEY i fangarr.env for at bruge det.";
+  $("version").textContent = "Fangarr " + S.features.version;
+  $("dryWarn").innerHTML = s.dry_run ? "" :
+    '<div class="warn">Prøvetilstand er slået fra – titler bliver tilføjet til Sonarr/Radarr for alvor.</div>';
+}
+async function saveSettings() {
+  const body = {dry_run: $("s_dry_run").checked, pass_existing: $("s_pass_existing").checked, seerr_check: $("s_seerr_check").checked};
+  SET_NUM.forEach(k => body[k] = $("s_" + k).value);
+  if (S.settings.dry_run && !body.dry_run &&
+      !confirm("Slå prøvetilstand fra? Herefter tilføjer Fangarr titler til Sonarr/Radarr for alvor.")) return;
+  try { S.settings = await api("/api/settings", {method: "PUT", body: JSON.stringify(body)}); renderSettings(); renderStatus(); toast("Indstillingerne er gemt"); }
+  catch (e) { toast(e.message, true); }
+}
+const fmt = t => t ? esc(t.replace("T", " ").slice(0, 16)) : "–";
+const WAIT_CLS = {venter: "d-ville", klar: "d-tilføjet", afvist: "d-afvist", "udløbet": "d-loft"};
+async function loadWait() {
+  try { renderWait(await api("/api/waitlist")); } catch (e) { toast(e.message, true); }
+}
+function renderWait(rows) {
+  $("waitBody").innerHTML = rows.length ? rows.map(w => `<tr>
+    <td><b>${esc(w.title)}</b> <span class="small">${w.media === "movie" ? "Film" : "Serie"}</span><div class="small">${esc(w.release)}</div>
+      <div class="small">Regel: ${esc(w.rule)} · sat på ${fmt(w.created)}</div></td>
+    <td class="d ${WAIT_CLS[w.status] || ""}">${esc(w.status)}</td>
+    <td>${w.attempts}</td>
+    <td>${w.status === "venter" ? fmt(w.next_try) : "–"}</td>
+    <td>${esc(w.reason)}</td>
+    <td><div class="btns"><button class="b" onclick="retryWait(${w.id})">Prøv nu</button><button class="b danger" onclick="delWait(${w.id})">Fjern</button></div></td></tr>`).join("")
+    : '<tr><td colspan="6" class="empty">Ventelisten er tom.</td></tr>';
+}
+async function retryWait(id) {
+  try { renderWait(await api(`/api/waitlist/${id}/retry`, {method: "POST"})); toast("Prøvet igen"); load(); } catch (e) { toast(e.message, true); }
+}
+async function delWait(id) {
+  try { renderWait(await api(`/api/waitlist/${id}`, {method: "DELETE"})); toast("Fjernet fra ventelisten"); load(); } catch (e) { toast(e.message, true); }
+}
+
+async function loadAutobrr() {
+  $("abCards").innerHTML = '<div class="card empty">Henter…</div>';
+  try { AB = await api("/api/autobrr"); } catch (e) { $("abCards").innerHTML = ""; toast(e.message, true); return; }
+  $("abStatus").innerHTML = !AB.configured
+    ? '<div class="warn">autobrr er ikke forbundet. Du kan stadig kopiere filteret og importere det i autobrr (Filters › Import). Vil du have Fangarr til at oprette det selv, så tilføj AUTOBRR_URL og AUTOBRR_APIKEY i fangarr.env.</div>'
+    : (AB.error ? `<div class="warn">Kan ikke hente fra autobrr: ${esc(AB.error)}</div>`
+                : `<div class="card"><span class="chip live">Forbundet</span> <span class="small">${esc(AB.url)} · Fangarr kaldes på ${esc(AB.fangarr_url)}/webhook/autobrr</span></div>`);
+  $("abCards").innerHTML = ["series", "movie"].map(m => {
+    const d = AB.defaults[m], words = AB.words[m], exist = AB.filters.find(f => f.name === d.name);
+    const hasRules = S.rules.some(r => r.active && r.media === m);
+    return `<div class="card">
+      <h2>${m === "series" ? "Serier" : "Film"} ${exist ? '<span class="tag">findes i autobrr</span>' : ""}</h2>
+      ${hasRules ? "" : `<div class="warn">Der er ingen aktive regler for ${m === "series" ? "serier" : "film"} endnu. Lav dem først.</div>`}
+      <div class="grid">
+        <div class="field"><label>Filternavn i autobrr</label><input type="text" id="ab_${m}_name" value="${esc(d.name)}"></div>
+        <div class="field"><label>Kategorier (trackerens)</label><input type="text" id="ab_${m}_categories" value="${esc(d.categories)}">
+          <div class="small">Komma mellem. * = hvad som helst. Tjek trackerens kategorinavne.</div></div>
+        ${m === "series" ? `<div class="field"><label>Sæsoner</label><input type="text" id="ab_${m}_seasons" value="${esc(d.seasons)}">
+          <div class="small">"1" = kun nye serier (første afsnit og hele sæson 1). Tomt = alle sæsoner.</div></div>` : ""}
+      </div>
+      <div class="facts" style="margin-top:12px">Udgivelsen skal indeholde: <b>${!hasRules ? "–" : (words.length ? esc(words.join(", ")) : "alt (en regel har intet krav)")}</b></div>
+      ${AB.configured && !AB.error ? `<label style="margin-top:14px">Trackere</label>
+        <div class="pick" id="ab_${m}_idx">${AB.indexers.map(i => { const on = (d.indexers || []).includes(i.id); return `<label class="${on ? "on" : ""}"><input type="checkbox" value="${i.id}" ${on ? "checked" : ""}>${esc(i.name)}</label>`; }).join("") || '<span class="small">Ingen trackere i autobrr.</span>'}</div>` : ""}
+      <div class="row" style="margin:16px 0 0">
+        ${AB.configured && !AB.error ? `<button class="b pri" onclick="applyAb('${m}')">${exist ? "Opdatér i autobrr" : "Opret i autobrr"}</button>` : ""}
+        <button class="b" onclick="exportAb('${m}')">Vis import-JSON</button>
+      </div>
+      <div id="ab_${m}_out"></div></div>`;
+  }).join("");
+  document.querySelectorAll("#abCards .pick input").forEach(i => i.onchange = () => i.parentElement.classList.toggle("on", i.checked));
+}
+function abOpts(m) {
+  const o = {media: m, name: $(`ab_${m}_name`).value, categories: $(`ab_${m}_categories`).value};
+  if ($(`ab_${m}_seasons`)) o.seasons = $(`ab_${m}_seasons`).value;
+  const box = $(`ab_${m}_idx`); if (box) o.indexers = [...box.querySelectorAll("input:checked")].map(i => +i.value);
+  return o;
+}
+async function applyAb(m) {
+  try {
+    const r = await api("/api/autobrr/apply", {method: "POST", body: JSON.stringify(abOpts(m))});
+    toast(`Filteret "${r.name}" er ${r.action} i autobrr`); loadAutobrr();
+  } catch (e) { toast(e.message, true); }
+}
+async function exportAb(m) {
+  try {
+    const j = JSON.stringify(await api("/api/autobrr/export", {method: "POST", body: JSON.stringify(abOpts(m))}), null, 2);
+    $(`ab_${m}_out`).innerHTML = `<p class="hint" style="margin-top:14px">I autobrr: <b>Filters › Import</b>, indsæt teksten, og gem. Åbn derefter filteret, vælg trackere under <b>General</b>, tjek fanen <b>External</b>, og gem igen.</p>
+      <div class="row"><button class="b" id="ab_${m}_copy">Kopiér</button></div><pre id="ab_${m}_json">${esc(j)}</pre>`;
+    $(`ab_${m}_copy`).onclick = async () => {
+      try { await navigator.clipboard.writeText(j); toast("Kopieret"); }
+      catch (e) { const r = document.createRange(); r.selectNodeContents($(`ab_${m}_json`)); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); toast("Teksten er markeret – tryk Ctrl+C"); }
+    };
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---------- fælles
+function fillRuleSelect(id, media) {
+  const el = $(id), keep = el.value;
+  const rules = S.rules.filter(r => !media || r.media === media);
+  el.innerHTML = rules.length ? rules.map(r => `<option value="${r.id}">${esc(r.name)} (${r.media === "series" ? "serier" : "film"})${r.active ? "" : " – slået fra"}</option>`).join("")
+                              : '<option value="">(ingen regler)</option>';
+  if (keep && rules.some(r => String(r.id) === keep)) el.value = keep;
+}
+async function poll(job, progId, onDone) {
+  const tick = async () => {
+    try { job = await api(`/api/jobs/${job.id}`); } catch (e) { $(progId).innerHTML = `<div class="small" style="color:var(--bad)">${esc(e.message)}</div>`; onDone(null); return; }
+    const pct = job.total ? Math.round(100 * job.done / job.total) : 0;
+    $(progId).innerHTML = `<div class="bar"><i style="width:${job.status === "færdig" ? 100 : pct}%"></i></div>
+      <div class="small">${job.status === "kører" ? `Arbejder… ${job.done}/${job.total || "?"}` : esc(job.status)}${job.note ? " · " + esc(job.note) : ""}${job.error ? ` · <span style="color:var(--bad)">${esc(job.error)}</span>` : ""}</div>`;
+    if (job.status === "kører") setTimeout(tick, 1200); else onDone(job);
+  };
+  tick();
+}
+
+// ---------- prøv regel på historik
+let SIM = [];
+async function runSim() {
+  const id = $("sim_rule").value; if (!id) { toast("Lav en regel først", true); return; }
+  $("simBtn").disabled = true; $("simResult").innerHTML = ""; SIM = [];
+  try {
+    const job = await api("/api/simulate", {method: "POST", body: JSON.stringify({rule_id: +id, days: $("sim_days").value})});
+    poll(job, "simProg", j => { $("simBtn").disabled = false; if (j) { SIM = j.results || []; renderSim(); } });
+  } catch (e) { $("simBtn").disabled = false; toast(e.message, true); }
+}
+function renderSim() {
+  if (!SIM.length) { $("simResult").innerHTML = '<div class="card empty">Ingen udgivelser at teste i perioden.</div>'; return; }
+  const hit = r => r.decision === "ville tilføje" || r.decision === "venteliste";
+  const f = $("simFilter").value;
+  const rows = SIM.filter(r => !f || (f === "hit") === hit(r));
+  const n = SIM.filter(hit).length, ex = SIM.filter(r => r.decision === "findes allerede").length;
+  $("simResult").innerHTML = `<div class="chips" style="margin:12px 0"><span class="chip">Testet <b>${SIM.length}</b></span>
+      <span class="chip">Ville fange <b>${n}</b></span><span class="chip">Findes allerede <b>${ex}</b></span><span class="chip">Afvist <b>${SIM.length - n - ex}</b></span></div>
+    <div class="card" style="padding:0; overflow-x:auto"><table>
+    <thead><tr><th>Titel</th><th>Beslutning</th><th>Hvorfor</th></tr></thead><tbody>` +
+    rows.map(r => `<tr><td><b>${esc(r.title)}</b>${r.year ? " (" + r.year + ")" : ""}${r.count > 1 ? ` <span class="small">×${r.count}</span>` : ""}
+        <div class="small">${esc(r.release)}</div><div class="small">${fmt(r.ts)}</div></td>
+      <td class="d ${dcls(r.decision)}">${esc(r.decision === "venteliste" ? "ville vente" : r.decision)}</td>
+      <td>${esc(r.detail)}${r.match ? `<div class="small" style="margin-top:4px">Fundet: ${esc(r.match.title)} (${r.match.year || "?"}) · ${esc(LANG_DA[r.match.language] || r.match.language || "sprog ukendt")} · ${esc((r.match.genres || []).map(g => GENRE_DA[g] || g).join(", ") || "ingen genrer")}</div>` : ""}</td></tr>`).join("") +
+    "</tbody></table></div>";
+}
+
+// ---------- premierer
+let PREM = [];
+async function loadPrem(refresh) {
+  fillRuleSelect("prem_rule", "series");
+  $("premBody").innerHTML = `<tr><td colspan="5" class="empty">${refresh ? "Henter fra TVmaze – det tager op til et minut…" : "Henter…"}</td></tr>`;
+  try { const d = await api(`/api/premieres?refresh=${refresh ? 1 : 0}`); PREM = d.items; $("premInfo").textContent = d.fetched ? "Hentet " + d.fetched.replace("T", " ") : ""; renderPrem(); }
+  catch (e) { $("premBody").innerHTML = `<tr><td colspan="5" class="empty">${esc(e.message)}</td></tr>`; }
+}
+function renderPrem() {
+  const q = $("prem_q").value.toLowerCase(), hide = $("prem_hide").checked;
+  const rows = PREM.filter(p => (!hide || !p.exists) && (!q || [p.title, p.network, ...(p.genres || []), p.type].join(" ").toLowerCase().includes(q)));
+  $("premBody").innerHTML = rows.length ? rows.map((p, i) => `<tr>
+    <td style="white-space:nowrap">${esc(p.date)}</td>
+    <td><b>${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener" style="color:inherit">${esc(p.title)}</a>` : esc(p.title)}</b>
+      ${p.exists ? '<span class="tag">findes i Sonarr</span>' : ""}${p.following ? '<span class="tag">følges</span>' : ""}
+      ${p.summary ? `<div class="small">${esc(p.summary)}</div>` : ""}</td>
+    <td>${esc(p.network)}</td>
+    <td>${esc(LANG_DA[p.language] || p.language)}<div class="small">${esc((p.genres || []).map(g => GENRE_DA[g] || g).join(", ") || p.type)}</div></td>
+    <td><div class="btns">${p.exists ? "" : `
+      <button class="b" ${p.tvdb ? "" : 'disabled title="Ikke på TheTVDB endnu"'} onclick="premAdd(${PREM.indexOf(p)})">Tilføj nu</button>
+      <button class="b" ${p.following ? "disabled" : ""} onclick="premFollow(${PREM.indexOf(p)})">Følg</button>`}</div></td></tr>`).join("")
+    : '<tr><td colspan="5" class="empty">Ingen premierer fundet.</td></tr>';
+}
+async function premAdd(i) {
+  const p = PREM[i];
+  if (!confirm(`Tilføj “${p.title}” til Sonarr nu med reglen “${$("prem_rule").selectedOptions[0]?.text}”?`)) return;
+  try { const r = await api("/api/premieres/add", {method: "POST", body: JSON.stringify({rule_id: +$("prem_rule").value, tvdb: p.tvdb, title: p.title})});
+        toast(`${p.title}: ${r.result}`); p.exists = true; renderPrem(); load(); } catch (e) { toast(e.message, true); }
+}
+async function premFollow(i) {
+  const p = PREM[i];
+  try { await api("/api/premieres/follow", {method: "POST", body: JSON.stringify({rule_id: +$("prem_rule").value, title: p.title, date: p.date})});
+        toast(`${p.title} følges – den står nu på ventelisten`); p.following = true; renderPrem(); load(); } catch (e) { toast(e.message, true); }
+}
+
+// ---------- statistik
+let ST = null;
+async function loadStats() {
+  $("statNote").innerHTML = S.features.tracearr ? "" : '<div class="warn">Tracearr er ikke forbundet. Tilføj TRACEARR_URL og TRACEARR_APIKEY i fangarr.env – indtil da vises kun størrelser.</div>';
+  try { const d = await api("/api/stats"); if (d && d.results) { ST = d; renderStats(); } else if (!ST) $("statBody").innerHTML = '<tr><td colspan="7" class="empty">Tryk “Beregn nu”.</td></tr>'; }
+  catch (e) { toast(e.message, true); }
+}
+async function refreshStats() {
+  $("statBtn").disabled = true;
+  try { const job = await api("/api/stats/refresh", {method: "POST"});
+        poll(job, "statProg", j => { $("statBtn").disabled = false; if (j && j.results) { ST = j; renderStats(); } }); }
+  catch (e) { $("statBtn").disabled = false; toast(e.message, true); }
+}
+function renderStats() {
+  const R = ST.results;
+  $("statRules").innerHTML = `<div class="small" style="margin:10px 0">Beregnet ${fmt(ST.started)}</div>` + (R.rules.length ? `<div class="card" style="padding:0; overflow-x:auto"><table>
+    <thead><tr><th>Regel</th><th class="num">Titler</th><th class="num">GB</th><th class="num">Afspilninger</th><th class="num">Pr. 100 GB</th><th class="num">Aldrig set</th><th class="num">Ingen efter 30 dage</th></tr></thead><tbody>` +
+    R.rules.map(g => `<tr><td><b>${esc(g.rule)}</b></td><td class="num">${g.titles}</td><td class="num">${g.gb.toLocaleString("da-DK")}</td>
+      <td class="num">${g.plays}</td><td class="num">${(g.plays_per_gb * 100).toFixed(1).replace(".", ",")}</td>
+      <td class="num">${g.unwatched}</td><td class="num">${g.stale}</td></tr>`).join("") + "</tbody></table></div>" : "");
+  const f = $("statFilter").value;
+  const rows = R.items.filter(i => !f || (f === "stale" ? i.stale : (i.watch && i.watch.plays === 0)));
+  $("statBody").innerHTML = rows.length ? rows.map(i => { const w = i.watch; return `<tr>
+    <td><b>${esc(i.title)}</b>${i.year ? " (" + i.year + ")" : ""} <span class="small">${i.media === "movie" ? "Film" : "Serie"}</span>${i.stale ? ' <span class="tag" style="color:var(--warn)">kandidat til oprydning</span>' : ""}</td>
+    <td>${esc(i.rule)}</td><td style="white-space:nowrap">${esc(i.added)}</td><td class="num">${i.gb.toLocaleString("da-DK")}</td>
+    <td class="num">${w ? w.plays : "?"}</td><td class="num">${w ? w.users : "?"}</td><td class="num">${w ? w.plays_30 : "?"}</td></tr>`; }).join("")
+    : '<tr><td colspan="7" class="empty">Ingen titler med Fangarr-mærker i Sonarr/Radarr endnu.</td></tr>';
+}
+
+// ---------- eksport / import
+async function loadBackups() {
+  try { const b = await api("/api/backups");
+        $("backupList").innerHTML = b.length ? "Gemt på serveren: " + b.slice(0, 5).map(x => esc(x.name)).join(", ") + (b.length > 5 ? ` (+${b.length - 5} flere)` : "") : "Ingen eksportfiler på serveren endnu."; }
+  catch (e) {}
+}
+async function backupNow() { try { await api("/api/backups/now", {method: "POST"}); loadBackups(); toast("Eksporten er gemt på serveren"); } catch (e) { toast(e.message, true); } }
+async function importFile(inp) {
+  const f = inp.files[0]; inp.value = ""; if (!f) return;
+  if (!confirm(`Importér “${f.name}”? Dine nuværende regler og indstillinger bliver erstattet.`)) return;
+  try { const r = await api("/api/import", {method: "POST", body: await f.text()});
+        toast(`Importeret: ${r.rules} regler, ${r.settings} indstillinger, ${r.waitlist} på ventelisten`); load(); }
+  catch (e) { toast(e.message, true); }
+}
+load();
+</script>
+</body>
+</html>
