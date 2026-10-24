@@ -334,10 +334,10 @@
           <div class="field"><label>Mappe</label><select id="r_root_folder"></select></div>
           <div class="field"><label>Kvalitetsprofil</label><select id="r_quality_profile_id"></select></div>
           <div class="field" id="monitorField"><label>Overvåg</label><select id="r_monitor">
-            <option value="latestSeason">Kun nyeste sæson</option>
-            <option value="future">Kun fremtidige afsnit</option>
-            <option value="firstSeason">Kun første sæson</option>
-            <option value="all">Alle sæsoner</option>
+            <option value="firstSeason">Første sæson + nye sæsoner</option>
+            <option value="latestSeason">Nyeste sæson + nye sæsoner</option>
+            <option value="all">Alle sæsoner + nye sæsoner</option>
+            <option value="future">Kun fremtidige afsnit (ikke det fundne)</option>
             <option value="none">Intet (kun tilføj)</option></select></div>
           <div class="field" id="availField" style="display:none"><label>Hent når filmen er</label><select id="r_minimum_availability">
             <option value="released">Udgivet</option><option value="inCinemas">I biografen</option><option value="announced">Annonceret</option></select></div>
@@ -366,7 +366,7 @@ const GENRES = {
   movie: ["Drama","Crime","Thriller","Mystery","Comedy","Documentary","Action","Adventure","Science Fiction","Fantasy","Family","Animation","Romance","Horror","War","History","Music","Western","TV Movie"]
 };
 const GENRE_DA = {"Drama":"Drama","Crime":"Krimi","Thriller":"Thriller","Mystery":"Mysterie","Comedy":"Komedie","Documentary":"Dokumentar","Reality":"Reality","Mini-Series":"Miniserie","Action":"Action","Adventure":"Eventyr","Science Fiction":"Science fiction","Fantasy":"Fantasy","Family":"Familie","Children":"Børn","Animation":"Animation","Romance":"Romantik","Horror":"Gys","War":"Krig","Western":"Western","Soap":"Sæbeopera","Talk Show":"Talkshow","Game Show":"Quiz/gameshow","News":"Nyheder","Sport":"Sport","Food":"Mad","Travel":"Rejser","Home and Garden":"Hus og have","History":"Historie","Music":"Musik","TV Movie":"Tv-film"};
-const MONITOR_DA = {latestSeason:"nyeste sæson",future:"fremtidige afsnit",firstSeason:"første sæson",all:"alle sæsoner",none:"intet"};
+const MONITOR_DA = {latestSeason:"nyeste sæson + nye",future:"kun fremtidige afsnit",firstSeason:"første sæson + nye",all:"alle sæsoner + nye",none:"intet"};
 
 let S = null, editing = null, logRows = [], AB = null;
 const SET_NUM = ["max_series_per_day", "max_movies_per_day", "max_disk_pct", "summary_hour", "wait_hours", "wait_days", "refresh_hours", "refresh_days", "backup_hour", "backup_keep"];

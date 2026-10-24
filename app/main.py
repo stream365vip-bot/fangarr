@@ -500,6 +500,8 @@ def add_title(inst, media, cand, rule):
         body["addOptions"] = {"searchForMovie": search, "monitor": "movieOnly"}
         return arr(inst, "POST", "/movie", json=body)
     body["seasonFolder"] = True
+    # nye sæsoner, der kommer senere, overvåges automatisk (Sonarr v4; ignoreres af v3)
+    body["monitorNewItems"] = "none" if rule.get("monitor") == "none" else "all"
     body.setdefault("languageProfileId", 1)  # kun brugt af Sonarr v3
     body["addOptions"] = {
         "monitor": rule.get("monitor") or "latestSeason",
