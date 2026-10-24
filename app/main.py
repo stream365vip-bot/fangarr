@@ -1549,78 +1549,83 @@ def stats_get():
 
 # ================================================================ #9 kommende danske premierer (TVmaze)
 
-_prem = {"ts": 0.0, "items": []}
+_prem = {"ts": 0.0, "items": [], "key": None}
 _prem_lock = threading.Lock()
 
 
-def tvmaze(path, params):
-    for _ in range(3):
-        try:
-            r = httpx.get("https://api.tvmaze.com" + path, params=params, timeout=20)
-        except httpx.HTTPError:
-            return []
-        if r.status_code == 429:
-            time.sleep(2)
+def seerr_get(path, params=None):
+    r = httpx.get(SEERR_URL + "/api/v1" + path, headers={"X-Api-Key": SEERR_APIKEY}, params=params, timeout=30)
+    r.raise_for_status()
+    return r.json()
+
+
+def fetch_premieres(days, lang):
+    """Kommende nye serier fra TMDb via Seerr (Seerr har selv TMDb-adgang). TVmaze har næsten ingen danske data."""
+    if not SEERR_URL or not SEERR_APIKEY:
+        raise HTTPException(400, "Premierer kræver Seerr (SEERR_URL og SEERR_APIKEY i fangarr.env)")
+    fra = now().date()
+    til = fra + datetime.timedelta(days=days)
+    found = []
+    try:
+        for code in [c.strip() for c in lang.split(",") if c.strip()]:
+            for page in range(1, 6):
+                d = seerr_get("/discover/tv", {"page": page, "language": code, "sortBy": "first_air_date.asc",
+                                                "firstAirDateGte": fra.isoformat(), "firstAirDateLte": til.isoformat()})
+                found += d.get("results") or []
+                if page >= to_int(d.get("totalPages")):
+                    break
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"kan ikke hente fra Seerr ({e.__class__.__name__})")
+    out, seen = [], set()
+    for x in found:
+        if x.get("id") in seen:
             continue
-        if r.status_code != 200:
-            return []
+        seen.add(x.get("id"))
+        it = {"date": x.get("firstAirDate") or "", "title": x.get("name") or x.get("originalName") or "",
+              "network": "", "language": x.get("originalLanguage") or "", "genres": [], "type": "",
+              "tvdb": None, "tmdb": x.get("id"), "url": f"https://www.themoviedb.org/tv/{x.get('id')}",
+              "summary": (x.get("overview") or "")[:240], "country": ", ".join(x.get("originCountry") or [])}
         try:
-            return r.json()
-        except ValueError:
-            return []
-    return []
-
-
-def strip_html(t):
-    return re.sub(r"<[^>]+>", "", t or "").strip()
-
-
-def fetch_premieres(days):
-    seen, out = set(), []
-    for d in range(days):
-        date = (now() + datetime.timedelta(days=d)).date().isoformat()
-        for path in ("/schedule", "/schedule/web"):
-            for ep in tvmaze(path, {"country": "DK", "date": date}) or []:
-                if to_int(ep.get("season")) != 1 or to_int(ep.get("number")) != 1:
-                    continue
-                show = ep.get("show") or (ep.get("_embedded") or {}).get("show") or {}
-                if not show or show.get("id") in seen:
-                    continue
-                seen.add(show.get("id"))
-                net = (show.get("network") or {}).get("name") or (show.get("webChannel") or {}).get("name") or ""
-                out.append({"date": ep.get("airdate") or date, "title": show.get("name") or "", "network": net,
-                            "language": show.get("language") or "", "genres": show.get("genres") or [],
-                            "type": show.get("type") or "", "tvdb": (show.get("externals") or {}).get("thetvdb"),
-                            "url": show.get("url") or "", "summary": strip_html(show.get("summary"))[:240]})
-            time.sleep(0.4)  # TVmaze tillader ca. 20 kald pr. 10 sek.
-    return sorted(out, key=lambda x: (x["date"], x["title"]))
+            det = seerr_get(f"/tv/{x.get('id')}")
+            it["tvdb"] = (det.get("externalIds") or {}).get("tvdbId")
+            it["network"] = ", ".join(n.get("name") for n in (det.get("networks") or []) if n.get("name"))
+            it["genres"] = [g.get("name") for g in (det.get("genres") or []) if g.get("name")]
+            it["summary"] = it["summary"] or (det.get("overview") or "")[:240]
+        except (httpx.HTTPError, ValueError):
+            pass
+        out.append(it)
+    return sorted(out, key=lambda i: (i["date"], i["title"]))
 
 
 def premiere_status(items):
-    tvdb_have = set()
+    tvdb_have, tmdb_have = set(), set()
     for inst in INSTANCES.values():
         if inst["type"] != "sonarr":
             continue
         try:
-            tvdb_have |= {to_int(x.get("tvdbId")) for x in library(inst, "series")}
+            lib = library(inst, "series")
+            tvdb_have |= {to_int(x.get("tvdbId")) for x in lib}
+            tmdb_have |= {to_int(x.get("tmdbId")) for x in lib if x.get("tmdbId")}
         except httpx.HTTPError:
             pass
     con = db()
     waiting = {loose(r["title"]) for r in con.execute("SELECT title FROM waitlist WHERE status='venter' AND media='series'").fetchall()}
     con.close()
     for it in items:
-        it["exists"] = bool(it["tvdb"]) and to_int(it["tvdb"]) in tvdb_have
+        it["exists"] = (bool(it["tvdb"]) and to_int(it["tvdb"]) in tvdb_have) or (bool(it.get("tmdb")) and to_int(it["tmdb"]) in tmdb_have)
         it["following"] = loose(it["title"]) in waiting
     return items
 
 
 @app.get("/api/premieres")
-def premieres(refresh: int = 0, days: int = 21):
-    days = max(1, min(30, days))
+def premieres(refresh: int = 0, days: int = 21, lang: str = "da"):
+    days = max(1, min(60, days))
+    lang = ",".join(c for c in re.findall(r"[a-z]{2}", lang.lower())[:5]) or "da"
     with _prem_lock:
-        if refresh or not _prem["items"] or time.time() - _prem["ts"] > 6 * 3600:
-            _prem["items"] = fetch_premieres(days)
+        if refresh or _prem.get("key") != (days, lang) or time.time() - _prem["ts"] > 6 * 3600:
+            _prem["items"] = fetch_premieres(days, lang)
             _prem["ts"] = time.time()
+            _prem["key"] = (days, lang)
         items = [dict(x) for x in _prem["items"]]
     return {"fetched": datetime.datetime.fromtimestamp(_prem["ts"]).isoformat(timespec="minutes") if _prem["ts"] else "",
             "items": premiere_status(items)}

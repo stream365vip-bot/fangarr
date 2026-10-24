@@ -153,12 +153,16 @@
     <div class="row" style="justify-content:space-between">
       <div>
         <h2>Kommende danske premierer</h2>
-        <p class="hint" style="margin:0">Nye serier og programmer på danske kanaler og streamingtjenester de næste 3 uger (fra TVmaze).
+        <p class="hint" style="margin:0">Nye serier og programmer, der får premiere de kommende uger (fra TMDb via Seerr).
           <b>Tilføj nu</b> lægger serien i Sonarr med det samme. <b>Følg</b> sætter den på ventelisten, så den tilføjes, så snart TheTVDB har den.</p>
       </div>
       <button class="b" onclick="loadPrem(1)">Hent igen</button>
     </div>
     <div class="row" style="margin-top:12px">
+      <label style="margin:0">Sprog</label><select id="prem_lang" style="width:auto" onchange="loadPrem(0)">
+        <option value="da">Dansk</option><option value="da,sv,no">Dansk, svensk og norsk</option><option value="en">Engelsk</option></select>
+      <label style="margin:0">Periode</label><select id="prem_days" style="width:auto" onchange="loadPrem(0)">
+        <option value="21">3 uger</option><option value="42">6 uger</option><option value="60">2 måneder</option></select>
       <label style="margin:0">Brug reglen</label><select id="prem_rule" style="width:auto"></select>
       <span class="small">Reglen bestemmer mappe, kvalitet, overvågning og mærke.</span>
     </div>
@@ -727,8 +731,8 @@ function renderSim() {
 let PREM = [];
 async function loadPrem(refresh) {
   fillRuleSelect("prem_rule", "series");
-  $("premBody").innerHTML = `<tr><td colspan="5" class="empty">${refresh ? "Henter fra TVmaze – det tager op til et minut…" : "Henter…"}</td></tr>`;
-  try { const d = await api(`/api/premieres?refresh=${refresh ? 1 : 0}`); PREM = d.items; $("premInfo").textContent = d.fetched ? "Hentet " + d.fetched.replace("T", " ") : ""; renderPrem(); }
+  $("premBody").innerHTML = `<tr><td colspan="5" class="empty">Henter fra Seerr…</td></tr>`;
+  try { const d = await api(`/api/premieres?refresh=${refresh ? 1 : 0}&lang=${encodeURIComponent($("prem_lang").value)}&days=${$("prem_days").value}`); PREM = d.items; $("premInfo").textContent = d.fetched ? "Hentet " + d.fetched.replace("T", " ") : ""; renderPrem(); }
   catch (e) { $("premBody").innerHTML = `<tr><td colspan="5" class="empty">${esc(e.message)}</td></tr>`; }
 }
 function renderPrem() {
@@ -739,10 +743,10 @@ function renderPrem() {
     <td><b>${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener" style="color:inherit">${esc(p.title)}</a>` : esc(p.title)}</b>
       ${p.exists ? '<span class="tag">findes i Sonarr</span>' : ""}${p.following ? '<span class="tag">følges</span>' : ""}
       ${p.summary ? `<div class="small">${esc(p.summary)}</div>` : ""}</td>
-    <td>${esc(p.network)}</td>
-    <td>${esc(LANG_DA[p.language] || p.language)}<div class="small">${esc((p.genres || []).map(g => GENRE_DA[g] || g).join(", ") || p.type)}</div></td>
+    <td>${esc(p.network || "–")}${p.country ? `<div class="small">${esc(p.country)}</div>` : ""}</td>
+    <td>${esc(({da:"Dansk",sv:"Svensk",no:"Norsk",nb:"Norsk",en:"Engelsk"})[p.language] || LANG_DA[p.language] || p.language)}<div class="small">${esc((p.genres || []).map(g => GENRE_DA[g] || g).join(", ") || p.type)}</div></td>
     <td><div class="btns">${p.exists ? "" : `
-      <button class="b" ${p.tvdb ? "" : 'disabled title="Ikke på TheTVDB endnu"'} onclick="premAdd(${PREM.indexOf(p)})">Tilføj nu</button>
+      <button class="b" ${p.tvdb ? "" : 'disabled title="Ikke på TheTVDB endnu – brug Følg"'} onclick="premAdd(${PREM.indexOf(p)})">Tilføj nu</button>
       <button class="b" ${p.following ? "disabled" : ""} onclick="premFollow(${PREM.indexOf(p)})">Følg</button>`}</div></td></tr>`).join("")
     : '<tr><td colspan="5" class="empty">Ingen premierer fundet.</td></tr>';
 }
