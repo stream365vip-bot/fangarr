@@ -356,17 +356,23 @@ def dk_variant(title):
     return v if v != title else None
 
 
-def suggest(inst, media, title, year, rule, limit=3):
+def suggest(inst, media, title, year, rule, limit=3, cache=None):
     """Mulige match, når titlen ikke passer præcist (fx dansk titel, men engelsk navn hos TheTVDB).
     Kun bud, der passer til reglen (eller hvor TheTVDB mangler oplysninger). Godkendes manuelt."""
     seen, out = set(), []
     for term in [title, dk_variant(title)]:
         if not term:
             continue
-        try:
-            found = lookup(inst, media, term, year)
-        except httpx.HTTPError:
-            continue
+        ck = (inst["name"], term)
+        if cache is not None and ck in cache:
+            found = cache[ck]
+        else:
+            try:
+                found = lookup(inst, media, term, year)
+            except httpx.HTTPError:
+                found = []
+            if cache is not None:
+                cache[ck] = found
         for c in found[:5]:
             key = c.get("tvdbId") if media == "series" else c.get("tmdbId")
             if not key or key in seen:
@@ -648,6 +654,7 @@ def process(p, test=False, from_waitlist=False, rules_override=None):
         return done("afvist", "ingen aktive regler for " + ("film" if media == "movie" else "serier"))
 
     cache = {}
+    sugg_cache = {}
     wait_rule, wait_why = None, ""
     for r in rules:
         name = r.get("name") or f"regel {r.get('id')}"
@@ -679,14 +686,20 @@ def process(p, test=False, from_waitlist=False, rules_override=None):
             res["checks"].append(f"{name}: {why}")
             if (why == NOT_FOUND or only) and (r.get("wait") or only) and not wait_rule:
                 wait_rule, wait_why = name, why
-                if why == NOT_FOUND:
-                    try:
-                        res["suggestions"] = suggest(inst, media, title, year, r)
-                    except Exception:  # forslag er en hjælp – må aldrig stoppe behandlingen
-                        res["suggestions"] = []
-                    for sg in res["suggestions"]:
-                        res["checks"].append(f"{name}: muligt match (kræver godkendelse): {sg['title']} ({sg['year'] or '?'})"
-                                             + (" – findes allerede" if sg["exists"] else ""))
+            if why == NOT_FOUND and r.get("wait") and not only:
+                # forslag for hver regel, der venter – et bud knyttes til den første regel, det passer til
+                try:
+                    found = suggest(inst, media, title, year, r, cache=sugg_cache)
+                except Exception:  # forslag er en hjælp – må aldrig stoppe behandlingen
+                    found = []
+                have = {x["id"] for x in res["suggestions"]}
+                for sg in found:
+                    if sg["id"] in have or len(res["suggestions"]) >= 3:
+                        continue
+                    res["suggestions"].append(sg)
+                    res["checks"].append(f"{name}: muligt match (kræver godkendelse): {sg['title']}"
+                                         + ("" if re.search(r"\(\d{4}\)$", sg["title"]) else f" ({sg['year'] or '?'})")
+                                         + (" – findes allerede" if sg["exists"] else ""))
             continue
         inf = describe(media, cand)
         res["match"] = inf
