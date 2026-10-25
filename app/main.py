@@ -92,6 +92,9 @@ def init_db():
             "CREATE TABLE IF NOT EXISTS added (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, instance TEXT,"
             " media TEXT, arr_id INTEGER, title TEXT, last_refresh TEXT)"
         )
+        cols = [r[1] for r in con.execute("PRAGMA table_info(waitlist)").fetchall()]
+        if "suggestions" not in cols:
+            con.execute("ALTER TABLE waitlist ADD COLUMN suggestions TEXT DEFAULT '[]'")
         cols = [r[1] for r in con.execute("PRAGMA table_info(added)").fetchall()]
         for c in ("ext_id", "rule"):
             if c not in cols:
@@ -342,6 +345,43 @@ def lookup(inst, media, title, year):
 NOT_FOUND = "ingen titel passer præcist"
 
 
+def dk_variant(title):
+    """Udgivelser skriver æ/ø/å som ae/oe/aa. Giv den danske stavemåde (eller None)."""
+    v = re.sub(r"aa", "å", title)
+    v = re.sub(r"Aa", "Å", v)
+    v = re.sub(r"oe", "ø", v)
+    v = re.sub(r"Oe", "Ø", v)
+    v = re.sub(r"ae", "æ", v)
+    v = re.sub(r"Ae", "Æ", v)
+    return v if v != title else None
+
+
+def suggest(inst, media, title, year, rule, limit=3):
+    """Mulige match, når titlen ikke passer præcist (fx dansk titel, men engelsk navn hos TheTVDB).
+    Kun bud, der passer til reglen (eller hvor TheTVDB mangler oplysninger). Godkendes manuelt."""
+    seen, out = set(), []
+    for term in [title, dk_variant(title)]:
+        if not term:
+            continue
+        try:
+            found = lookup(inst, media, term, year)
+        except httpx.HTTPError:
+            continue
+        for c in found[:5]:
+            key = c.get("tvdbId") if media == "series" else c.get("tmdbId")
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            inf = describe(media, c)
+            ok, why, missing = rule_check(rule, inf)
+            if not ok and not missing:
+                continue
+            out.append({"id": key, "title": inf["title"], "year": inf["year"], "language": inf["language"],
+                        "network": inf["network"], "genres": inf["genres"], "exists": inf["exists"],
+                        "instance": inst["name"], "rule": rule.get("name") or "", "note": "" if ok else why})
+    return out[:limit]
+
+
 def pick(cands, title, year):
     """Find præcis én titel, der passer. Ellers en forklaring."""
     t, tl = norm(title), loose(title)
@@ -574,7 +614,8 @@ def process(p, test=False, from_waitlist=False, rules_override=None):
     if not year:
         year = year_from_release(release, title)
     res = {"media": media, "title": title, "year": year, "release": release,
-           "decision": "afvist", "rule": "", "detail": "", "match": None, "checks": [], "can_wait": False}
+           "decision": "afvist", "rule": "", "detail": "", "match": None, "checks": [], "can_wait": False,
+           "suggestions": []}
 
     def done(decision, detail, rule=""):
         res.update(decision=decision, detail=detail, rule=rule)
@@ -638,6 +679,14 @@ def process(p, test=False, from_waitlist=False, rules_override=None):
             res["checks"].append(f"{name}: {why}")
             if (why == NOT_FOUND or only) and (r.get("wait") or only) and not wait_rule:
                 wait_rule, wait_why = name, why
+                if why == NOT_FOUND:
+                    try:
+                        res["suggestions"] = suggest(inst, media, title, year, r)
+                    except Exception:  # forslag er en hjælp – må aldrig stoppe behandlingen
+                        res["suggestions"] = []
+                    for sg in res["suggestions"]:
+                        res["checks"].append(f"{name}: muligt match (kræver godkendelse): {sg['title']} ({sg['year'] or '?'})"
+                                             + (" – findes allerede" if sg["exists"] else ""))
             continue
         inf = describe(media, cand)
         res["match"] = inf
@@ -685,7 +734,7 @@ def process(p, test=False, from_waitlist=False, rules_override=None):
         if from_waitlist:
             res.update(decision="venter stadig", detail=reason, rule=wait_rule)
             return res
-        add_to_waitlist(media, title, release, p, wait_rule, reason)
+        add_to_waitlist(media, title, release, p, wait_rule, reason, suggestions=res["suggestions"])
         return done("venteliste", "venter på TheTVDB/TMDb: " + reason, wait_rule)
     return done("afvist", "; ".join(res["checks"]) or "ingen regel passede")
 
@@ -721,21 +770,22 @@ def seerr_status(media, cand):
 
 # ---------------------------------------------------------------- venteliste
 
-def add_to_waitlist(media, title, release, payload, rule, reason, created=None):
+def add_to_waitlist(media, title, release, payload, rule, reason, created=None, suggestions=None):
+    sj = json.dumps(suggestions or [])
     key = loose(title)
     con = db()
     with con:
         rows = con.execute("SELECT id, title FROM waitlist WHERE status='venter' AND media=?", (media,)).fetchall()
         for r in rows:
             if loose(r["title"]) == key:
-                con.execute("UPDATE waitlist SET release=?, reason=? WHERE id=?", (release, reason, r["id"]))
+                con.execute("UPDATE waitlist SET release=?, reason=?, suggestions=? WHERE id=?", (release, reason, sj, r["id"]))
                 break
         else:
             hours = to_int(get_settings()["wait_hours"]) or 2
             con.execute(
-                "INSERT INTO waitlist (created, media, title, release, payload, attempts, next_try, status, reason, rule)"
-                " VALUES (?,?,?,?,?,0,?,'venter',?,?)",
-                (iso(created or now()), media, title, release, json.dumps(payload), iso(now() + datetime.timedelta(hours=hours)), reason, rule),
+                "INSERT INTO waitlist (created, media, title, release, payload, attempts, next_try, status, reason, rule, suggestions)"
+                " VALUES (?,?,?,?,?,0,?,'venter',?,?,?)",
+                (iso(created or now()), media, title, release, json.dumps(payload), iso(now() + datetime.timedelta(hours=hours)), reason, rule, sj),
             )
     con.close()
 
@@ -757,8 +807,9 @@ def retry_waitlist_item(row, s):
         status, reason = ("afvist", res["detail"])
     con = db()
     with con:
-        con.execute("UPDATE waitlist SET attempts=attempts+1, last_try=?, next_try=?, status=?, reason=? WHERE id=?",
-                    (iso(now()), iso(now() + datetime.timedelta(hours=hours)), status, reason, row["id"]))
+        con.execute("UPDATE waitlist SET attempts=attempts+1, last_try=?, next_try=?, status=?, reason=?, suggestions=? WHERE id=?",
+                    (iso(now()), iso(now() + datetime.timedelta(hours=hours)), status, reason,
+                     json.dumps(res.get("suggestions") or []) if status == "venter" else "[]", row["id"]))
     con.close()
     if status == "udløbet":
         write_log(row["media"], row["release"], row["title"], 0, "udløbet", row["rule"], reason, bool(s["dry_run"]))
@@ -773,6 +824,10 @@ def get_waitlist():
     for r in rows:
         d = dict(r)
         d.pop("payload", None)
+        try:
+            d["suggestions"] = json.loads(d.get("suggestions") or "[]")
+        except ValueError:
+            d["suggestions"] = []
         out.append(d)
     return out
 
@@ -813,8 +868,9 @@ def daily_summary(s):
     fejl = con.execute("SELECT COUNT(*) FROM log WHERE ts>=? AND decision='fejl'", (since,)).fetchone()[0]
     venter = con.execute("SELECT COUNT(*) FROM waitlist WHERE status='venter'").fetchone()[0]
     udl = con.execute("SELECT COUNT(*) FROM log WHERE ts>=? AND decision='udløbet'", (since,)).fetchone()[0]
+    forslag = con.execute("SELECT COUNT(*) FROM waitlist WHERE status='venter' AND suggestions NOT IN ('', '[]')").fetchone()[0]
     con.close()
-    if not (rows or fejl or udl):
+    if not (rows or fejl or udl or forslag):
         return
     lines = [f"{'🎬' if r['media'] == 'movie' else '📺'} {r['title']} ({r['year'] or '?'}) – {r['decision']}" for r in rows[:30]]
     more = f"\n… og {len(rows) - 30} mere" if len(rows) > 30 else ""
@@ -823,6 +879,8 @@ def daily_summary(s):
     txt += f"\n\n⏳ {venter} på ventelisten"
     if udl:
         txt += f", {udl} opgivet (ikke på TheTVDB/TMDb i tide)"
+    if forslag:
+        txt += f"\n👉 {forslag} med forslag, der venter på din godkendelse (Fangarr › Venteliste)"
     if fejl:
         txt += f"\n⚠️ {fejl} fejl – se loggen i Fangarr."
     telegram(txt)
@@ -1159,6 +1217,50 @@ async def waitlist_retry(wid: int):
         row = con.execute("SELECT * FROM waitlist WHERE id=?", (wid,)).fetchone()
         con.close()
     await run_in_threadpool(retry_waitlist_item, row, get_settings())
+    return get_waitlist()
+
+
+@app.post("/api/waitlist/{wid}/approve")
+async def waitlist_approve(wid: int, req: Request):
+    b = await req.json()
+    con = db()
+    row = con.execute("SELECT * FROM waitlist WHERE id=?", (wid,)).fetchone()
+    con.close()
+    if not row or row["status"] != "venter":
+        raise HTTPException(404, "titlen står ikke længere på ventelisten")
+    sugg = json.loads(row["suggestions"] or "[]")
+    sg = next((x for x in sugg if str(x.get("id")) == str(b.get("id"))), None)
+    if not sg:
+        raise HTTPException(400, "forslaget findes ikke længere – tryk Opdatér")
+    media = row["media"]
+    rule = next((r for r in get_rules() if r.get("name") == sg.get("rule") and r.get("media") == media), None)
+    inst = INSTANCES.get(sg.get("instance"))
+    if not rule or not inst:
+        raise HTTPException(400, "reglen eller Sonarr/Radarr findes ikke længere")
+    term = f"tvdb:{sg['id']}" if media == "series" else f"tmdb:{sg['id']}"
+    found = await run_in_threadpool(arr, inst, "GET", "/series/lookup" if media == "series" else "/movie/lookup", params={"term": term})
+    cand = (found or [None])[0] if isinstance(found, list) else found
+    if not cand:
+        raise HTTPException(404, f"{term} blev ikke fundet i {inst['name']}")
+    shown = cand.get("title") or "?"
+    if not re.search(r"\(\d{4}\)$", shown):
+        shown += f" ({to_int(cand.get('year')) or '?'})"
+    if cand.get("id"):
+        result, detail = "findes allerede", f"godkendt: {row['title']} = {shown}, findes allerede i {inst['name']}"
+    else:
+        s = get_settings()
+        pct = disk_pct()
+        if pct is not None and pct > to_float(s["max_disk_pct"]):
+            raise HTTPException(400, f"disken er {pct} % fyldt (grænse {s['max_disk_pct']} %)")
+        created = await run_in_threadpool(add_title, inst, media, cand, rule)
+        remember_added(inst, media, created, cand.get("title") or "", rule.get("name") or "")
+        result, detail = "tilføjet", f"godkendt manuelt: {row['title']} = {shown} → {inst['name']} › {rule.get('root_folder')}"
+    write_log(media, row["release"], cand.get("title") or row["title"], to_int(cand.get("year")), result,
+              rule.get("name") or "", detail, False)
+    con = db()
+    with con:
+        con.execute("UPDATE waitlist SET status='klar', reason=?, suggestions='[]' WHERE id=?", (detail, wid))
+    con.close()
     return get_waitlist()
 
 

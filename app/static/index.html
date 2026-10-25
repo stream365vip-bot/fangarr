@@ -221,7 +221,8 @@
     <div class="row" style="justify-content:space-between">
       <div>
         <h2>Venteliste</h2>
-        <p class="hint" style="margin:0">Udgivelser, hvor TheTVDB/TMDb endnu ikke har titlen eller de oplysninger, reglen kræver. Fangarr prøver igen automatisk.</p>
+        <p class="hint" style="margin:0">Udgivelser, hvor TheTVDB/TMDb endnu ikke har titlen eller de oplysninger, reglen kræver. Fangarr prøver igen automatisk.
+          Står der et <b>muligt match</b> (fx dansk titel, men engelsk navn hos TheTVDB), så tryk <b>Godkend</b> ved det rigtige.</p>
       </div>
       <button class="b" onclick="loadWait()">Opdatér</button>
     </div>
@@ -621,9 +622,21 @@ function renderWait(rows) {
     <td class="d ${WAIT_CLS[w.status] || ""}">${esc(w.status)}</td>
     <td>${w.attempts}</td>
     <td>${w.status === "venter" ? fmt(w.next_try) : "–"}</td>
-    <td>${esc(w.reason)}</td>
+    <td>${esc(w.reason)}${(w.suggestions || []).length && w.status === "venter" ? `<div class="sugg"><div class="small" style="margin:8px 0 4px">Muligt match – godkend det rigtige:</div>` +
+      w.suggestions.map(sg => `<div class="row" style="margin:0 0 6px;gap:8px;flex-wrap:nowrap;align-items:flex-start">
+        <button class="b pri" style="flex:none" onclick="approveWait(${w.id}, '${esc(String(sg.id))}', this)">Godkend</button>
+        <span><b>${esc(sg.title)}</b>${/\(\d{4}\)$/.test(sg.title) ? "" : ` (${sg.year || "?"})`} · ${esc(LANG_DA[sg.language] || sg.language || "sprog ukendt")} · ${esc(sg.network || "kanal ukendt")}
+        · ${esc((sg.genres || []).map(g => GENRE_DA[g] || g).join(", ") || "ingen genrer")}${sg.exists ? ' · <b>findes allerede</b>' : ""}${sg.note ? `<span class="small"> (${esc(sg.note)})</span>` : ""}</span></div>`).join("") + "</div>" : ""}</td>
     <td><div class="btns"><button class="b" onclick="retryWait(${w.id})">Prøv nu</button><button class="b danger" onclick="delWait(${w.id})">Fjern</button></div></td></tr>`).join("")
     : '<tr><td colspan="6" class="empty">Ventelisten er tom.</td></tr>';
+}
+async function approveWait(id, sid, btn) {
+  const w = btn.closest("tr").querySelector("b").textContent;
+  const sg = btn.nextElementSibling.querySelector("b").textContent;
+  if (!confirm(`Er “${w}” det samme som “${sg}”? Den tilføjes med reglens mappe, profil og mærke.`)) return;
+  btn.disabled = true;
+  try { renderWait(await api(`/api/waitlist/${id}/approve`, {method: "POST", body: JSON.stringify({id: sid})})); toast("Godkendt"); load(); }
+  catch (e) { btn.disabled = false; toast(e.message, true); }
 }
 async function retryWait(id) {
   try { renderWait(await api(`/api/waitlist/${id}/retry`, {method: "POST"})); toast("Prøvet igen"); load(); } catch (e) { toast(e.message, true); }
