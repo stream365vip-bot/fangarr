@@ -272,7 +272,7 @@
     </div>
     <div class="card">
       <h2>Eksport og import</h2>
-      <p class="hint">Eksporten indeholder regler, indstillinger, autobrr-valg og ventelisten – ingen API-nøgler. Import <b>erstatter</b> dine regler og indstillinger, så eksportér først, hvis du vil kunne gå tilbage.</p>
+      <p class="hint">Eksporten indeholder regler, indstillinger, autobrr-valg, ventelisten og godkendte koblinger – ingen API-nøgler. Import <b>erstatter</b> dine regler og indstillinger, så eksportér først, hvis du vil kunne gå tilbage.</p>
       <div class="row">
         <a class="b" href="/api/export" download style="text-decoration:none">Hent eksportfil</a>
         <button class="b" onclick="$('impFile').click()">Importér fil…</button>
@@ -280,6 +280,12 @@
         <button class="b" onclick="backupNow()">Gem eksport på serveren nu</button>
       </div>
       <div id="backupList" class="small"></div>
+    </div>
+    <div class="card">
+      <h2>Godkendte koblinger</h2>
+      <p class="hint">Når du godkender et forslag på ventelisten, husker Fangarr koblingen (fx "Simon Siger" = "Simon Says (2026)"), så næste udgivelse med samme titel matches automatisk.</p>
+      <div style="overflow-x:auto"><table><thead><tr><th>Udgivelsens titel</th><th>Kobles til</th><th>Type</th><th>Godkendt</th><th></th></tr></thead>
+        <tbody id="aliasBody"></tbody></table></div>
     </div>
     <div class="small" id="version" style="text-align:right"></div>
     </section>
@@ -397,7 +403,7 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   if (b.dataset.tab === "autobrr") loadAutobrr();
   if (b.dataset.tab === "prem") loadPrem(0);
   if (b.dataset.tab === "stats") loadStats();
-  if (b.dataset.tab === "settings") loadBackups();
+  if (b.dataset.tab === "settings") { loadBackups(); loadAliases(); }
   if (b.dataset.tab === "test") fillRuleSelect("sim_rule", null);
 });
 
@@ -815,6 +821,19 @@ async function loadBackups() {
   try { const b = await api("/api/backups");
         $("backupList").innerHTML = b.length ? "Gemt på serveren: " + b.slice(0, 5).map(x => esc(x.name)).join(", ") + (b.length > 5 ? ` (+${b.length - 5} flere)` : "") : "Ingen eksportfiler på serveren endnu."; }
   catch (e) {}
+}
+async function loadAliases() {
+  try { renderAliases(await api("/api/aliases")); } catch (e) {}
+}
+function renderAliases(rows) {
+  $("aliasBody").innerHTML = rows.length ? rows.map(a => `<tr><td><b>${esc(a.release_title)}</b></td><td>${esc(a.title)} <span class="small">(${a.media === "movie" ? "TMDb" : "TheTVDB"} ${a.ext_id})</span></td>
+    <td>${a.media === "movie" ? "Film" : "Serie"}</td><td style="white-space:nowrap">${fmt(a.created)}</td>
+    <td><button class="b danger" onclick="delAlias(${a.id})">Fjern</button></td></tr>`).join("")
+    : '<tr><td colspan="5" class="empty">Ingen koblinger endnu.</td></tr>';
+}
+async function delAlias(id) {
+  if (!confirm("Fjern koblingen? Fremtidige udgivelser med den titel bliver så ikke længere matchet automatisk.")) return;
+  try { renderAliases(await api(`/api/aliases/${id}`, {method: "DELETE"})); toast("Koblingen er fjernet"); } catch (e) { toast(e.message, true); }
 }
 async function backupNow() { try { await api("/api/backups/now", {method: "POST"}); loadBackups(); toast("Eksporten er gemt på serveren"); } catch (e) { toast(e.message, true); } }
 async function importFile(inp) {

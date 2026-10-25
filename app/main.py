@@ -92,6 +92,10 @@ def init_db():
             "CREATE TABLE IF NOT EXISTS added (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, instance TEXT,"
             " media TEXT, arr_id INTEGER, title TEXT, last_refresh TEXT)"
         )
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS aliases (id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, media TEXT,"
+            " key TEXT, release_title TEXT, ext_id INTEGER, title TEXT, UNIQUE(media, key))"
+        )
         cols = [r[1] for r in con.execute("PRAGMA table_info(waitlist)").fetchall()]
         if "suggestions" not in cols:
             con.execute("ALTER TABLE waitlist ADD COLUMN suggestions TEXT DEFAULT '[]'")
@@ -306,13 +310,24 @@ def tvmaze_tvdb_id(title):
     return (d.get("externals") or {}).get("thetvdb")
 
 
-def find_title(inst, media, title, year):
+def find_title(inst, media, title, year, release=""):
     """Find titlen: 1) Sonarr/Radarr-opslag, 2) dit eget bibliotek (inkl. mappenavne),
     3) for serier: TVmaze -> TheTVDB-nummer -> Sonarr-opslag. Giver (titel, grund, samme-navn, note)."""
+    al = get_alias(media, title)
+    if al:
+        try:
+            hit = ext_lookup(inst, media, al["ext_id"])
+        except httpx.HTTPError:
+            hit = None
+        if hit:
+            return hit, None, [], "fundet via din godkendte kobling \"%s\" = \"%s\"" % (al["release_title"], hit.get("title"))
     found = lookup(inst, media, title, year)
     cand, why, same = pick_all(found, title, year)
     if cand or same or why != NOT_FOUND:
         return cand, why, same, ""
+    cc = country_match(found, title, year, release)
+    if cc:
+        return cc, None, [], "fundet som \"%s\" (landekode i TheTVDB-navnet passer til udgivelsen)" % cc.get("title")
     if media == "movie" and year:
         sub = subtitle_match(found, title, year)
         if sub:
@@ -378,6 +393,60 @@ def subtitle_match(cands, title, year):
         if any(t in title_variants(n) for n in names if n):
             hits.append(c)
     return hits[0] if len(hits) == 1 else None
+
+
+# landekoder i TheTVDB-navne ("Ton of Cash (DK)") – kun når udgivelsens sprog-mærke peger på landet
+RELEASE_COUNTRY = {"danish": {"DK"}, "swedish": {"SE"}, "norwegian": {"NO"}, "finnish": {"FI"},
+                   "icelandic": {"IS"}, "nordic": {"DK", "SE", "NO", "FI"}}
+
+
+def release_countries(release):
+    words = {w.lower() for w in re.split(r"[^A-Za-z]+", release or "") if w}
+    out = set()
+    for w, cc in RELEASE_COUNTRY.items():
+        if w in words:
+            out |= cc
+    return out
+
+
+def country_match(cands, title, year, release):
+    ccs = release_countries(release)
+    t = loose(title)
+    if not ccs or len(t) < 4:
+        return None
+    hits = []
+    for c in cands:
+        names = [c.get("title"), c.get("originalTitle")] + [a.get("title") for a in (c.get("alternateTitles") or [])]
+        for n in names:
+            m = re.match(r"^(.*?)\s*\((?:(\d{4})\)\s*\()?([A-Z]{2})\)\s*$", n or "")
+            if m and m.group(3) in ccs and loose(m.group(1)) == t:
+                if not year or abs(to_int(c.get("year")) - year) <= 1:
+                    hits.append(c)
+                break
+    return hits[0] if len(hits) == 1 else None
+
+
+def get_alias(media, title):
+    con = db()
+    row = con.execute("SELECT * FROM aliases WHERE media=? AND key=?", (media, loose(title))).fetchone()
+    con.close()
+    return dict(row) if row else None
+
+
+def save_alias(media, release_title, ext_id, shown):
+    con = db()
+    with con:
+        con.execute("INSERT OR REPLACE INTO aliases (created, media, key, release_title, ext_id, title) VALUES (?,?,?,?,?,?)",
+                    (iso(now()), media, loose(release_title), release_title, to_int(ext_id), shown))
+    con.close()
+
+
+def ext_lookup(inst, media, ext_id):
+    term = f"tvdb:{ext_id}" if media == "series" else f"tmdb:{ext_id}"
+    found = arr(inst, "GET", "/series/lookup" if media == "series" else "/movie/lookup", params={"term": term})
+    if isinstance(found, dict):
+        return found
+    return (found or [None])[0]
 
 
 def dk_variant(title):
@@ -669,7 +738,8 @@ def process(p, test=False, from_waitlist=False, rules_override=None):
                 if m.get("rating"):
                     parts.append(f"rating {m['rating']}")
                 info = " · ".join(parts)
-            notes = [c for c in res["checks"] if "fundet i dit bibliotek" in c or "fundet via TVmaze" in c or "valgte den fra" in c or "undertitel" in c]
+            notes = [c for c in res["checks"] if "fundet i dit bibliotek" in c or "fundet via TVmaze" in c or "valgte den fra" in c or "undertitel" in c
+                     or "godkendte kobling" in c or "landekode" in c]
             if notes:
                 info = (info + " · " if info else "") + notes[0].split(": ", 1)[-1]
             write_log(media, release, m.get("title") or title, m.get("year") or year, decision, rule, detail, dry, info)
@@ -702,7 +772,7 @@ def process(p, test=False, from_waitlist=False, rules_override=None):
             continue
         if inst["name"] not in cache:
             try:
-                cache[inst["name"]] = find_title(inst, media, title, year)
+                cache[inst["name"]] = find_title(inst, media, title, year, release)
             except httpx.HTTPError as e:
                 return done("fejl", f"opslag i {inst['name']} fejlede: {e.__class__.__name__}", name)
         cand, why, same, note = cache[inst["name"]]
@@ -1295,6 +1365,7 @@ async def waitlist_approve(wid: int, req: Request):
     cand = (found or [None])[0] if isinstance(found, list) else found
     if not cand:
         raise HTTPException(404, f"{term} blev ikke fundet i {inst['name']}")
+    save_alias(media, row["title"], sg["id"], cand.get("title") or "")
     shown = cand.get("title") or "?"
     if not re.search(r"\(\d{4}\)$", shown):
         shown += f" ({to_int(cand.get('year')) or '?'})"
@@ -1315,6 +1386,23 @@ async def waitlist_approve(wid: int, req: Request):
         con.execute("UPDATE waitlist SET status='klar', reason=?, suggestions='[]' WHERE id=?", (detail, wid))
     con.close()
     return get_waitlist()
+
+
+@app.get("/api/aliases")
+def aliases_list():
+    con = db()
+    rows = [dict(r) for r in con.execute("SELECT * FROM aliases ORDER BY id DESC").fetchall()]
+    con.close()
+    return rows
+
+
+@app.delete("/api/aliases/{aid}")
+def aliases_delete(aid: int):
+    con = db()
+    with con:
+        con.execute("DELETE FROM aliases WHERE id=?", (aid,))
+    con.close()
+    return aliases_list()
 
 
 @app.delete("/api/waitlist/{wid}")
@@ -1531,11 +1619,12 @@ def export_data():
     con = db()
     settings = {r["key"]: json.loads(r["value"]) for r in con.execute("SELECT key, value FROM settings").fetchall()}
     waiting = [dict(r) for r in con.execute("SELECT * FROM waitlist WHERE status='venter'").fetchall()]
+    aliases = [{k: r[k] for k in ("media", "release_title", "ext_id", "title")} for r in con.execute("SELECT * FROM aliases").fetchall()]
     con.close()
     rules = get_rules()
     for r in rules:
         r.pop("id", None)
-    return {"fangarr_export": 1, "created": iso(now()), "settings": settings, "rules": rules, "waitlist": waiting}
+    return {"fangarr_export": 1, "created": iso(now()), "settings": settings, "rules": rules, "waitlist": waiting, "aliases": aliases}
 
 
 def import_data(d):
@@ -1559,7 +1648,11 @@ def import_data(d):
                              to_int(w.get("attempts")), w.get("next_try") or iso(now()), w.get("reason") or "", w.get("rule") or ""))
                 added_w += 1
     con.close()
-    return {"rules": len(rules), "settings": len(d.get("settings") or {}), "waitlist": added_w}
+    for a in d.get("aliases") or []:
+        if a.get("media") and a.get("release_title") and a.get("ext_id"):
+            save_alias(a["media"], a["release_title"], a["ext_id"], a.get("title") or "")
+    return {"rules": len(rules), "settings": len(d.get("settings") or {}), "waitlist": added_w,
+            "aliases": len(d.get("aliases") or [])}
 
 
 def nightly_backup(s):
