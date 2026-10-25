@@ -309,9 +309,14 @@ def tvmaze_tvdb_id(title):
 def find_title(inst, media, title, year):
     """Find titlen: 1) Sonarr/Radarr-opslag, 2) dit eget bibliotek (inkl. mappenavne),
     3) for serier: TVmaze -> TheTVDB-nummer -> Sonarr-opslag. Giver (titel, grund, samme-navn, note)."""
-    cand, why, same = pick_all(lookup(inst, media, title, year), title, year)
+    found = lookup(inst, media, title, year)
+    cand, why, same = pick_all(found, title, year)
     if cand or same or why != NOT_FOUND:
         return cand, why, same, ""
+    if media == "movie" and year:
+        sub = subtitle_match(found, title, year)
+        if sub:
+            return sub, None, [], "fundet som \"%s\" (undertitel/nummer mangler i udgivelsen, samme år)" % sub.get("title")
     try:
         lib = library(inst, media)
     except httpx.HTTPError:
@@ -343,6 +348,36 @@ def lookup(inst, media, title, year):
 
 
 NOT_FOUND = "ingen titel passer præcist"
+
+_SEQUEL = re.compile(r"\b(?:[2-9]|1[0-9]|ii|iii|iv|v|vi)\b", re.I)
+
+
+def title_variants(name):
+    """Kortere udgaver af en filmtitel: uden undertitel (efter kolon/tankestreg) og uden fortsættelsesnummer."""
+    out = set()
+    head = re.split(r"\s*(?::|\s[-–—]\s)\s*", name, maxsplit=1)[0]
+    dash = re.split(r"\s[-–—]\s", name.replace(":", " "), maxsplit=1)[0]
+    for v in (head, dash, name.replace(":", " "), _SEQUEL.sub(" ", name.replace(":", " ")), _SEQUEL.sub(" ", head), _SEQUEL.sub(" ", dash)):
+        lv = loose(v)
+        if lv:
+            out.add(lv)
+    return out
+
+
+def subtitle_match(cands, title, year):
+    """Kun film: "The Disciple" = "The Disciple: A Wu-Tang Fable", "Den of Thieves Pantera" = "Den of Thieves 2: Pantera".
+    Kræver samme år og præcis ét match."""
+    t = loose(title)
+    if len(t) < 4 or not year:
+        return None
+    hits = []
+    for c in cands:
+        if to_int(c.get("year")) != year:
+            continue
+        names = [c.get("title"), c.get("originalTitle")] + [a.get("title") for a in (c.get("alternateTitles") or [])]
+        if any(t in title_variants(n) for n in names if n):
+            hits.append(c)
+    return hits[0] if len(hits) == 1 else None
 
 
 def dk_variant(title):
@@ -634,7 +669,7 @@ def process(p, test=False, from_waitlist=False, rules_override=None):
                 if m.get("rating"):
                     parts.append(f"rating {m['rating']}")
                 info = " · ".join(parts)
-            notes = [c for c in res["checks"] if "fundet i dit bibliotek" in c or "fundet via TVmaze" in c or "valgte den fra" in c]
+            notes = [c for c in res["checks"] if "fundet i dit bibliotek" in c or "fundet via TVmaze" in c or "valgte den fra" in c or "undertitel" in c]
             if notes:
                 info = (info + " · " if info else "") + notes[0].split(": ", 1)[-1]
             write_log(media, release, m.get("title") or title, m.get("year") or year, decision, rule, detail, dry, info)
