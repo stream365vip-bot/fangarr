@@ -324,6 +324,9 @@
           <div class="field"><label>Mindste rating (0–10)</label><input type="text" inputmode="decimal" id="r_min_rating" placeholder="f.eks. 6.5">
             <div class="small">Serier: Sonarrs rating. Film: IMDb (ellers TMDb). Komma eller punktum.</div></div>
         </div>
+        <label class="check" style="margin-top:14px"><input type="checkbox" id="r_allow_missing_genre"> Tillad titler, hvor TheTVDB/TMDb mangler genre</label>
+        <label class="check" style="margin-top:8px"><input type="checkbox" id="r_allow_missing_year"> Tillad titler, hvor TheTVDB/TMDb mangler årstal</label>
+        <div class="small">Slået fra: titlen venter på ventelisten, til oplysningen kommer. Slået til: kravet springes over, når feltet er tomt – men tjekkes stadig, når det er udfyldt. Godt til danske tv-programmer, hvor TheTVDB ofte er tom.</div>
         <div class="field" style="margin-top:14px"><label id="netLabel">Tv-kanal / netværk – en af</label>
           <input type="text" id="r_networks_any" placeholder="DR1, DR2, TV 2, TV3, Kanal 5, Viaplay">
           <div class="small">Adskil med komma. Delvist navn er nok ("TV 2" passer også "TV 2 Charlie"). Tomt = alle.</div></div>
@@ -432,7 +435,7 @@ function renderRules() {
       ` · mærke <b>${esc(r.tag || "auto-fangarr")}</b>`;
     return `<div class="card rule ${r.active ? "" : "off"}">
       <div><h3>${i + 1}. ${esc(r.name)} <span class="tag ${r.media === "series" ? "s" : "m"}">${r.media === "series" ? "Serier" : "Film"}</span>
-        ${r.active ? "" : '<span class="tag">Slået fra</span>'}${r.wait ? '<span class="tag">Venter på TheTVDB</span>' : ""}</h3>
+        ${r.active ? "" : '<span class="tag">Slået fra</span>'}${r.wait ? '<span class="tag">Venter på TheTVDB</span>' : ""}${r.allow_missing_genre || r.allow_missing_year ? `<span class="tag">Tillader manglende ${[r.allow_missing_genre && "genre", r.allow_missing_year && "år"].filter(Boolean).join(" og ")}</span>` : ""}</h3>
         <div class="facts">${f.length ? f.join(" · ") : "Ingen krav – alt passer"}</div>
         <div class="facts" style="margin-top:4px">${where}</div></div>
       <div class="btns">
@@ -503,6 +506,8 @@ function editRule(id) {
   $("r_tag").value = r.tag || "";
   $("r_search").checked = r.search !== false;
   $("r_wait").checked = !!r.wait;
+  $("r_allow_missing_genre").checked = !!r.allow_missing_genre;
+  $("r_allow_missing_year").checked = !!r.allow_missing_year;
   mediaChanged(r);
   dlg.showModal();
 }
@@ -518,6 +523,7 @@ async function saveRule() {
     root_folder: $("r_root_folder").value, quality_profile_id: $("r_quality_profile_id").value,
     monitor: $("r_monitor").value, minimum_availability: $("r_minimum_availability").value,
     tag: $("r_tag").value, search: $("r_search").checked, wait: $("r_wait").checked,
+    allow_missing_genre: $("r_allow_missing_genre").checked, allow_missing_year: $("r_allow_missing_year").checked,
   };
   try {
     S.rules = await api(editing ? `/api/rules/${editing}` : "/api/rules", {method: editing ? "PUT" : "POST", body: JSON.stringify(body)});

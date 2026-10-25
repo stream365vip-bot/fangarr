@@ -431,10 +431,14 @@ def rule_check(rule, inf):
         return False, "TheTVDB/TMDb mangler sprog", True
     if langs and inf["language"].lower() not in langs:
         return False, f"sprog er {inf['language']}", False
+    accepted = []  # krav, der springes over, fordi TheTVDB/TMDb mangler feltet (reglens valg)
     genres = [g.lower() for g in inf["genres"]]
     want = [g.lower() for g in (rule.get("genres_any") or [])]
     if want and not genres:
-        return False, "TheTVDB/TMDb mangler genrer", True
+        if not rule.get("allow_missing_genre"):
+            return False, "TheTVDB/TMDb mangler genrer", True
+        accepted.append("genre")
+        want = []
     if want and not any(g in genres for g in want):
         return False, "genre passer ikke (" + ", ".join(inf["genres"]) + ")", False
     bad = [g.lower() for g in (rule.get("genres_none") or [])]
@@ -443,7 +447,10 @@ def rule_check(rule, inf):
         return False, "udelukket genre: " + ", ".join(hit), False
     ymin, ymax = to_int(rule.get("year_min")), to_int(rule.get("year_max"))
     if (ymin or ymax) and not inf["year"]:
-        return False, "TheTVDB/TMDb mangler årstal", True
+        if not rule.get("allow_missing_year"):
+            return False, "TheTVDB/TMDb mangler årstal", True
+        accepted.append("år")
+        ymin = ymax = 0
     if ymin and inf["year"] < ymin:
         return False, f"år {inf['year']} er før {ymin}", False
     if ymax and inf["year"] > ymax:
@@ -456,6 +463,8 @@ def rule_check(rule, inf):
     minr = to_float(rule.get("min_rating"))
     if minr and inf["rating"] < minr:
         return False, f"rating {inf['rating'] or 'ingen'} er under {minr}", False
+    if accepted:
+        return True, "alle krav opfyldt – " + " og ".join(accepted) + " mangler hos TheTVDB/TMDb, accepteret", False
     return True, "alle krav opfyldt", False
 
 
@@ -643,6 +652,7 @@ def process(p, test=False, from_waitlist=False, rules_override=None):
             if missing and r.get("wait") and not wait_rule:
                 wait_rule, wait_why = name, why
             continue
+        note = (" – " + why.split(" – ", 1)[1]) if "accepteret" in why else ""
         seerr = seerr_status(media, cand) if s.get("seerr_check") else None
         if seerr == "declined":
             return done("afvist i Seerr", "en anmodning på titlen er afvist i Seerr", name)
@@ -659,13 +669,13 @@ def process(p, test=False, from_waitlist=False, rules_override=None):
                 return done("for lidt plads", f"disken er {pct} % fyldt (grænse {s['max_disk_pct']} %)", name)
             res["checks"].append(f"bemærk: disken er {pct} % fyldt – i drift ville den blive stoppet af pladsgrænsen")
         if dry:
-            return done("ville tilføje", f"til {inst['name']} › {r.get('root_folder')}" + (" (test)" if test else " (prøvetilstand)"), name)
+            return done("ville tilføje", f"til {inst['name']} › {r.get('root_folder')}" + (" (test)" if test else " (prøvetilstand)") + note, name)
         try:
             created = add_title(inst, media, cand, r)
         except httpx.HTTPError as e:
             return done("fejl", f"tilføjelse i {inst['name']} fejlede: {e.__class__.__name__}", name)
         remember_added(inst, media, created, inf["title"], name)
-        return done("tilføjet", f"til {inst['name']} › {r.get('root_folder')}", name)
+        return done("tilføjet", f"til {inst['name']} › {r.get('root_folder')}" + note, name)
 
     if wait_rule:
         res["can_wait"] = True
@@ -1030,6 +1040,7 @@ RULE_FIELDS = {
     "year_min": int, "year_max": int, "min_rating": float,
     "root_folder": str, "quality_profile_id": int, "monitor": str,
     "minimum_availability": str, "tag": str, "search": bool, "wait": bool,
+    "allow_missing_genre": bool, "allow_missing_year": bool,
 }
 
 
