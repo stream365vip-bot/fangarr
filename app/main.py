@@ -719,6 +719,11 @@ def process(p, test=False, from_waitlist=False, rules_override=None):
                 res["checks"].append(f"{name}: {len(same)} titler med samme navn – valgte den nyeste ({to_int(cand.get('year'))})")
         if not cand:
             res["checks"].append(f"{name}: {why}")
+            ymin, ymax = to_int(r.get("year_min")), to_int(r.get("year_max"))
+            if not only and year and ((ymin and year < ymin) or (ymax and year > ymax)):
+                # årstallet i udgivelsen ligger uden for reglen – der er ingen grund til at vente på TheTVDB/TMDb
+                res["checks"].append(f"{name}: årstallet {year} i udgivelsen passer ikke til reglen – venter ikke")
+                continue
             if (why == NOT_FOUND or only) and (r.get("wait") or only) and not wait_rule:
                 wait_rule, wait_why = name, why
             if why == NOT_FOUND and r.get("wait") and not only:
