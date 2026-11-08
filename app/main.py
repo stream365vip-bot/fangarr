@@ -1164,7 +1164,8 @@ def daily_summary(s):
     forslag = con.execute("SELECT COUNT(*) FROM waitlist WHERE status='venter' AND suggestions NOT IN ('', '[]')").fetchone()[0]
     hjulpet = con.execute("SELECT COUNT(*) FROM log WHERE ts>=? AND decision='hentet for sonarr2'", (since,)).fetchone()[0]
     con.close()
-    if not (rows or fejl or udl or forslag or hjulpet):
+    tr_lines = translation_summary_lines()
+    if not (rows or fejl or udl or forslag or hjulpet or tr_lines):
         return
     lines = [f"{'🎬' if r['media'] == 'movie' else '📺'} {r['title']} ({r['year'] or '?'}) – {r['decision']}" for r in rows[:30]]
     more = f"\n… og {len(rows) - 30} mere" if len(rows) > 30 else ""
@@ -1179,6 +1180,8 @@ def daily_summary(s):
         txt += f"\n👉 {forslag} med forslag, der venter på din godkendelse (Fangarr › Venteliste)"
     if fejl:
         txt += f"\n⚠️ {fejl} fejl – se loggen i Fangarr."
+    if tr_lines:
+        txt += "\n\n" + "\n".join(tr_lines)
     telegram(txt)
 
 
@@ -1187,6 +1190,7 @@ _last_backup = {}
 
 def background_loop():
     last_summary = None
+    last_tr_check = 0.0
     while True:
         try:
             s = get_settings()
@@ -1206,6 +1210,9 @@ def background_loop():
             if hour >= 0 and n.hour == hour and last_summary != n.date():
                 last_summary = n.date()
                 daily_summary(s)
+            if time.time() - last_tr_check >= 600:
+                last_tr_check = time.time()
+                check_translator()
         except Exception as e:  # baggrundsjobbet må aldrig stoppe appen
             log.warning("Baggrundsjob fejlede: %s", e)
         time.sleep(LOOP_SECONDS)
@@ -1355,7 +1362,7 @@ def state():
         "today": {"series": added_today("series"), "movie": added_today("movie")},
         "waiting": venter,
         "features": {"tracearr": bool(TRACEARR_URL and TRACEARR_APIKEY), "seerr": bool(SEERR_URL and SEERR_APIKEY),
-                     "autobrr": bool(AUTOBRR_URL and AUTOBRR_APIKEY), "version": VERSION},
+                     "autobrr": bool(AUTOBRR_URL and AUTOBRR_APIKEY), "translator": ov_enabled(), "version": VERSION},
     }
 
 
@@ -2110,3 +2117,206 @@ async def premiere_follow(req: Request):
                     {"media": "series", "title": title, "release": title, "rule_id": rule["id"], "rule_name": rule.get("name")},
                     rule.get("name") or "", "følger premieren – venter på TheTVDB", created=start if start and start > now() else None)
     return {"result": "følger"}
+
+
+# ================================================================ #10 Oversættelser (Oversætteren, 8. nov. 2026)
+# Fangarr henter alt gennem Oversætterens interne adresse (kun på Docker-netværket, kræver X-Api-Token).
+# Fangarr læser aldrig Oversætterens database direkte og skriver intet hos Oversætteren.
+
+OVERSAETTER_URL = (os.environ.get("OVERSAETTER_URL") or "").rstrip("/")
+OVERSAETTER_TOKEN = os.environ.get("OVERSAETTER_TOKEN") or ""
+NORDIC_RE = re.compile(r"nordic|danish|dansk|dksubs?", re.I)
+TR_PROBLEMS = ("fejlet", "mangler_engelsk", "forsoeg_igen", "ikke_muligt", "venter_paa_dansk")
+_tr_cache = {"ts": 0.0, "days": None, "data": None}
+_tr_lock = threading.Lock()
+_ov_alert = {"budget": False, "down": 0, "down_sent": False}
+
+
+def ov_enabled():
+    return bool(OVERSAETTER_URL and OVERSAETTER_TOKEN)
+
+
+def ov_get(path, params=None):
+    r = httpx.get(OVERSAETTER_URL + path, params=params, headers={"X-Api-Token": OVERSAETTER_TOKEN}, timeout=15)
+    if r.status_code == 401:
+        raise RuntimeError("Oversætteren afviste nøglen – OVERSAETTER_TOKEN skal være lig API_TOKEN i oversætterens .env")
+    r.raise_for_status()
+    return r.json()
+
+
+def _arr_of(typ):
+    return next((i for i in INSTANCES.values() if i["type"] == typ), None)
+
+
+def _days_in_month(d):
+    nxt = (d.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
+    return (nxt - datetime.timedelta(days=1)).day
+
+
+def forecast(spend, today=None):
+    """Prognose for månedens forbrug: forbrugt indtil nu + gennemsnit pr. dag de seneste 7 dage × dage tilbage."""
+    today = today or datetime.date.today()
+    since = (today - datetime.timedelta(days=7)).isoformat()
+    last7 = sum(d["usd"] for d in spend.get("days", []) if d["day"] > since)
+    per_day = last7 / 7
+    left = _days_in_month(today) - today.day
+    month = float(spend.get("month_usd") or 0)
+    return {"per_day_usd": round(per_day, 3), "days_left": left, "month_usd": round(month, 2),
+            "forecast_usd": round(month + per_day * left, 2), "budget_usd": spend.get("budget_usd")}
+
+
+def delay_profiles():
+    out = []
+    for inst in INSTANCES.values():
+        try:
+            tags = {t["id"]: t["label"] for t in (arr(inst, "GET", "/tag") or [])}
+            for d in arr(inst, "GET", "/delayprofile") or []:
+                out.append({"instance": inst["name"], "order": d.get("order"), "torrent_min": d.get("torrentDelay"),
+                            "bypass": d.get("bypassIfAboveCustomFormatScore"),
+                            "min_score": d.get("minimumCustomFormatScore"),
+                            "tags": [tags.get(t, str(t)) for t in d.get("tags") or []]})
+        except Exception as e:
+            out.append({"instance": inst["name"], "error": f"{e.__class__.__name__}"})
+    return sorted(out, key=lambda d: (d["instance"], d.get("order") or 0))
+
+
+@app.get("/api/translations")
+def translations():
+    """Fanen Oversættelser: A overblik, D færdige, E problemer og H indstillinger. Hver del fejler for sig."""
+    if not ov_enabled():
+        return {"enabled": False}
+    out, errors = {"enabled": True}, []
+    for key, path, params in (("status", "/api/status", None), ("config", "/api/config", None),
+                              ("spend", "/api/spend", {"days": 60}),
+                              ("done", "/api/items", {"status": "faerdig", "days": 30, "limit": 300}),
+                              ("problems", "/api/items", {"status": ",".join(TR_PROBLEMS), "limit": 200})):
+        try:
+            out[key] = ov_get(path, params)
+        except Exception as e:
+            errors.append(f"{path}: {e.__class__.__name__}: {e}")
+    if "spend" in out:
+        out["forecast"] = forecast(out["spend"])
+    out["delay_profiles"] = delay_profiles()
+    out["errors"] = errors
+    return out
+
+
+def classify_imports(days):
+    """Importer de sidste dage fordelt på dansk tale / NORDiC / skal oversættes (som ~/optaelling.py)."""
+    start = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    result, imports = {}, {}
+    for typ, media in (("sonarr", "series"), ("radarr", "movie")):
+        inst = _arr_of(typ)
+        if not inst:
+            continue
+        lang = {it["id"]: ((it.get("originalLanguage") or {}).get("name") or "") for it in library(inst, media)}
+        counts = {"dansk_tale": 0, "nordic": 0, "oversaet": 0}
+        per_day = {}
+        for h in arr(inst, "GET", "/history/since", params={"date": start, "eventType": "downloadFolderImported"}) or []:
+            owner = h.get("seriesId") if media == "series" else h.get("movieId")
+            src = h.get("sourceTitle") or ""
+            g = "dansk_tale" if lang.get(owner) == "Danish" else "nordic" if NORDIC_RE.search(src) else "oversaet"
+            counts[g] += 1
+            day = str(h.get("date") or "")[:10]
+            per_day.setdefault(day, {"dansk_tale": 0, "nordic": 0, "oversaet": 0})[g] += 1
+            ident = h.get("episodeId") if media == "series" else h.get("movieId")
+            if ident:
+                imports.setdefault(f"{'episode' if media == 'series' else 'movie'}:{ident}", []).append(
+                    {"date": str(h.get("date") or ""), "nordic": bool(NORDIC_RE.search(src)), "source": src})
+        result[media] = {"counts": counts, "per_day": [{"day": d, **c} for d, c in sorted(per_day.items())]}
+    return result, imports
+
+
+def series_name(title):
+    """"Gold Rush 17x06" -> "Gold Rush"."""
+    return re.sub(r"\s+\d+x\d+\s*$", "", str(title or "")).strip() or str(title or "")
+
+
+def translation_stats(days):
+    done = ov_get("/api/items", {"status": "faerdig", "days": max(days, 30), "limit": 1000})["items"]
+    spend = ov_get("/api/spend", {"days": days})
+    imports, imp = classify_imports(days)
+    wasted = []
+    for it in done:
+        later = [x for x in imp.get(it["key"], []) if x["nordic"] and x["date"] > str(it.get("updated_at") or "")]
+        if later:
+            wasted.append({"title": it["title"], "cost_usd": it.get("cost_usd") or 0, "translated": it.get("updated_at"),
+                           "nordic_at": later[0]["date"], "source": later[0]["source"]})
+    top = {}
+    for it in done:
+        name = series_name(it["title"]) if it["media_type"] == "episode" else it["title"]
+        g = top.setdefault(name, {"title": name, "count": 0, "usd": 0.0, "media": it["media_type"]})
+        g["count"] += 1
+        g["usd"] = round(g["usd"] + float(it.get("cost_usd") or 0), 4)
+    return {"days": days, "spend": spend, "imports": imports, "wasted": wasted,
+            "wasted_usd": round(sum(w["cost_usd"] for w in wasted), 2),
+            "top": sorted(top.values(), key=lambda g: -g["usd"])[:15], "computed": iso(now())}
+
+
+@app.get("/api/translations/stats")
+def translations_stats(days: int = 14, refresh: int = 0):
+    """Fanen Oversættelser › G statistik. Gemmes i 10 minutter (læser historikken i Sonarr/Radarr)."""
+    if not ov_enabled():
+        return {"enabled": False}
+    days = max(1, min(60, days))
+    with _tr_lock:
+        if not refresh and _tr_cache["data"] and _tr_cache["days"] == days and time.time() - _tr_cache["ts"] < 600:
+            return _tr_cache["data"]
+    try:
+        data = translation_stats(days)
+    except Exception as e:
+        raise HTTPException(502, f"kunne ikke beregne statistikken: {e.__class__.__name__}: {e}")
+    with _tr_lock:
+        _tr_cache.update(ts=time.time(), days=days, data=data)
+    return data
+
+
+def translation_summary_lines():
+    """Linjer til det daglige resumé: oversat i går, pris, problemer og prognose."""
+    if not ov_enabled():
+        return []
+    try:
+        spend = ov_get("/api/spend", {"days": 3})
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        rows = [d for d in spend.get("days", []) if d["day"] == yesterday]
+        n = sum(d["titles"] for d in rows)
+        usd = sum(d["usd"] for d in rows)
+        status = ov_get("/api/status")
+        problems = ov_get("/api/items", {"status": "fejlet,mangler_engelsk", "days": 1, "limit": 200})["items"]
+        f = forecast(ov_get("/api/spend", {"days": 10}))
+    except Exception as e:
+        return [f"🈯 Oversætteren kunne ikke spørges ({e.__class__.__name__})"]
+    kurs = float(status.get("usd_to_dkk") or 6.7)
+    line = f"🈯 Oversat i går: {n} ({usd * kurs:.0f} kr.)"
+    if problems:
+        line += f", {len(problems)} problem{'er' if len(problems) != 1 else ''}"
+    out = [line, f"   Måned: {f['month_usd'] * kurs:.0f} kr. af {float(f['budget_usd'] or 0) * kurs:.0f} kr. – "
+                 f"prognose {f['forecast_usd'] * kurs:.0f} kr."]
+    return out
+
+
+def check_translator():
+    """Køres fra baggrundsjobbet ca. hvert 10. minut: besked ved prognose over loftet og når Oversætteren ikke svarer
+    (efter 3 forsøg i træk), og "i orden igen" bagefter."""
+    if not ov_enabled():
+        return
+    try:
+        spend = ov_get("/api/spend", {"days": 10})
+    except Exception as e:
+        _ov_alert["down"] += 1
+        if _ov_alert["down"] >= 3 and not _ov_alert["down_sent"]:
+            telegram(f"🚨 Fangarr – Oversætteren svarer ikke ({e.__class__.__name__}). Nyt bliver ikke oversat.")
+            _ov_alert["down_sent"] = True
+        return
+    if _ov_alert["down_sent"]:
+        telegram("✅ Fangarr – Oversætteren svarer igen.")
+    _ov_alert["down"], _ov_alert["down_sent"] = 0, False
+    f = forecast(spend)
+    budget = float(f["budget_usd"] or 0)
+    over = budget > 0 and f["forecast_usd"] > budget
+    if over and not _ov_alert["budget"]:
+        telegram(f"⚠️ Fangarr – oversættelserne ventes at koste {f['forecast_usd']:.0f} USD denne måned, "
+                 f"loftet er {budget:.0f} USD. Når loftet er nået, oversættes der ikke mere i denne måned.")
+    elif not over and _ov_alert["budget"]:
+        telegram(f"✅ Fangarr – prognosen for oversættelser er under loftet igen ({f['forecast_usd']:.0f} af {budget:.0f} USD).")
+    _ov_alert["budget"] = over
