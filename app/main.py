@@ -674,9 +674,48 @@ def add_title(inst, media, cand, rule):
     return arr(inst, "POST", "/series", json=body)
 
 
+def missing_aired(inst, series_id):
+    """Antal udsendte, overvågede afsnit uden fil (sæson 0/specials tælles ikke)."""
+    eps = arr(inst, "GET", "/episode", params={"seriesId": series_id}) or []
+    nowu = datetime.datetime.now(datetime.timezone.utc)
+    n = 0
+    for e in eps:
+        if not e.get("monitored") or e.get("hasFile") or not to_int(e.get("seasonNumber")):
+            continue
+        try:
+            aired = datetime.datetime.fromisoformat(str(e.get("airDateUtc") or "").replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if aired <= nowu:
+            n += 1
+    return n
+
+
+def search_missing(inst, series_id, title, why):
+    """Bed sonarr2 søge efter manglende afsnit, hvis der mangler udsendte, overvågede afsnit."""
+    try:
+        n = missing_aired(inst, series_id)
+        if n:
+            arr(inst, "POST", "/command", json={"name": "SeriesSearch", "seriesId": series_id})
+            log.info("series | %s | søgning startet (%s) – %s afsnit mangler", title, why, n)
+        return n
+    except httpx.HTTPError as e:
+        log.warning("Søgning efter %s fejlede: %s", title, e.__class__.__name__)
+        return 0
+
+
+SEARCH_AFTER_ADD = 180   # sekunder: sonarr2 skal først nå at hente afsnitslisten fra TheTVDB
+
+
 def remember_added(inst, media, created, title, rule=""):
     if not created or not created.get("id"):
         return
+    if media == "series":
+        # autobrr skubber udgivelsen få sekunder efter tilføjelsen, før sonarr2 kender afsnittene
+        # ("Unable to identify correct episode(s)"), og "Søg straks" kommer for tidligt. Søg igen om lidt.
+        t = threading.Timer(SEARCH_AFTER_ADD, search_missing, args=(inst, created["id"], title, "3 min. efter tilføjelse"))
+        t.daemon = True
+        t.start()
     ext = created.get("tvdbId") if media == "series" else created.get("tmdbId")
     con = db()
     with con:
@@ -1146,6 +1185,8 @@ def refresh_new_series(s):
             arr(inst, "POST", "/command", json={"name": "RefreshSeries", "seriesId": r["arr_id"]})
         except httpx.HTTPError:
             continue
+        # mangler der udsendte afsnit, så søg igen (fanger udgivelser, sonarr2 afviste lige efter tilføjelsen)
+        search_missing(inst, r["arr_id"], r["title"], "opdatering af ny serie")
         con = db()
         with con:
             con.execute("UPDATE added SET last_refresh=? WHERE id=?", (iso(now()), r["id"]))
