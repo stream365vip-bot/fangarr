@@ -222,6 +222,20 @@
     <div id="trWarn"></div>
     <div class="kpis" id="trKpis"></div>
     <div class="card" id="trMoney"></div>
+    <h2 style="margin-top:22px">Skjult for kunderne</h2>
+    <p class="hint">Nye film og afsnit, som endnu ikke er vist i Plex, fordi de mangler dansk tale eller dansk tekst. De vises af sig selv, når teksten er klar – og senest efter sikkerhedsnettet. Plex viser en hel mappe ad gangen, så et afsnit, der venter, holder resten af sæsonmappen tilbage.</p>
+    <div id="trRevealInfo"></div>
+    <div class="card" style="padding:0; overflow-x:auto"><table>
+      <thead><tr><th>Titel</th><th>Hvorfor</th><th>Oversættelse</th><th>Importeret</th><th>Vises senest</th></tr></thead>
+      <tbody id="trHidden"></tbody></table></div>
+    <div class="card" style="padding:0; overflow-x:auto; margin-top:10px"><table>
+      <thead><tr><th>Vist i Plex (7 dage)</th><th>Hvordan</th><th>Vist</th></tr></thead>
+      <tbody id="trShown"></tbody></table></div>
+    <h2 style="margin-top:22px">På vej</h2>
+    <p class="hint">Udgivelser, som Sonarr/Radarr har fundet, men holder tilbage på grund af ventetiden (6 timer), i håb om en NORDiC-udgave. NORDiC hentes med det samme.</p>
+    <div class="card" style="padding:0; overflow-x:auto"><table>
+      <thead><tr><th>Titel</th><th>Udgivelse</th><th class="num">Point</th><th>Hentes</th></tr></thead>
+      <tbody id="trWay"></tbody></table></div>
     <h2 style="margin-top:22px">Problemer</h2>
     <p class="hint">Titler, der ikke er blevet oversat. Grunden er Oversætterens egen forklaring.</p>
     <div class="card" style="padding:0; overflow-x:auto"><table>
@@ -913,12 +927,14 @@ function renderTr() {
     ["I dag", sum(t, "titles"), kr(sum(t, "usd"), k)],
     ["Seneste 7 dage", sum(w, "titles"), kr(sum(w, "usd"), k) + " · " + (sum(w, "titles") ? kr(sum(w, "usd") / sum(w, "titles"), k) + " pr. stk." : "")],
     ["Problemer", probs, probs ? '<a href="#trProblems" style="color:var(--warn)">se listen</a>' : "ingen"],
+    ...((TR.reveal || {}).enabled ? [["Skjult for kunderne", (TR.reveal.waiting || []).length, '<a href="#trHidden" style="color:var(--info)">se listen</a>']] : []),
   ].map(([l, v, sub]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="small">${sub}</div></div>`).join("");
   const b = f.budget_usd || 0, pct = x => b ? Math.min(100, x / b * 100) : 0, over = b && f.forecast_usd > b;
   $("trMoney").innerHTML = `<div class="row" style="justify-content:space-between;margin:0"><b>Månedens forbrug</b>
       <span>${kr(f.month_usd, k)} af ${kr(b, k)} <span class="small">(${(f.month_usd || 0).toFixed(2)} / ${b} USD)</span></span></div>
     <div class="money ${over ? "over" : ""}"><i class="fc" style="width:${pct(f.forecast_usd)}%"></i><i style="width:${pct(f.month_usd)}%"></i></div>
     <div class="small">Prognose for hele måneden: <b>${kr(f.forecast_usd, k)}</b> (${kr(f.per_day_usd, k)} pr. dag de seneste 7 dage, ${f.days_left} dage tilbage). Den lyse del af bjælken er prognosen.</div>`;
+  renderReveal();
   const P = (TR.problems || {}).items || [];
   $("trProblems").innerHTML = P.length ? P.map(i => `<tr><td><b>${esc(i.title)}</b><div class="small">${esc(i.file || i.key)}</div></td>
     <td class="st st-${esc(i.status)}">${TR_ST[i.status] || esc(i.status)}</td><td>${esc(i.reason || "")}</td><td style="white-space:nowrap">${lt(i.updated_at)}</td>
@@ -938,11 +954,40 @@ function renderTr() {
     ["Vent på dansk tjeneste (B9)", cfg.provider_wait ? `til (film ${cfg.provider_wait_days_movies} / serier ${cfg.provider_wait_days_series} dage)` : "fra", ""],
     ["Runder", `hvert ${cfg.poll_minutes}. minut`, `højst ${cfg.max_searches_per_round} søgninger pr. runde`],
     ["Prøvetilstand", cfg.dry_run ? "til" : "fra", `Bazarr-synk ${on(cfg.sync_after_upload)} · Plex-scanning ${on(cfg.plex_refresh)}`],
+    ["Skjult indtil dansk", cfg.reveal ? "til" : "fra", cfg.reveal ? `vises senest efter ${cfg.reveal_safety_hours} timer` : "nyt vises med det samme (Autoscan)"],
   ];
   const dp = (TR.delay_profiles || []).map(d => d.error ? `<div class="small">${esc(d.instance)}: kunne ikke læses</div>` :
     `<div class="small"><b>${esc(d.instance)}</b>: ${d.torrent_min ? (d.torrent_min / 60).toLocaleString("da-DK") + " t" : "ingen ventetid"}${d.bypass ? " · straks ved score ≥ " + Number(d.min_score).toLocaleString("da-DK") : ""} · ${d.tags.length ? "mærker: " + esc(d.tags.join(", ")) : "alle andre"}</div>`).join("");
   $("trConfig").innerHTML = items.map(([l, v, sub]) => `<div class="kpi"><div class="l">${l}</div><div style="margin-top:4px"><b>${v}</b></div><div class="small">${sub}</div></div>`).join("")
     + `<div class="kpi" style="grid-column:1/-1"><div class="l">Ventetid i Sonarr/Radarr (Delay Profiles)</div>${dp || '<div class="small">–</div>'}</div>`;
+}
+const RV_WHY = {"dansk originalsprog": "dansk tale", "dansk tale": "dansk tale", "indlejret dansk tekst": "dansk tekst i filen", "dansk tekstfil": "dansk tekst"};
+function renderReveal() {
+  const R = TR.reveal, W = TR.on_the_way || [];
+  if (!R || !R.enabled) {
+    $("trRevealInfo").innerHTML = R ? '<div class="small" style="margin-bottom:8px">Slået fra – nye film og afsnit vises med det samme (REVEAL=false i oversætterens .env).</div>' : "";
+    $("trHidden").innerHTML = '<tr><td colspan="5" class="empty">–</td></tr>'; $("trShown").innerHTML = '<tr><td colspan="3" class="empty">–</td></tr>';
+  } else {
+    $("trRevealInfo").innerHTML = (R.last_error ? `<div class="warn">Seneste kørsel fejlede: ${esc(R.last_error)}</div>` : "")
+      + `<div class="small" style="margin-bottom:8px">Tjekkes hvert ${R.interval_seconds}. sekund (seneste ${lt(R.last_run)}). Sikkerhedsnet: ${R.safety_hours} timer.</div>`;
+    const H = R.waiting || [];
+    $("trHidden").innerHTML = H.length ? H.map(i => { const left = i.reveal_by ? (new Date(i.reveal_by) - Date.now()) / 36e5 : null;
+      return `<tr><td><b>${esc(i.title)}</b><div class="small">${esc(i.file || i.key)}</div></td><td>${esc(i.reason || "")}</td>
+      <td>${i.translation ? `<span class="st st-${esc(i.translation)}">${TR_ST[i.translation] || esc(i.translation)}</span><div class="small">${esc(i.translation_reason || "")}</div>` : '<span class="small">ikke valgt</span>'}</td>
+      <td style="white-space:nowrap">${lt(i.import_at)}</td>
+      <td style="white-space:nowrap">${lt(i.reveal_by)}${left != null ? `<div class="small">om ${Math.max(0, left).toLocaleString("da-DK", {maximumFractionDigits: 1})} t</div>` : ""}</td></tr>`; }).join("")
+      : '<tr><td colspan="5" class="empty">Intet er skjult lige nu 🎉</td></tr>';
+    const S = R.shown || [];
+    $("trShown").innerHTML = S.length ? S.slice(0, 50).map(i => `<tr><td><b>${esc(i.title)}</b><div class="small">${esc(i.file || i.key)}</div></td>
+      <td>${i.shown_by === "sikkerhedsnet" ? `<span style="color:var(--warn)">⏰ uden dansk</span><div class="small">${esc(i.reason || "")}</div>` : `<span style="color:var(--ok)">✓ ${esc(RV_WHY[i.reason] || i.reason || "klar")}</span>`}</td>
+      <td style="white-space:nowrap">${lt(i.shown_at)}</td></tr>`).join("") + (S.length > 50 ? `<tr><td colspan="3" class="small" style="text-align:center">… og ${S.length - 50} mere</td></tr>` : "")
+      : '<tr><td colspan="3" class="empty">Intet vist endnu.</td></tr>';
+  }
+  $("trWay").innerHTML = W.length ? W.map(i => i.error ? `<tr><td colspan="4" class="small">${esc(i.instance)}: kunne ikke læses (${esc(i.error)})</td></tr>` :
+    `<tr><td><b>${esc(i.title)}</b><div class="small">${esc(i.instance)}${i.quality ? " · " + esc(i.quality) : ""}</div></td>
+     <td class="small" style="word-break:break-all">${esc(i.release)}${i.nordic ? ' <span class="tag" style="color:var(--ok)">NORDiC</span>' : ""}</td>
+     <td class="num">${i.score != null ? Number(i.score).toLocaleString("da-DK") : "–"}</td><td style="white-space:nowrap">${lt(i.until)}</td></tr>`).join("")
+    : '<tr><td colspan="4" class="empty">Intet venter på ventetiden lige nu.</td></tr>';
 }
 async function loadTrStats(refresh) {
   const days = $("trDays").value;
