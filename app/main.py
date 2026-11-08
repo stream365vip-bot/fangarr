@@ -210,6 +210,9 @@ def arr(inst, method, path, **kw):
                           headers={"X-Api-Key": inst["apikey"]}, timeout=30, **kw)
         r.raise_for_status()
     except httpx.HTTPStatusError as e:
+        if e.response.status_code == 409 and method == "POST":
+            # 409 ved tilføjelse = titlen er lige blevet lagt ind (samme udgivelse fra to trackere) – ingen alarm
+            raise
         notify_error(f"{inst['name']}: {method} {path} gav {e.response.status_code}\n{e.response.text[:300]}")
         raise
     except httpx.HTTPError as e:
@@ -709,7 +712,38 @@ def media_of(p):
     return "movie"
 
 
+_title_locks = {}
+_title_locks_guard = threading.Lock()
+
+
+def _title_lock(media, title):
+    """Én lås pr. titel: kommer samme udgivelse fra to trackere samtidig, venter den anden på den første."""
+    key = (media, loose(title))
+    with _title_locks_guard:
+        lk = _title_locks.get(key)
+        if lk is None:
+            lk = _title_locks[key] = threading.Lock()
+        return lk
+
+
+def is_transient(e):
+    """Fejl, der typisk går over af sig selv: kan ikke nås, timeout, 429 eller 5xx."""
+    if isinstance(e, httpx.HTTPStatusError):
+        code = e.response.status_code
+        return code == 429 or code >= 500
+    return True
+
+
 def process(p, test=False, from_waitlist=False, rules_override=None):
+    """Som _process, men kun én behandling ad gangen pr. titel (undgår dobbelt-tilføjelse og 409)."""
+    title = str(p.get("title") or "").strip()
+    if test or not title:
+        return _process(p, test=test, from_waitlist=from_waitlist, rules_override=rules_override)
+    with _title_lock(media_of(p), title):
+        return _process(p, test=test, from_waitlist=from_waitlist, rules_override=rules_override)
+
+
+def _process(p, test=False, from_waitlist=False, rules_override=None):
     """Behandl én udgivelse.
     test=True: tilføj intet, log intet, ingen venteliste.
     from_waitlist=True: kaldt af ventelisten – læg ikke på ventelisten igen.
@@ -774,7 +808,13 @@ def process(p, test=False, from_waitlist=False, rules_override=None):
             try:
                 cache[inst["name"]] = find_title(inst, media, title, year, release)
             except httpx.HTTPError as e:
-                return done("fejl", f"opslag i {inst['name']} fejlede: {e.__class__.__name__}", name)
+                detail = f"opslag i {inst['name']} fejlede: {e.__class__.__name__}"
+                if isinstance(e, httpx.HTTPStatusError):
+                    detail += f" {e.response.status_code}"
+                if not test and not from_waitlist and not only and rules_override is None and is_transient(e):
+                    add_to_waitlist(media, title, release, p, name, detail + " – prøver igen")
+                    return done("venteliste", detail + " – prøver igen", name)
+                return done("fejl", detail, name)
         cand, why, same, note = cache[inst["name"]]
         if note:
             res["checks"].append(f"{name}: {note}")
@@ -845,7 +885,16 @@ def process(p, test=False, from_waitlist=False, rules_override=None):
         try:
             created = add_title(inst, media, cand, r)
         except httpx.HTTPError as e:
-            return done("fejl", f"tilføjelse i {inst['name']} fejlede: {e.__class__.__name__}", name)
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 409:
+                # titlen blev lagt ind lige før (samme udgivelse fra to trackere) – ikke en fejl
+                return done("findes allerede", f"findes allerede i {inst['name']} (lige tilføjet)", name)
+            detail = f"tilføjelse i {inst['name']} fejlede: {e.__class__.__name__}"
+            if isinstance(e, httpx.HTTPStatusError):
+                detail += f" {e.response.status_code}"
+            if not from_waitlist and not only and rules_override is None and is_transient(e):
+                add_to_waitlist(media, title, release, p, name, detail + " – prøver igen")
+                return done("venteliste", detail + " – prøver igen", name)
+            return done("fejl", detail, name)
         remember_added(inst, media, created, inf["title"], name)
         return done("tilføjet", f"til {inst['name']} › {r.get('root_folder')}" + note, name)
 
