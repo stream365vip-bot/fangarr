@@ -48,6 +48,7 @@ DEFAULT_SETTINGS = {
     "seerr_check": True,        # spring titler over, der er anmodet om eller afvist i Seerr
     "backup_hour": 3,           # natlig eksport til /config/backup (lokal tid), -1 = fra
     "backup_keep": 14,          # antal natlige eksporter der gemmes
+    "rescue_grab": True,        # hent for sonarr2, når den ikke genkender navnet på en serie, den har
 }
 
 DEFAULT_TAG = "auto-fangarr"
@@ -757,6 +758,10 @@ def _process(p, test=False, from_waitlist=False, rules_override=None):
     release = str(p.get("release") or p.get("torrentName") or title).strip()
     if not year:
         year = year_from_release(release, title)
+    season = to_int(p.get("season"))
+    if not season and media == "series":
+        m_s = re.search(r"\bS(\d{1,2})(?:E\d|\b)", release, re.I)
+        season = to_int(m_s.group(1)) if m_s else 0
     res = {"media": media, "title": title, "year": year, "release": release,
            "decision": "afvist", "rule": "", "detail": "", "match": None, "checks": [], "can_wait": False,
            "suggestions": []}
@@ -829,6 +834,10 @@ def _process(p, test=False, from_waitlist=False, rules_override=None):
                 res["checks"].append(f"{name}: {len(same)} titler med samme navn – valgte den nyeste ({to_int(cand.get('year'))})")
         if not cand:
             res["checks"].append(f"{name}: {why}")
+            if media == "series" and season > 1 and not only:
+                # nye serier tilføjes kun fra sæson 1 – sæson 2+ sendes kun til Fangarr for at hjælpe eksisterende serier
+                res["checks"].append(f"{name}: sæson {season} – kun sæson 1 kan tilføje nye serier")
+                continue
             ymin, ymax = to_int(r.get("year_min")), to_int(r.get("year_max"))
             if not only and year and ((ymin and year < ymin) or (ymax and year > ymax)):
                 # årstallet i udgivelsen ligger uden for reglen – der er ingen grund til at vente på TheTVDB/TMDb
@@ -854,7 +863,12 @@ def _process(p, test=False, from_waitlist=False, rules_override=None):
         inf = describe(media, cand)
         res["match"] = inf
         if inf["exists"]:
+            if media == "series" and not test and not dry and s.get("rescue_grab", True) and to_int(cand.get("id")):
+                rescue_start(inst, to_int(cand.get("id")), inf["title"], release)
             return done("findes allerede", f"findes allerede i {inst['name']}", name)
+        if media == "series" and season > 1 and not only:
+            res["checks"].append(f"{name}: sæson {season} – kun sæson 1 kan tilføje nye serier")
+            continue
         if only:  # fulgt fra premierelisten: du har selv valgt titlen, så reglens krav springes over
             ok, why, missing = True, "fulgt manuelt – reglens krav springes over", []
         else:
@@ -909,6 +923,113 @@ def _process(p, test=False, from_waitlist=False, rules_override=None):
         add_to_waitlist(media, title, release, p, wait_rule, reason, suggestions=res["suggestions"])
         return done("venteliste", "venter på TheTVDB/TMDb: " + reason, wait_rule)
     return done("afvist", "; ".join(res["checks"]) or "ingen regel passede")
+
+
+# ---------------------------------------------------------------- hjælp til sonarr2 (navn ikke genkendt)
+# Nogle danske serier kan sonarr2 ikke genkende på udgivelsesnavnet ("Luksusmaeglerne.paa.Havnefronten"
+# vs "Luksusmæglerne på Havnefronten"), fordi sonarr2 laver å om til a men lader æ/ø stå. Så virker
+# hverken autobrr-skub eller RSS. Fangarr finder udgivelsen ved en søgning på afsnittet og beder
+# sonarr2 hente den til den rigtige serie – det samme som personikonet i sonarr2's søgning.
+
+RESCUE_DELAYS = [0, 300, 900, 3600]   # sekunder: med det samme, efter 5 min, 15 min og 1 time
+_rescue_recent = {}
+_rescue_lock = threading.Lock()
+
+
+def rel_key(t):
+    return re.sub(r"[^a-z0-9]+", "", (t or "").lower())
+
+
+def allowed_quality_ids(profile):
+    out = set()
+
+    def walk(items, parent_ok=False):
+        for it in items or []:
+            ok = bool(it.get("allowed")) or parent_ok
+            q = it.get("quality")
+            if q and ok:
+                out.add(to_int(q.get("id")))
+            walk(it.get("items"), ok)
+    walk(profile.get("items"))
+    return out
+
+
+def rescue_grab(inst, series_id, release):
+    """(True, tekst) = hentet, (False, tekst) = bevidst ikke hentet, (None, tekst) = prøv igen senere."""
+    pr = arr(inst, "GET", "/parse", params={"title": release}) or {}
+    if pr.get("series"):
+        return False, "sonarr2 genkender selv navnet – ingen hjælp nødvendig"
+    pe = pr.get("parsedEpisodeInfo") or {}
+    season = to_int(pe.get("seasonNumber"))
+    nums = [to_int(n) for n in (pe.get("episodeNumbers") or [])]
+    full = bool(pe.get("fullSeason"))
+    if not season or not (nums or full):
+        return False, "sæson/afsnit kan ikke læses i udgivelsesnavnet"
+    series = arr(inst, "GET", f"/series/{series_id}") or {}
+    if not series.get("monitored"):
+        return False, "serien er ikke overvåget i sonarr2"
+    eps = arr(inst, "GET", "/episode", params={"seriesId": series_id}) or []
+    want = [e for e in eps if to_int(e.get("seasonNumber")) == season and (full or to_int(e.get("episodeNumber")) in nums)]
+    label = f"S{season:02d}" + ("" if full else "".join(f"E{n:02d}" for n in nums))
+    if not want:
+        return None, f"{label} findes ikke i sonarr2 endnu (TheTVDB mangler afsnittet)"
+    need = [e for e in want if e.get("monitored") and not e.get("hasFile")]
+    if not need:
+        return False, f"{label} findes allerede eller er ikke overvåget"
+    q = arr(inst, "GET", "/queue", params={"seriesIds": series_id, "pageSize": 500}) or {}
+    inq = {to_int(r.get("episodeId")) for r in (q.get("records") or [])}
+    if any(to_int(e.get("id")) in inq for e in need):
+        return False, f"{label} er allerede ved at blive hentet"
+    key = (inst["name"], series_id, tuple(sorted(to_int(e.get("id")) for e in need)))
+    with _rescue_lock:
+        if time.time() - _rescue_recent.get(key, 0) < 6 * 3600:
+            return False, f"{label} er hentet for nylig"
+    params = {"seriesId": series_id, "seasonNumber": season} if full else {"episodeId": to_int(need[0].get("id"))}
+    rels = arr(inst, "GET", "/release", params=params) or []
+    target = rel_key(release)
+    hit = next((r for r in rels if rel_key(r.get("title")) == target), None)
+    if not hit:
+        return None, f"udgivelsen blev ikke fundet ved søgning på {label}"
+    other = [x for x in (hit.get("rejections") or []) if "unknown" not in str(x).lower()]
+    if other:
+        return False, "sonarr2 afviser udgivelsen: " + "; ".join(str(x) for x in other)
+    qual = ((hit.get("quality") or {}).get("quality") or {})
+    prof = arr(inst, "GET", f"/qualityprofile/{to_int(series.get('qualityProfileId'))}") or {}
+    if to_int(qual.get("id")) not in allowed_quality_ids(prof):
+        return False, f"kvaliteten {qual.get('name') or '?'} er ikke tilladt i profilen {prof.get('name') or '?'}"
+    body = {"guid": hit.get("guid"), "indexerId": to_int(hit.get("indexerId")), "seriesId": series_id}
+    if not full and len(need) == 1 and len(nums) == 1:
+        body["episodeId"] = to_int(need[0].get("id"))
+    arr(inst, "POST", "/release", json=body)
+    with _rescue_lock:
+        _rescue_recent[key] = time.time()
+    return True, f"{label} hentet til {series.get('title')} ({qual.get('name') or '?'}) – sonarr2 genkendte ikke navnet"
+
+
+def _rescue_run(inst, series_id, title, release):
+    ok, msg = None, ""
+    for delay in RESCUE_DELAYS:
+        if delay:
+            time.sleep(delay)
+        try:
+            ok, msg = rescue_grab(inst, series_id, release)
+        except httpx.HTTPError as e:
+            ok, msg = None, f"fejl i sonarr2 ({e.__class__.__name__})"
+        except Exception as e:  # hjælpen må aldrig vælte Fangarr
+            ok, msg = False, f"uventet fejl: {e.__class__.__name__}"
+        if ok is not None:
+            break
+    if ok is False and "ingen hjælp nødvendig" in msg:
+        return  # det normale tilfælde – skriv ikke i loggen
+    decision = "hentet for sonarr2" if ok else "ikke hentet"
+    if ok is None:
+        msg = "gav op: " + msg
+    log.info("series | %s | %s | %s", release, decision, msg)
+    write_log("series", release, title, 0, decision, "", msg, False)
+
+
+def rescue_start(inst, series_id, title, release):
+    threading.Thread(target=_rescue_run, args=(inst, series_id, title, release), daemon=True).start()
 
 
 # ---------------------------------------------------------------- Seerr
@@ -1041,13 +1162,16 @@ def daily_summary(s):
     venter = con.execute("SELECT COUNT(*) FROM waitlist WHERE status='venter'").fetchone()[0]
     udl = con.execute("SELECT COUNT(*) FROM log WHERE ts>=? AND decision='udløbet'", (since,)).fetchone()[0]
     forslag = con.execute("SELECT COUNT(*) FROM waitlist WHERE status='venter' AND suggestions NOT IN ('', '[]')").fetchone()[0]
+    hjulpet = con.execute("SELECT COUNT(*) FROM log WHERE ts>=? AND decision='hentet for sonarr2'", (since,)).fetchone()[0]
     con.close()
-    if not (rows or fejl or udl or forslag):
+    if not (rows or fejl or udl or forslag or hjulpet):
         return
     lines = [f"{'🎬' if r['media'] == 'movie' else '📺'} {r['title']} ({r['year'] or '?'}) – {r['decision']}" for r in rows[:30]]
     more = f"\n… og {len(rows) - 30} mere" if len(rows) > 30 else ""
     mode = " (prøvetilstand)" if s.get("dry_run") else ""
     txt = f"📦 Fangarr – sidste døgn{mode}\n\n" + ("\n".join(lines) or "Intet tilføjet.") + more
+    if hjulpet:
+        txt += f"\n\n🔧 {hjulpet} afsnit hentet for sonarr2 (navnet blev ikke genkendt)"
     txt += f"\n\n⏳ {venter} på ventelisten"
     if udl:
         txt += f", {udl} opgivet (ikke på TheTVDB/TMDb i tide)"
@@ -1094,7 +1218,7 @@ AUTOBRR_APIKEY = os.environ.get("AUTOBRR_APIKEY") or ""
 FANGARR_URL = (os.environ.get("FANGARR_URL") or "http://fangarr:8080").rstrip("/")
 
 AUTOBRR_DEFAULTS = {
-    "series": {"name": "Fangarr – serier", "categories": "*TV*,*Serie*", "seasons": "1", "priority": 10},
+    "series": {"name": "Fangarr – serier", "categories": "*TV*,*Serie*", "seasons": "", "priority": 10},
     "movie": {"name": "Fangarr – film", "categories": "*Movie*,*Film*", "seasons": "", "priority": 10},
 }
 
@@ -1215,7 +1339,7 @@ async def webhook(req: Request):
     log.info("%s | %s | %s | %s", res["media"], res["release"], res["decision"], res["detail"])
     if res["decision"] == "findes allerede" and s.get("pass_existing"):
         return JSONResponse(res, status_code=200)   # autobrr må fortsætte
-    return JSONResponse(res, status_code=202)        # håndteret – autobrr stopper
+    return JSONResponse(res, status_code=202)        # håndteret – Fangarr-filteret afvises, autobrr går videre til næste filter
 
 
 @app.get("/api/state")

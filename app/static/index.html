@@ -259,6 +259,8 @@
       <div class="small">Nye serier fra Fangarr opdateres oftere i Sonarr, så afsnit, der først kommer på TheTVDB efter udsendelsen, bliver importeret hurtigere.</div>
       <label class="check" style="margin-top:14px"><input type="checkbox" id="s_pass_existing"> Lad autobrr fortsætte, hvis titlen allerede findes i Sonarr/Radarr</label>
       <div class="small">Slået fra: autobrr stopper altid, og Sonarr/Radarr henter selv via Prowlarr.</div>
+      <label class="check" style="margin-top:14px"><input type="checkbox" id="s_rescue_grab"> Hent for sonarr2, når den ikke genkender navnet på en serie, den allerede har</label>
+      <div class="small">Fx "Luksusmaeglerne.paa.Havnefronten" = "Luksusmæglerne på Havnefronten". Fangarr søger afsnittet i sonarr2 og henter udgivelsen til den rigtige serie (som personikonet i sonarr2). Kun overvågede afsnit uden fil, og kun kvaliteter, profilen tillader.</div>
       <h2 style="margin-top:22px">Seerr</h2>
       <label class="check"><input type="checkbox" id="s_seerr_check"> Spring titler over, som er afvist eller venter på godkendelse i Seerr</label>
       <div class="small" id="seerrInfo"></div>
@@ -603,13 +605,14 @@ function renderSettings() {
   $("s_dry_run").checked = !!s.dry_run;
   $("s_pass_existing").checked = !!s.pass_existing;
   $("s_seerr_check").checked = !!s.seerr_check;
+  $("s_rescue_grab").checked = !!s.rescue_grab;
   $("seerrInfo").textContent = S.features.seerr ? "Seerr er forbundet." : "Seerr er ikke forbundet – tilføj SEERR_URL og SEERR_APIKEY i fangarr.env for at bruge det.";
   $("version").textContent = "Fangarr " + S.features.version;
   $("dryWarn").innerHTML = s.dry_run ? "" :
     '<div class="warn">Prøvetilstand er slået fra – titler bliver tilføjet til Sonarr/Radarr for alvor.</div>';
 }
 async function saveSettings() {
-  const body = {dry_run: $("s_dry_run").checked, pass_existing: $("s_pass_existing").checked, seerr_check: $("s_seerr_check").checked};
+  const body = {dry_run: $("s_dry_run").checked, pass_existing: $("s_pass_existing").checked, seerr_check: $("s_seerr_check").checked, rescue_grab: $("s_rescue_grab").checked};
   SET_NUM.forEach(k => body[k] = $("s_" + k).value);
   if (S.settings.dry_run && !body.dry_run &&
       !confirm("Slå prøvetilstand fra? Herefter tilføjer Fangarr titler til Sonarr/Radarr for alvor.")) return;
