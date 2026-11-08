@@ -236,11 +236,19 @@
     <div class="card" style="padding:0; overflow-x:auto"><table>
       <thead><tr><th>Titel</th><th>Udgivelse</th><th class="num">Point</th><th>Hentes</th></tr></thead>
       <tbody id="trWay"></tbody></table></div>
-    <h2 style="margin-top:22px">Problemer</h2>
-    <p class="hint">Titler, der ikke er blevet oversat. Grunden er Oversætterens egen forklaring.</p>
+    <div class="row" style="justify-content:space-between; margin-top:22px">
+      <h2 style="margin:0">Problemer</h2>
+      <label class="small" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="trShowAudio" onchange="renderTr()" style="width:auto"> Vis titler med dansk tale</label>
+    </div>
+    <p class="hint">Titler, der ikke er blevet oversat. Grunden er Oversætterens egen forklaring. <b>Prøv igen</b> behandler titlen forfra i næste runde; <b>Opgiv</b> fjerner den fra listen (den vises så i Plex efter sikkerhedsnettet uden dansk tekst).</p>
     <div class="card" style="padding:0; overflow-x:auto"><table>
-      <thead><tr><th>Titel</th><th>Status</th><th>Grund</th><th>Senest</th><th class="num">Forsøg</th></tr></thead>
+      <thead><tr><th>Titel</th><th>Status</th><th>Grund</th><th>Senest</th><th class="num">Forsøg</th><th></th></tr></thead>
       <tbody id="trProblems"></tbody></table></div>
+    <h2 style="margin-top:22px">Oversæt en titel</h2>
+    <p class="hint">Søg en serie eller film frem fra Sonarr/Radarr. Vælg sæsoner og se prisen, før du oversætter. Oversætteren søger stadig efter en dansk tekst først. <b>Ingen ventetid fremover</b> sætter mærket <code>straks</code>, så nye afsnit hentes uden de 6 timer (fjernes aldrig automatisk).</p>
+    <div class="row" style="margin:0 0 10px"><input type="text" id="trQ" placeholder="f.eks. Gold Rush" onkeydown="if(event.key==='Enter')trSearch()" style="flex:1;min-width:0"><button class="b" onclick="trSearch()">Søg</button></div>
+    <div id="trResults"></div>
+    <div id="trPick"></div>
     <h2 style="margin-top:22px">Færdige oversættelser (30 dage)</h2>
     <div class="card" style="padding:0; overflow-x:auto"><table>
       <thead><tr><th>Titel</th><th>Færdig</th><th class="num">Pris</th><th class="num">Flag før → efter</th><th class="num">Rettet</th><th>Synk</th><th>Plex</th></tr></thead>
@@ -920,7 +928,7 @@ function renderTr() {
   const since7 = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
   const sum = (rows, key) => rows.reduce((a, d) => a + d[key], 0);
   const t = days.filter(d => d.day === today), w = days.filter(d => d.day > since7);
-  const probs = ((TR.problems || {}).items || []).filter(i => i.status !== "venter_paa_dansk").length;
+  const probs = ((TR.problems || {}).items || []).filter(i => i.status !== "venter_paa_dansk" && i.status !== "ikke_muligt").length;
   $("trKpis").innerHTML = [
     ["Lige nu", `<span style="color:${color}">${label}</span>`, st.title ? esc(st.title) + (st.batch_wait_min != null ? ` · ${st.batch_wait_min} min` : "") : (st.last_round ? "Seneste runde " + lt(st.last_round) : "")],
     ["I kø", st.queue ?? 0, "valgt i denne runde"],
@@ -935,10 +943,14 @@ function renderTr() {
     <div class="money ${over ? "over" : ""}"><i class="fc" style="width:${pct(f.forecast_usd)}%"></i><i style="width:${pct(f.month_usd)}%"></i></div>
     <div class="small">Prognose for hele måneden: <b>${kr(f.forecast_usd, k)}</b> (${kr(f.per_day_usd, k)} pr. dag de seneste 7 dage, ${f.days_left} dage tilbage). Den lyse del af bjælken er prognosen.</div>`;
   renderReveal();
-  const P = (TR.problems || {}).items || [];
-  $("trProblems").innerHTML = P.length ? P.map(i => `<tr><td><b>${esc(i.title)}</b><div class="small">${esc(i.file || i.key)}</div></td>
+  const Pall = (TR.problems || {}).items || [], showAudio = $("trShowAudio").checked;
+  const P = showAudio ? Pall : Pall.filter(i => i.status !== "ikke_muligt"), hidden = Pall.length - P.length;
+  $("trProblems").innerHTML = (P.length ? P.map(i => `<tr><td><b>${esc(i.title)}</b><div class="small">${esc(i.file || i.key)}</div></td>
     <td class="st st-${esc(i.status)}">${TR_ST[i.status] || esc(i.status)}</td><td>${esc(i.reason || "")}</td><td style="white-space:nowrap">${lt(i.updated_at)}</td>
-    <td class="num">${i.attempts ?? ""}</td></tr>`).join("") : '<tr><td colspan="5" class="empty">Ingen problemer 🎉</td></tr>';
+    <td class="num">${i.attempts ?? ""}</td>
+    <td style="white-space:nowrap">${i.status === "ikke_muligt" ? "" : `<button class="b" onclick="trItem('${esc(i.key)}','retry')">Prøv igen</button> <button class="b danger" onclick="trItem('${esc(i.key)}','skip')">Opgiv</button>`}</td></tr>`).join("")
+    : '<tr><td colspan="6" class="empty">Ingen problemer 🎉</td></tr>')
+    + (hidden ? `<tr><td colspan="6" class="small" style="text-align:center">${hidden} med dansk tale er skjult (ikke et problem)</td></tr>` : "");
   const Dall = (TR.done || {}).items || [], D = trAll ? Dall : Dall.slice(0, 25);
   $("trDone").innerHTML = D.length ? D.map(i => `<tr><td><b>${esc(i.title)}</b><div class="small">${esc(i.source || "")}${i.en_hi ? " · fra HI-tekst" : ""}</div></td>
     <td style="white-space:nowrap">${lt(i.updated_at)}</td><td class="num">${kr1(i.cost_usd, k)}</td>
@@ -960,6 +972,73 @@ function renderTr() {
     `<div class="small"><b>${esc(d.instance)}</b>: ${d.torrent_min ? (d.torrent_min / 60).toLocaleString("da-DK") + " t" : "ingen ventetid"}${d.bypass ? " · straks ved score ≥ " + Number(d.min_score).toLocaleString("da-DK") : ""} · ${d.tags.length ? "mærker: " + esc(d.tags.join(", ")) : "alle andre"}</div>`).join("");
   $("trConfig").innerHTML = items.map(([l, v, sub]) => `<div class="kpi"><div class="l">${l}</div><div style="margin-top:4px"><b>${v}</b></div><div class="small">${sub}</div></div>`).join("")
     + `<div class="kpi" style="grid-column:1/-1"><div class="l">Ventetid i Sonarr/Radarr (Delay Profiles)</div>${dp || '<div class="small">–</div>'}</div>`;
+}
+// ---------- knapperne (Fase 4)
+let TR_FOUND = [], TR_PICK = null, TR_EST = null;
+async function trItem(key, action) {
+  if (action === "skip" && !confirm("Opgiv titlen? Den oversættes ikke og vises i Plex uden dansk tekst efter sikkerhedsnettet.")) return;
+  try { const r = await api("/api/translations/item", {method: "POST", body: JSON.stringify({key, action})});
+        toast(action === "retry" ? `${r.title}: prøves igen i næste runde` : `${r.title}: opgivet`); loadTr(); }
+  catch (e) { toast(e.message, true); }
+}
+async function trSearch() {
+  const q = $("trQ").value.trim(); if (q.length < 2) return;
+  $("trResults").innerHTML = '<div class="small">Søger …</div>'; $("trPick").innerHTML = "";
+  try { TR_FOUND = await api("/api/translations/search?q=" + encodeURIComponent(q)); }
+  catch (e) { $("trResults").innerHTML = `<div class="warn">${esc(e.message)}</div>`; return; }
+  $("trResults").innerHTML = TR_FOUND.length ? `<div class="card" style="padding:6px">${TR_FOUND.map((x, i) =>
+    `<button class="b" style="margin:4px" onclick="trChoose(${i})">${x.media === "movie" ? "🎬" : "📺"} ${esc(x.title)}${x.year ? " (" + x.year + ")" : ""}${x.straks ? ' <span class="tag" style="color:var(--ok)">straks</span>' : ""}</button>`).join("")}</div>`
+    : '<div class="card empty">Ingen serier eller film fundet i Sonarr/Radarr.</div>';
+}
+async function trChoose(i) {
+  TR_PICK = TR_FOUND[i]; $("trPick").innerHTML = '<div class="card empty">Tæller afsnit …</div>';
+  try { TR_EST = await api(`/api/translations/estimate?media=${TR_PICK.media}&id=${TR_PICK.id}`); }
+  catch (e) { $("trPick").innerHTML = `<div class="warn">${esc(e.message)}</div>`; return; }
+  renderPick();
+}
+function trTotal() {
+  const e = TR_EST; if (!e) return {n: 0, usd: 0};
+  if (e.media === "movie") return {n: e.state === "mangler" ? 1 : 0, usd: e.est_usd};
+  let n = 0; document.querySelectorAll(".trSeason:checked").forEach(c => { n += Number(c.dataset.n); });
+  return {n, usd: n * e.price_per_item_usd};
+}
+function trUpdateTotal() {
+  const e = TR_EST, k = e.usd_to_dkk || 6.7, t = trTotal(), left = (e.budget_usd || 0) - (e.month_usd || 0);
+  $("trTotal").innerHTML = `<b>${t.n}</b> ${e.media === "movie" ? "film" : "afsnit"} · ca. <b>${kr(t.usd, k)}</b>`
+    + (t.usd > left ? `<div class="warn" style="margin-top:8px">Det er mere end der er tilbage af månedens loft (${kr(Math.max(0, left), k)} af ${kr(e.budget_usd, k)}). Oversætteren stopper ved loftet, og resten venter til næste måned.</div>` : "");
+  $("trGo").disabled = !t.n;
+}
+function renderPick() {
+  const e = TR_EST, p = TR_PICK, k = e.usd_to_dkk || 6.7;
+  const ST = {mangler: "mangler dansk", dansk: "har dansk", i_gang: "er i gang", ingen_fil: "ingen fil endnu"};
+  let body;
+  if (e.media === "movie") body = `<div>Status: <b>${ST[e.state] || esc(e.state)}</b></div>`;
+  else body = e.seasons.length ? `<table><thead><tr><th></th><th>Sæson</th><th class="num">Afsnit</th><th class="num">Har dansk</th><th class="num">I gang</th><th class="num">Mangler</th><th class="num">Pris</th></tr></thead><tbody>${e.seasons.map(s =>
+    `<tr><td><input type="checkbox" class="trSeason" data-n="${s.mangler}" data-s="${s.season}" ${s.mangler && s.season > 0 ? "checked" : ""} ${s.mangler ? "" : "disabled"} onchange="trUpdateTotal()" style="width:auto"></td>
+     <td>${s.season === 0 ? "Specials" : "Sæson " + s.season}</td><td class="num">${s.episodes}</td><td class="num">${s.dansk}</td><td class="num">${s.i_gang}</td><td class="num"><b>${s.mangler}</b></td><td class="num">${kr(s.est_usd, k)}</td></tr>`).join("")}</tbody></table>`
+    : '<div class="empty">Ingen afsnit med fil.</div>';
+  $("trPick").innerHTML = `<div class="card" style="overflow-x:auto">
+    <div class="row" style="justify-content:space-between;margin:0 0 8px"><b>${p.media === "movie" ? "🎬" : "📺"} ${esc(e.title)}${e.year ? " (" + e.year + ")" : ""}</b>
+      <span class="small">ca. ${kr(e.price_per_item_usd, k)} pr. ${p.media === "movie" ? "film" : "afsnit"}</span></div>
+    ${e.note ? `<div class="warn">${esc(e.note)}</div>` : ""}${body}
+    <div id="trTotal" style="margin:10px 0"></div>
+    <div class="row" style="margin:0"><button class="b pri" id="trGo" onclick="trGo()">Oversæt nu</button>
+      <button class="b" onclick="trStraks(${!p.straks})">${p.straks ? "Slå ventetid til igen" : "Ingen ventetid fremover"}</button></div>
+    <div class="small" style="margin-top:6px">${p.straks ? "Har mærket straks: nye afsnit hentes uden de 6 timer." : "Nye afsnit venter 6 timer på en NORDiC-udgave."}</div></div>`;
+  trUpdateTotal();
+}
+async function trGo() {
+  const e = TR_EST, t = trTotal(), k = e.usd_to_dkk || 6.7;
+  if (!t.n || !confirm(`Oversæt ${t.n} ${e.media === "movie" ? "film" : "afsnit"} af ${e.title} for ca. ${kr(t.usd, k)}?`)) return;
+  const seasons = [...document.querySelectorAll(".trSeason:checked")].map(c => Number(c.dataset.s));
+  try { const r = await api("/api/translations/translate", {method: "POST", body: JSON.stringify({media: TR_PICK.media, id: TR_PICK.id, seasons})});
+        toast(`${r.added} lagt i kø hos Oversætteren – den søger efter dansk først`); trChoose(TR_FOUND.indexOf(TR_PICK)); }
+  catch (err) { toast(err.message, true); }
+}
+async function trStraks(on) {
+  try { await api("/api/translations/straks", {method: "POST", body: JSON.stringify({media: TR_PICK.media, instance: TR_PICK.instance, id: TR_PICK.id, title: TR_PICK.title, on})});
+        TR_PICK.straks = on; toast(on ? "Ingen ventetid fremover (mærket straks)" : "Normal ventetid igen"); renderPick(); }
+  catch (e) { toast(e.message, true); }
 }
 const RV_WHY = {"dansk originalsprog": "dansk tale", "dansk tale": "dansk tale", "indlejret dansk tekst": "dansk tekst i filen", "dansk tekstfil": "dansk tekst"};
 function renderReveal() {

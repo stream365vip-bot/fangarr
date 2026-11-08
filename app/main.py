@@ -1235,6 +1235,7 @@ def background_loop():
     last_summary = None
     last_tr_check = 0.0
     last_rv_check = 0.0
+    last_ss_check = 0.0
     while True:
         try:
             s = get_settings()
@@ -1260,6 +1261,9 @@ def background_loop():
             if time.time() - last_rv_check >= 300:
                 last_rv_check = time.time()
                 check_reveal()
+            if time.time() - last_ss_check >= 120:
+                last_ss_check = time.time()
+                check_seerr_straks()
         except Exception as e:  # baggrundsjobbet må aldrig stoppe appen
             log.warning("Baggrundsjob fejlede: %s", e)
         time.sleep(LOOP_SECONDS)
@@ -2542,3 +2546,253 @@ def check_translator():
     elif not over and _ov_alert["budget"]:
         telegram(f"✅ Fangarr – prognosen for oversættelser er under loftet igen ({f['forecast_usd']:.0f} af {budget:.0f} USD).")
     _ov_alert["budget"] = over
+
+
+# ---------------------------------------------------------------- knapperne (Oversætterens trin C4, Fase 4)
+# "Oversæt nu" (valgte sæsoner/film), "Ingen ventetid fremover" (mærket straks), "Prøv igen" og "Opgiv".
+# Fangarr skriver kun i Oversætterens egen database gennem den interne adresse, og sætter/fjerner mærker i
+# Sonarr/Radarr. Seerr-ønsker: kun første download uden ventetid (mærket seerr-straks).
+
+STRAKS_TAG = "straks"
+SEERR_STRAKS_TAG = "seerr-straks"
+
+
+def ov_post(path, body):
+    r = httpx.post(OVERSAETTER_URL + path, json=body, headers={"X-Api-Token": OVERSAETTER_TOKEN}, timeout=60)
+    if r.status_code == 401:
+        raise RuntimeError("Oversætteren afviste nøglen – OVERSAETTER_TOKEN skal være lig API_TOKEN i oversætterens .env")
+    return r.status_code, (r.json() if r.content else {})
+
+
+def _ov_or_http_error(fn):
+    try:
+        return fn()
+    except httpx.HTTPStatusError as e:
+        try:
+            msg = e.response.json().get("error")
+        except ValueError:
+            msg = None
+        raise HTTPException(e.response.status_code, msg or f"Oversætteren svarede {e.response.status_code}")
+    except (httpx.HTTPError, RuntimeError) as e:
+        raise HTTPException(502, f"Oversætteren kunne ikke nås ({e.__class__.__name__}: {e})")
+
+
+def _tag_ids(inst, labels):
+    tags = {t["label"]: t["id"] for t in arr(inst, "GET", "/tag") or []}
+    return {label: tags.get(label) for label in labels}
+
+
+@app.get("/api/translations/search")
+def translations_search(q: str = ""):
+    """Find serier og film i Sonarr/Radarr til "Oversæt en titel"."""
+    q = (q or "").strip()
+    if len(q) < 2:
+        return []
+    want_n, want_l = norm(q), loose(q)
+    out = []
+    for inst in INSTANCES.values():
+        media = "movie" if inst["type"] == "radarr" else "series"
+        straks = _tag_ids(inst, [STRAKS_TAG])[STRAKS_TAG]
+        for it in library(inst, media):
+            names = [it.get("title") or ""] + [a.get("title") or "" for a in it.get("alternateTitles") or []]
+            hit = 0
+            for n in names:
+                if norm(n) == want_n:
+                    hit = max(hit, 3)
+                elif norm(n).startswith(want_n):
+                    hit = max(hit, 2)
+                elif want_l and want_l in loose(n):
+                    hit = max(hit, 1)
+            if hit:
+                out.append({"media": media, "instance": inst["name"], "id": it["id"], "title": it.get("title"),
+                            "year": it.get("year"), "straks": straks is not None and straks in (it.get("tags") or []),
+                            "_hit": hit})
+    out.sort(key=lambda x: (-x["_hit"], str(x["title"])))
+    for x in out:
+        x.pop("_hit")
+    return out[:15]
+
+
+@app.get("/api/translations/estimate")
+def translations_estimate(media: str, id: int):
+    if not ov_enabled():
+        raise HTTPException(400, "Oversætteren er ikke forbundet")
+    params = {"movie_id": id} if media == "movie" else {"series_id": id}
+    return _ov_or_http_error(lambda: ov_get("/api/estimate", params))
+
+
+def _ov_post_or_error(path, body):
+    try:
+        code, out = ov_post(path, body)
+    except (httpx.HTTPError, RuntimeError) as e:
+        raise HTTPException(502, f"Oversætteren kunne ikke nås ({e.__class__.__name__}: {e})")
+    if code != 200:
+        raise HTTPException(code, out.get("error") or f"Oversætteren svarede {code}")
+    return out
+
+
+@app.post("/api/translations/translate")
+async def translations_translate(req: Request):
+    """"Oversæt nu": de valgte sæsoner (serie) eller filmen."""
+    b = await req.json()
+    media, ident = b.get("media"), int(b.get("id") or 0)
+    if media == "movie":
+        body = {"movie_id": ident}
+    else:
+        body = {"series_id": ident, "seasons": [int(s) for s in b.get("seasons") or []]}
+    out = await run_in_threadpool(_ov_post_or_error, "/api/translate", body)
+    write_log(media if media == "movie" else "series", "", out.get("title") or "", None, "oversæt nu", "",
+              f"{out.get('added', 0)} lagt i kø hos Oversætteren", False)
+    return out
+
+
+@app.post("/api/translations/item")
+async def translations_item(req: Request):
+    """"Prøv igen" / "Opgiv" fra Problemer."""
+    b = await req.json()
+    action = b.get("action")
+    if action not in ("retry", "skip"):
+        raise HTTPException(400, "ukendt handling")
+    path = "/api/items/retry" if action == "retry" else "/api/items/skip"
+    return await run_in_threadpool(_ov_post_or_error, path, {"key": str(b.get("key") or "")})
+
+
+def set_tag(inst, media, ident, label, on):
+    """Sæt eller fjern et mærke på en serie/film. Returnerer True, hvis noget blev ændret."""
+    path = f"/movie/{ident}" if media == "movie" else f"/series/{ident}"
+    item = arr(inst, "GET", path)
+    tid = tag_id(inst, label) if on else _tag_ids(inst, [label])[label]
+    if tid is None:
+        return False
+    tags = list(item.get("tags") or [])
+    if on == (tid in tags):
+        return False
+    item["tags"] = tags + [tid] if on else [t for t in tags if t != tid]
+    arr(inst, "PUT", path, json=item)
+    with _lib_lock:
+        _lib_cache.pop((inst["name"], media), None)
+    return True
+
+
+@app.post("/api/translations/straks")
+async def translations_straks(req: Request):
+    """"Ingen ventetid fremover": mærket straks på serien/filmen (fjernes aldrig automatisk)."""
+    b = await req.json()
+    inst = INSTANCES.get(b.get("instance"))
+    if not inst:
+        raise HTTPException(400, "ukendt instans")
+    media, ident, on = b.get("media"), int(b.get("id") or 0), bool(b.get("on"))
+    changed = await run_in_threadpool(set_tag, inst, media, ident, STRAKS_TAG, on)
+    write_log(media, "", str(b.get("title") or ident), None, "ingen ventetid" if on else "ventetid igen", "",
+              f"mærket {STRAKS_TAG} {'sat på' if on else 'fjernet'} i {inst['name']}", False)
+    return {"changed": changed, "on": on}
+
+
+# ---- Seerr-ønsker: kun første download uden ventetid
+
+def _seerr_straks_table():
+    con = db()
+    with con:
+        con.execute("CREATE TABLE IF NOT EXISTS seerr_straks (series_id INTEGER PRIMARY KEY, set_at TEXT, request_id INTEGER)")
+        con.execute("CREATE TABLE IF NOT EXISTS seerr_seen (request_id INTEGER PRIMARY KEY, ts TEXT)")
+    return con
+
+
+def _parse_utc(v):
+    try:
+        d = datetime.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=datetime.timezone.utc)
+
+
+def _imported_since(inst, series_id, since):
+    """Er der importeret et afsnit til serien efter tidspunktet (UTC)?"""
+    stamp = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+    for h in arr(inst, "GET", "/history/since", params={"date": stamp, "eventType": "downloadFolderImported"}) or []:
+        if h.get("seriesId") == series_id:
+            return True
+    return False
+
+
+def check_seerr_straks():
+    """Køres ca. hvert 2. minut.
+
+    1. Seerr-ønsker på en serie, der allerede findes i sonarr2: mærket seerr-straks sættes på, og der søges efter de
+       ønskede sæsoner, så første download kommer uden ventetid. (Seerr sætter selv mærket på nye serier.)
+    2. Serier med seerr-straks, hvor et afsnit er kommet hjem efter mærket blev sat: mærket fjernes, så senere
+       afsnit får de normale 6 timers ventetid.
+    """
+    inst = _arr_of("sonarr")
+    if not inst:
+        return
+    con = _seerr_straks_table()
+    utc = datetime.datetime.now(datetime.timezone.utc)
+    # 1. nye ønsker
+    if SEERR_URL and SEERR_APIKEY:
+        try:
+            reqs = seerr_get("/request", {"take": 50, "skip": 0, "sort": "added", "filter": "all"}).get("results") or []
+        except Exception as e:
+            log.warning("Seerr-straks: kunne ikke hente ønsker fra Seerr: %s", e.__class__.__name__)
+            reqs = []
+        seen = {r["request_id"] for r in con.execute("SELECT request_id FROM seerr_seen").fetchall()}
+        series = None
+        for r in reqs:
+            rid, created = r.get("id"), _parse_utc(r.get("createdAt"))
+            if r.get("type") != "tv" or rid in seen or created is None or r.get("is4k"):
+                continue
+            if utc - created > datetime.timedelta(hours=48) or r.get("status") != 2:
+                if utc - created > datetime.timedelta(hours=48):
+                    with con:
+                        con.execute("INSERT OR IGNORE INTO seerr_seen VALUES (?, ?)", (rid, iso(now())))
+                continue
+            tvdb = (r.get("media") or {}).get("tvdbId")
+            if series is None:
+                series = {s.get("tvdbId"): s for s in arr(inst, "GET", "/series") or []}
+            s = series.get(tvdb)
+            if s is None:
+                if utc - created > datetime.timedelta(hours=2):  # kom aldrig i sonarr2 - opgiv
+                    with con:
+                        con.execute("INSERT OR IGNORE INTO seerr_seen VALUES (?, ?)", (rid, iso(now())))
+                continue
+            sid = s["id"]
+            ids = _tag_ids(inst, [SEERR_STRAKS_TAG])
+            has_tag = ids[SEERR_STRAKS_TAG] is not None and ids[SEERR_STRAKS_TAG] in (s.get("tags") or [])
+            added = _parse_utc(s.get("added"))
+            existing = added is not None and added < created - datetime.timedelta(minutes=10)
+            if not has_tag and not _imported_since(inst, sid, created):
+                set_tag(inst, "series", sid, SEERR_STRAKS_TAG, True)
+                with con:
+                    con.execute("INSERT OR REPLACE INTO seerr_straks VALUES (?, ?, ?)", (sid, utc.isoformat(), rid))
+                seasons = [x.get("seasonNumber") for x in r.get("seasons") or [] if x.get("seasonNumber") is not None]
+                for n in seasons or [None]:
+                    cmd = {"name": "SeasonSearch", "seriesId": sid, "seasonNumber": n} if n is not None else \
+                        {"name": "SeriesSearch", "seriesId": sid}
+                    arr(inst, "POST", "/command", json=cmd)
+                why = "eksisterende serie" if existing else "ny serie uden mærket"
+                log.info("Seerr-straks: %s fik %s (%s) – søger sæson %s", s.get("title"), SEERR_STRAKS_TAG, why,
+                         ", ".join(str(n) for n in seasons) or "alle")
+                write_log("series", "", s.get("title") or "", s.get("year"), "seerr uden ventetid", "",
+                          f"Seerr-ønske ({why}): {SEERR_STRAKS_TAG} sat på, søgning startet", False)
+            with con:
+                con.execute("INSERT OR IGNORE INTO seerr_seen VALUES (?, ?)", (rid, iso(now())))
+    # 2. fjern mærket efter første import
+    tid = _tag_ids(inst, [SEERR_STRAKS_TAG])[SEERR_STRAKS_TAG]
+    if tid is not None:
+        set_at = {r["series_id"]: r["set_at"] for r in con.execute("SELECT series_id, set_at FROM seerr_straks").fetchall()}
+        for s in arr(inst, "GET", "/series") or []:
+            if tid not in (s.get("tags") or []):
+                continue
+            since = _parse_utc(set_at.get(s["id"])) or _parse_utc(s.get("added"))
+            if since is None or not _imported_since(inst, s["id"], since):
+                continue
+            set_tag(inst, "series", s["id"], SEERR_STRAKS_TAG, False)
+            with con:
+                con.execute("DELETE FROM seerr_straks WHERE series_id=?", (s["id"],))
+            log.info("Seerr-straks: %s – første afsnit er hjemme, %s fjernet (6 timers ventetid fremover)",
+                     s.get("title"), SEERR_STRAKS_TAG)
+            write_log("series", "", s.get("title") or "", s.get("year"), "seerr-straks fjernet", "",
+                      "første afsnit er hjemme – normal ventetid fremover", False)
+    with con:
+        con.execute("DELETE FROM seerr_seen WHERE ts < ?", (iso(now() - datetime.timedelta(days=7)),))
+    con.close()
