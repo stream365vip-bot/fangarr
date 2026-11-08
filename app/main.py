@@ -100,6 +100,8 @@ def init_db():
         cols = [r[1] for r in con.execute("PRAGMA table_info(waitlist)").fetchall()]
         if "suggestions" not in cols:
             con.execute("ALTER TABLE waitlist ADD COLUMN suggestions TEXT DEFAULT '[]'")
+        con.execute("CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)")  # intern tilstand
+        con.execute("CREATE TABLE IF NOT EXISTS reveal_notified (id TEXT PRIMARY KEY, ts TEXT)")
         cols = [r[1] for r in con.execute("PRAGMA table_info(added)").fetchall()]
         for c in ("ext_id", "rule"):
             if c not in cols:
@@ -1232,6 +1234,7 @@ _last_backup = {}
 def background_loop():
     last_summary = None
     last_tr_check = 0.0
+    last_rv_check = 0.0
     while True:
         try:
             s = get_settings()
@@ -1254,6 +1257,9 @@ def background_loop():
             if time.time() - last_tr_check >= 600:
                 last_tr_check = time.time()
                 check_translator()
+            if time.time() - last_rv_check >= 300:
+                last_rv_check = time.time()
+                check_reveal()
         except Exception as e:  # baggrundsjobbet må aldrig stoppe appen
             log.warning("Baggrundsjob fejlede: %s", e)
         time.sleep(LOOP_SECONDS)
@@ -1403,7 +1409,8 @@ def state():
         "today": {"series": added_today("series"), "movie": added_today("movie")},
         "waiting": venter,
         "features": {"tracearr": bool(TRACEARR_URL and TRACEARR_APIKEY), "seerr": bool(SEERR_URL and SEERR_APIKEY),
-                     "autobrr": bool(AUTOBRR_URL and AUTOBRR_APIKEY), "translator": ov_enabled(), "version": VERSION},
+                     "autobrr": bool(AUTOBRR_URL and AUTOBRR_APIKEY), "translator": ov_enabled(),
+                     "plex": bool(PLEX_URL and PLEX_TOKEN), "version": VERSION},
     }
 
 
@@ -2237,9 +2244,183 @@ def translations():
             errors.append(f"{path}: {e.__class__.__name__}: {e}")
     if "spend" in out:
         out["forecast"] = forecast(out["spend"])
+    try:
+        out["reveal"] = ov_get("/api/reveal", {"days": 7})
+    except Exception as e:
+        errors.append(f"/api/reveal: {e.__class__.__name__}: {e}")
+    out["on_the_way"] = on_the_way()
     out["delay_profiles"] = delay_profiles()
     out["errors"] = errors
     return out
+
+
+def on_the_way():
+    """Fanen Oversættelser › C: udgivelser, Sonarr/Radarr holder tilbage på grund af ventetiden (Delay Profile)."""
+    out = []
+    for inst in INSTANCES.values():
+        movie = inst["type"] == "radarr"
+        params = ({"includeUnknownMovieItems": "true", "includeMovie": "true"} if movie else
+                  {"includeUnknownSeriesItems": "true", "includeSeries": "true", "includeEpisode": "true"})
+        try:
+            records = (arr(inst, "GET", "/queue", params={"pageSize": 500, **params}) or {}).get("records") or []
+        except Exception as e:
+            out.append({"instance": inst["name"], "error": e.__class__.__name__})
+            continue
+        for r in records:
+            if str(r.get("status") or "").lower() != "delay":
+                continue
+            if movie:
+                m = r.get("movie") or {}
+                name = f"{m.get('title') or '?'} ({m.get('year') or '?'})"
+            else:
+                se, ep = r.get("series") or {}, r.get("episode") or {}
+                name = f"{se.get('title') or '?'} {ep.get('seasonNumber', 0)}x{int(ep.get('episodeNumber') or 0):02d}"
+            out.append({"instance": inst["name"], "title": name, "release": r.get("title") or "",
+                        "nordic": bool(NORDIC_RE.search(r.get("title") or "")),
+                        "score": r.get("customFormatScore"), "until": r.get("estimatedCompletionTime"),
+                        "quality": ((r.get("quality") or {}).get("quality") or {}).get("name")})
+    return sorted(out, key=lambda x: str(x.get("until") or ""))
+
+
+# ---------------------------------------------------------------- skjult indtil dansk (Oversætterens trin C3)
+# Oversætteren viser nye filer i Plex, når de har dansk tale/tekst - senest efter 24 timer (sikkerhedsnet).
+# Fangarr sender en besked om hvert sikkerhedsnet. Svarer Oversætteren ikke i REVEAL_FALLBACK_MINUTES (60), beder
+# Fangarr selv Plex vise de seneste importer (nødløsning), så intet bliver skjult for kunderne, mens den er nede.
+
+PLEX_URL = (os.environ.get("PLEX_URL") or "").rstrip("/")
+PLEX_TOKEN = os.environ.get("PLEX_TOKEN") or ""
+PLEX_PATH_MAP = os.environ.get("PLEX_PATH_MAP") or ""
+REVEAL_FALLBACK_MINUTES = int(os.environ.get("REVEAL_FALLBACK_MINUTES") or "60")
+_rv = {"fail_since": None, "fallback_at": None, "fallback_sent": False}
+
+
+def kv_get(key, default=None):
+    con = db()
+    row = con.execute("SELECT value FROM kv WHERE key=?", (key,)).fetchone()
+    con.close()
+    return json.loads(row["value"]) if row else default
+
+
+def kv_set(key, value):
+    con = db()
+    with con:
+        con.execute("INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    (key, json.dumps(value)))
+    con.close()
+
+
+def plex_map(path):
+    if "=" not in PLEX_PATH_MAP:
+        return path
+    old, new = (x.strip().rstrip("/") for x in PLEX_PATH_MAP.split("=", 1))
+    if old and (path == old or path.startswith(old + "/")):
+        return new + path[len(old):]
+    return path
+
+
+def plex_refresh(folders):
+    """Bed Plex scanne mapperne (samme kald som Oversætteren). Returnerer antal mapper, Plex blev bedt om."""
+    if not (PLEX_URL and PLEX_TOKEN) or not folders:
+        return 0
+    h = {"X-Plex-Token": PLEX_TOKEN, "Accept": "application/json"}
+    r = httpx.get(PLEX_URL + "/library/sections", headers=h, timeout=20)
+    r.raise_for_status()
+    sections = r.json()["MediaContainer"].get("Directory") or []
+    done = 0
+    for folder in sorted(folders):
+        folder = plex_map(folder)
+        best, best_len = None, -1
+        for sec in sections:
+            for loc in sec.get("Location") or []:
+                root = (loc.get("path") or "").rstrip("/")
+                if root and (folder == root or folder.startswith(root + "/")) and len(root) > best_len:
+                    best, best_len = sec.get("key"), len(root)
+        if best is None:
+            log.warning("Nødløsning: intet Plex-bibliotek indeholder %s", folder)
+            continue
+        httpx.get(f"{PLEX_URL}/library/sections/{best}/refresh", params={"path": folder}, headers=h,
+                  timeout=20).raise_for_status()
+        done += 1
+    return done
+
+
+def recent_import_folders(since):
+    """Mapperne for alle importer i Sonarr/Radarr siden tidspunktet."""
+    stamp = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+    folders = set()
+    for inst in INSTANCES.values():
+        for h in arr(inst, "GET", "/history/since", params={"date": stamp, "eventType": "downloadFolderImported"}) or []:
+            path = (h.get("data") or {}).get("importedPath")
+            if path:
+                folders.add(os.path.dirname(path))
+    return folders
+
+
+def notify_safety_net(shown):
+    """Én besked pr. kørsel med de film/afsnit, der er vist uden dansk tekst efter 24 timer (kun nye)."""
+    late = [x for x in shown if x.get("shown_by") == "sikkerhedsnet"]
+    if not late:
+        return
+    con = db()
+    seen = {r["id"] for r in con.execute("SELECT id FROM reveal_notified").fetchall()}
+    new = [x for x in late if f"{x['key']}|{x['import_at']}" not in seen]
+    with con:
+        for x in new:
+            con.execute("INSERT OR IGNORE INTO reveal_notified (id, ts) VALUES (?, ?)",
+                        (f"{x['key']}|{x['import_at']}", iso(now())))
+        con.execute("DELETE FROM reveal_notified WHERE ts < ?", (iso(now() - datetime.timedelta(days=30)),))
+    con.close()
+    if not new:
+        return
+    lines = "\n".join(f"• {x.get('title') or x['key']} – {x.get('reason') or ''}" for x in new[:20])
+    more = f"\n… og {len(new) - 20} mere" if len(new) > 20 else ""
+    telegram(f"⏰ Fangarr – vist i Plex UDEN dansk tekst (sikkerhedsnet):\n{lines}{more}\n\n"
+             "Se Fangarr › Oversættelser › Skjult for kunderne.")
+
+
+def check_reveal():
+    """Køres fra baggrundsjobbet ca. hvert 5. minut."""
+    if not ov_enabled():
+        return
+    try:
+        data = ov_get("/api/reveal", {"days": 2})
+    except Exception as e:
+        if not kv_get("reveal_enabled", False):
+            return  # trinnet er ikke slået til (eller har aldrig svaret) - intet at redde
+        t = now()
+        _rv["fail_since"] = _rv["fail_since"] or t
+        if t - _rv["fail_since"] < datetime.timedelta(minutes=REVEAL_FALLBACK_MINUTES):
+            return
+        if _rv["fallback_at"] and t - _rv["fallback_at"] < datetime.timedelta(hours=1):
+            return
+        since = (_rv["fallback_at"] - datetime.timedelta(minutes=10)) if _rv["fallback_at"] else \
+            t - datetime.timedelta(hours=48)
+        try:
+            n = plex_refresh(recent_import_folders(since))
+        except Exception as e2:
+            log.warning("Nødløsning: kunne ikke bede Plex vise nye filer: %s", e2)
+            if not _rv["fallback_sent"]:
+                telegram(f"🚨 Fangarr – Oversætteren svarer ikke ({e.__class__.__name__}), og Fangarr kunne heller "
+                         f"ikke bede Plex vise nye filer ({e2.__class__.__name__}). Nye film/afsnit er skjult for "
+                         "kunderne – tjek Oversætteren og PLEX_URL/PLEX_TOKEN i fangarr.env.")
+                _rv["fallback_sent"] = True
+            return
+        _rv["fallback_at"] = t
+        if not _rv["fallback_sent"]:
+            telegram(f"🚨 Fangarr – Oversætteren har ikke svaret i {REVEAL_FALLBACK_MINUTES} minutter. Fangarr viser nu "
+                     f"selv nye filer i Plex (også uden dansk tekst), så intet er skjult for kunderne. "
+                     f"{n} mapper vist – gentages hver time.")
+            _rv["fallback_sent"] = True
+        log.info("Nødløsning: bad Plex vise %d mapper", n)
+        return
+    if _rv["fallback_sent"]:
+        telegram("✅ Fangarr – Oversætteren svarer igen og skjuler igen nye filer, indtil de har dansk tekst.")
+    _rv.update(fail_since=None, fallback_at=None, fallback_sent=False)
+    enabled = bool(data.get("enabled"))
+    if enabled != kv_get("reveal_enabled", False):
+        kv_set("reveal_enabled", enabled)
+    if enabled:
+        notify_safety_net(data.get("shown") or [])
 
 
 def classify_imports(days):
