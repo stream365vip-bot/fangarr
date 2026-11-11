@@ -245,7 +245,7 @@
       <h4>Hvordan ved Fangarr, hvilke enheder der er kundens?</h4>
       <ul>
         <li>Der gættes ikke ud fra, hvor meget der bliver set. Fangarr starter ved <b>kontoens første tv</b> og følger en kæde frem: et tv hører til kunden, når det beviseligt har stået på samme adresse som et tv, der allerede er i kæden (mindst 3 forskellige dage), eller har afløst det på samme faste adresse.</li>
-        <li><b>Flytning:</b> ses en telefon eller tablet både på det gamle og det nye sted, og holdt det gamle sted op, da det nye begyndte, følger kæden med. Er der kun få dage at bygge på, står der "svagt bevis".</li>
+        <li><b>Flytning:</b> ses en telefon, tablet eller computer på mindst 3 dage både på det gamle og det nye sted, og holdt det gamle sted op, omkring da det nye begyndte, følger kæden med. Er der færre dage at bygge på, bliver det nye sted <i>Uafklaret</i>, og du afgør det selv.</li>
         <li>Ved hver enhed står <b>beviset</b>: hvilken enhed den er koblet til, hvor mange dage og i hvilken periode.</li>
       </ul>
       <h4>Mærkerne på et tv</h4>
@@ -253,12 +253,14 @@
         <li><span class="tag st-kunde">Kundens</span> i kæden fra kontoens første tv.</li>
         <li><span class="tag st-tidligere">Tidligere hos kunden</span> har stået hos kunden, men er siden brugt et andet sted, mens kundens øvrige enheder blev (fx en, der er flyttet hjemmefra og tog boksen med).</li>
         <li><span class="tag st-aldrig">Aldrig hos kunden</span> har aldrig delt adresse med kundens enheder.</li>
-        <li><span class="tag st-uafklaret">Uafklaret</span> kæden er knækket (fx en flytning, hvor intet binder gammelt og nyt sammen). Fangarr gætter ikke – afgør det selv med knapperne.</li>
+        <li><span class="tag st-uafklaret">Uafklaret</span> kæden er knækket, eller beviset for en flytning er for tyndt. Fangarr gætter ikke – afgør det selv med knapperne.</li>
+        <li><b>⚠ ved navnet</b> betyder, at du bør kigge selv: enten blev kontoen brugt flere steder helt fra start (så Fangarr ikke kan vide, hvilket sted der er kundens), eller et uafklaret tv er i brug.</li>
         <li><span class="tag st-godkendt">Godkendt undtagelse</span> et sted, du har sagt god for (fx sommerhus). Overlap med det tæller ikke.</li>
       </ul>
       <h4>Knapperne</h4>
       <ul>
         <li><b>Kundens / Ikke kundens:</b> din egen afgørelse for et tv (og de tv, det står sammen med). Den gemmes og gælder ved alle senere analyser, også når Fangarr selv mente noget andet.</li>
+        <li><b>Har Fangarr valgt det forkerte sted som kundens?</b> Tryk <i>Kundens</i> på et tv på det rigtige sted og <i>Ikke kundens</i> på et tv på det forkerte. Ét tryk pr. sted er nok – de tv, der står sammen, følger med.</li>
         <li><b>Godkend undtagelse:</b> brug den til sommerhus, kolonihave eller lignende, som kunden har lov til. Skriv gerne hvorfor.</li>
         <li><b>Fjern valg:</b> sletter din afgørelse, så Fangarrs egen vurdering gælder igen.</li>
         <li><b>Sag (status og note):</b> hold styr på, hvor langt du er: advarsel sendt, blokeres, blokeret eller afsluttet. Afsluttede sager skjules, til du slår "Vis afsluttede" til.</li>
@@ -1075,7 +1077,7 @@ function shDevice(u, d, i) {
     <div class="small">${esc(d.product || d.platform || "–")} · ${d.in_period ? `${d.plays} afspilninger på ${d.period_days} ${d.period_days === 1 ? "dag" : "dage"} i perioden` : "ikke brugt i perioden"} · brugt ${shDay(d.first)} – ${shDay(d.last)}</div>
     ${d.ip_count ? `<div class="small">${d.ip_count} ${d.ip_count === 1 ? "adresse" : "adresser"}${d.ip_count >= 4 ? " (skifter – mobilt net?)" : ""}: <span class="mono">${d.ips.map(x => `${esc(x.ip)} (${x.plays})`).join(", ")}${d.ip_count > d.ips.length ? " …" : ""}</span></div>` : ""}
     <div class="small mono" style="word-break:break-all">${esc(d.mid)}</div>
-    ${tv ? `<div class="row" style="margin:8px 0 0;gap:6px">${d.mark ? btn("", "Fjern valg") : ""}${d.mark !== "kunde" && st !== "kunde" ? btn("kunde", "Kundens") : ""}${!d.mark && st === "kunde" && /svagt bevis/.test(d.why) ? btn("kunde", "Bekræft: kundens") : ""}${d.mark !== "ikke" ? btn("ikke", "Ikke kundens") : ""}${d.mark !== "godkendt" && st !== "kunde" ? btn("godkendt", "Godkend undtagelse") : ""}</div>` : ""}</div>`;
+    ${tv ? `<div class="row" style="margin:8px 0 0;gap:6px">${d.mark ? btn("", "Fjern valg") : ""}${d.mark !== "kunde" && st !== "kunde" ? btn("kunde", "Kundens") : ""}${d.mark !== "ikke" ? btn("ikke", "Ikke kundens") : ""}${d.mark !== "godkendt" && st !== "kunde" ? btn("godkendt", "Godkend undtagelse") : ""}</div>` : ""}</div>`;
 }
 function shDetail(u) {
   const idx = u.devices.map((d, i) => [d, i]);
@@ -1084,7 +1086,7 @@ function shDetail(u) {
   const ev = u.events.map(e => `<div class="shc${e.approved ? " old" : ""}"><div><b>${lt(e.start)}</b> · ${e.minutes} min. samtidig${e.approved ? ' <span class="tag st-godkendt">godkendt – tæller ikke</span>' : ""}</div>${side(e.home)}${side(e.other)}</div>`).join("");
   const c = u.case || {};
   const sw = u.others.filter(o => !o.evenings);
-  return `${u.notes.map(n => `<div class="warn" style="margin-bottom:8px">${esc(n)}</div>`).join("")}
+  return `${u.notes.map(n => `<div class="warn" style="margin-bottom:8px">${esc(n)}</div>`).join("")}${(u.info || []).map(n => `<div class="small" style="margin-bottom:8px">ℹ ${esc(n)}</div>`).join("")}
     <div class="shbox"><b>Sag</b> <span class="small">– hvor langt er du med denne bruger?</span>
       <div class="row" style="margin:8px 0 0"><select id="shc_s_${esc(u.user_id)}" style="width:auto" onclick="event.stopPropagation()">${SH_CASE.map(s => `<option value="${s}" ${c.status === s ? "selected" : ""}>${s ? s[0].toUpperCase() + s.slice(1) : "Ingen status"}</option>`).join("")}</select>
       <input type="text" id="shc_n_${esc(u.user_id)}" value="${esc(c.note || "")}" placeholder="Note, fx: skrevet på Messenger 10. nov." style="flex:1;min-width:160px">

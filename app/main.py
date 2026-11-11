@@ -2983,7 +2983,7 @@ def _dev_label(d):
     return d["player"] if d["kind"] == "tv" else d["player"]
 
 
-def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, end_ord):
+def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, hist_start):
     """Analyse af én bruger ud fra HELE brugerens historik (ss, sorteret efter tid).
     Kundens enheder findes ved at følge en kæde fra kontoens første tv – der gættes ikke ud fra antal afspilninger."""
     fmt = lambda ts: iso(datetime.datetime.fromtimestamp(ts))
@@ -3090,6 +3090,18 @@ def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, end_ord):
                 best = (key, o, dd)
         if best:
             link(m, best[1], "delt adresse (få dage)", len(best[2]), min(best[2]), max(best[2]))
+    # Chromecast på et net, hvor adressen skifter (mobilt bredbånd): hver adresse blev sin egen "enhed".
+    # Dem, der ikke kunne kobles til noget tv, samles pr. net (de to første tal i adressen).
+    size = {}
+    for m in tvs:
+        size[find(m)] = size.get(find(m), 0) + 1
+    nets = {}
+    for m in tvs:
+        if m.startswith("chromecast@") and size[find(m)] == 1:
+            nets.setdefault(".".join(m[11:].split(".")[:2]), []).append(m)
+    for ms in nets.values():
+        for m in ms[1:]:
+            parent[find(m)] = find(ms[0])
     group = {m: find(m) for m in tvs}
     places = {}
     for m in tvs:
@@ -3106,25 +3118,28 @@ def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, end_ord):
         t, m = (a, b) if ka == "tv" else (b, a)
         e = mob_place.setdefault(m, {}).setdefault(group[t], {"days": set(), "tv": t})
         e["days"] |= dd
-    bridges = {}
+    bridges, weak_br = {}, {}
+    gap = SHARING_MOVE_OVERLAP * 86400
     for m, pl in mob_place.items():
         gs = list(pl)
         for i, g1 in enumerate(gs):
             for g2 in gs[i + 1:]:
                 p1, p2 = places[g1], places[g2]
-                both = min(p1["last"], p2["last"]) - max(p1["first"], p2["first"])
-                if both > SHARING_MOVE_OVERLAP * 86400:
-                    continue     # begge steder i brug samtidig i lang tid = to hjem, ikke en flytning
+                # en flytning: det ene sted holdt op (højst 60 dages overlap), omkring da det andet begyndte.
+                # To steder, der er i brug samtidig i lang tid, er to hjem – ikke en flytning.
+                if not (p1["last"] <= p2["first"] + gap or p2["last"] <= p1["first"] + gap):
+                    continue
                 n = min(len(pl[g1]["days"]), len(pl[g2]["days"]))
-                cur = bridges.get((g1, g2))
+                br = {"kind": "flytning", "days": n, "via": m, "a": pl[g1]["tv"], "b": pl[g2]["tv"],
+                      "first": min(min(pl[g1]["days"]), min(pl[g2]["days"])),
+                      "last": max(max(pl[g1]["days"]), max(pl[g2]["days"]))}
+                target = bridges if n >= SHARING_COLOC_DAYS else weak_br   # under 3 dage hvert sted = for svagt til kæden
+                cur = target.get((g1, g2))
                 if cur is None or n > cur["days"]:
-                    bridges[(g1, g2)] = bridges[(g2, g1)] = {
-                        "kind": "flytning", "days": n, "via": m, "a": pl[g1]["tv"], "b": pl[g2]["tv"],
-                        "first": min(min(pl[g1]["days"]), min(pl[g2]["days"])),
-                        "last": max(max(pl[g1]["days"]), max(pl[g2]["days"]))}
+                    target[(g1, g2)] = target[(g2, g1)] = br
 
     # ---------- 5. udgangspunkt: kontoens første tv
-    notes, origin, first_tv = [], None, None
+    notes, info, origin, first_tv = [], [], None, None
     if tvs:
         first_tv = min(tvs, key=lambda m: dev[m]["first"])
         origin = group[first_tv]
@@ -3165,8 +3180,14 @@ def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, end_ord):
             for o in ms[1:]:
                 par0[f0(o)] = f0(ms[0])
         n0 = len({f0(v) for v in par0})
+        old_account = t0 <= hist_start + 30 * 86400
+        if old_account:
+            info.append(f"Kontoen er formentlig ældre end Tautullis historik (begynder {fmt(hist_start)[:10]}). "
+                        f"Udgangspunktet er derfor det første tv i historikken, ikke nødvendigvis kontoens første.")
         if n0 > 1:
-            notes.append(f"Usikkert udgangspunkt: kontoen blev brugt på tv {n0} forskellige steder i de første {SHARING_ORIGIN_DAYS} dage.")
+            notes.append(f"Usikkert udgangspunkt: kontoen blev brugt på tv {n0} forskellige steder i de første {SHARING_ORIGIN_DAYS} dage"
+                         + (" af historikken" if old_account else "") + ". Fangarr kan ikke se, hvilket af dem der er kundens – "
+                         "afgør det selv med knapperne Kundens / Ikke kundens.")
     chain, via_bridge = set(), {}
     if origin is not None:
         chain, todo = {origin}, [origin]
@@ -3203,6 +3224,11 @@ def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, end_ord):
             for (o, lastd) in former.get(m, []):
                 if group.get(o) in chain:
                     return "tidligere", f"stod sammen med {dev[o]['player']} til {_oday(lastd)}, men er siden brugt et andet sted"
+        for (g1, g2), br in weak_br.items():
+            if g1 == g and g2 in chain:
+                dn = "dag" if br["days"] == 1 else "dage"
+                return "uafklaret", (f"muligvis en flytning: {dev[br['via']]['player']} er set både hos kunden og her, "
+                                     f"men kun {br['days']} {dn} hvert sted – for lidt til, at Fangarr tør afgøre det")
         if chain and not chain_alive and places[g]["last"] >= now_cut:
             return "uafklaret", f"kundens kendte enheder er ikke brugt siden {fmt(chain_last)[:10]} – muligvis en flytning, som ikke kan ses i historikken"
         if not chain:
@@ -3235,13 +3261,9 @@ def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, end_ord):
                 b = br["b"] if group[br["b"]] == g2 else br["a"]
                 if b not in seen:
                     seen.add(b)
-                    weak = " – svagt bevis" if br["days"] < SHARING_COLOC_DAYS else ""
                     why[b] = (f"flytning: {dev[br['via']]['player']} er set både på det gamle sted og her "
-                              f"(mindst {br['days']} {'dag' if br['days'] == 1 else 'dage'} hvert sted{weak})")
+                              f"(mindst {br['days']} dage hvert sted)")
                     todo.append(b)
-    weak_chain = any(br["days"] < SHARING_COLOC_DAYS for (_g1, br) in via_bridge.values())
-    if weak_chain:
-        notes.append("En flytning i kæden bygger på få dage (svagt bevis) – tjek enhederne og bekræft selv.")
 
     # ---------- 8. overlap i perioden: to tv fra hvert sit sted, hver sin adresse, på samme tid
     cur = [s for s in ss if s["kind"] == "tv" and s["pub"] and s["b"] >= lo and s["a"] <= hi]
@@ -3386,8 +3408,9 @@ def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, end_ord):
             "overlaps": len(counted), "approved_overlaps": ok_events,
             "minutes": round(sum(e["seconds"] for e in counted) / 60),
             "last_overlap": fmt(counted[0]["start"]) if counted else "",
-            "first_seen": fmt(ss[0]["a"]), "notes": notes, "others": others, "tracearr": tr,
-            "unclear": any(d["status"] == "uafklaret" and d["in_period"] for d in out_devices) or bool(notes),
+            "first_seen": fmt(ss[0]["a"]), "notes": notes, "info": info, "others": others, "tracearr": tr,
+            "unclear": bool(notes) or any(d["status"] == "uafklaret" and d["in_period"] and (d["in_overlap"] or d["plays"] >= 5)
+                                          for d in out_devices),
             "devices": out_devices,
             "events": [{"start": fmt(e["start"]), "end": fmt(e["end"]), "minutes": round(e["seconds"] / 60),
                         "approved": e["approved"],
@@ -3416,12 +3439,12 @@ def run_sharing(job, start, end, min_minutes, red_days, cut, full):
         for s in rows:
             if s["a"] <= hi:
                 by_user.setdefault(s["uid"], []).append(s)
-        users, kinds, end_ord = [], {}, end.date().toordinal()
+        users, kinds, hist_start = [], {}, (rows[0]["a"] if rows else 0)
         cut_ts = cut.timestamp() if cut else 0
         for uid, ss in by_user.items():
             if max(x["b"] for x in ss[-50:]) < lo:
                 continue     # ingen afspilninger i perioden
-            u = _sharing_user(ss, lo, hi, min_minutes * 60, marks.get(uid, {}), cut_ts, end_ord)
+            u = _sharing_user(ss, lo, hi, min_minutes * 60, marks.get(uid, {}), cut_ts, hist_start)
             if not u["plays"]:
                 continue
             u["level"] = "rød" if u["evenings"] >= red_days else ("gul" if u["evenings"] >= 1 else "grøn")
