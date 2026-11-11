@@ -1414,7 +1414,7 @@ def state():
         "waiting": venter,
         "features": {"tracearr": bool(TRACEARR_URL and TRACEARR_APIKEY), "seerr": bool(SEERR_URL and SEERR_APIKEY),
                      "autobrr": bool(AUTOBRR_URL and AUTOBRR_APIKEY), "translator": ov_enabled(),
-                     "plex": bool(PLEX_URL and PLEX_TOKEN), "version": VERSION},
+                     "plex": bool(PLEX_URL and PLEX_TOKEN), "tautulli": tautulli_enabled(), "version": VERSION},
     }
 
 
@@ -2796,3 +2796,305 @@ def check_seerr_straks():
     with con:
         con.execute("DELETE FROM seerr_seen WHERE ts < ?", (iso(now() - datetime.timedelta(days=7)),))
     con.close()
+
+
+# ================================================================ kontodeling (Tautulli)
+# Fanen Kontodeling: finder konti, hvor to tv afspiller samtidig fra hver sin adresse.
+# Læser kun fra Tautulli (get_history) – ændrer intet, sender intet og gemmer intet på disken.
+
+import ipaddress
+
+TAUTULLI_URL = (os.environ.get("TAUTULLI_URL") or "").rstrip("/")
+TAUTULLI_APIKEY = os.environ.get("TAUTULLI_APIKEY") or ""
+_sharing = {"result": None}
+SHARING_PAGE = 5000          # rækker pr. kald til Tautulli
+SHARING_MAX_ROWS = 400000    # sikkerhedsloft
+SHARING_LOOKBACK_DAYS = 30   # mindst så mange dage bruges til at finde ud af, hvilke tv der står sammen
+SHARING_COLOC_DAYS = 3       # to tv står sammen, når de har delt adresse på mindst så mange forskellige dage
+SHARING_MERGE_GAP = 20 * 60  # overlap mellem samme to tv med kortere pause end dette regnes som ét
+SHARING_MAX_SESSION = 8 * 3600
+
+TV_PLATFORMS = {"webos", "tvos", "roku", "tizen", "chromecast", "playstation", "xbox", "android tv", "netcast",
+                "vizio", "vidaa", "fire tv", "firetv", "samsung", "lg", "apple tv"}
+MOBILE_PLATFORMS = {"ios", "ipados", "windows", "macos", "osx", "linux", "chrome", "firefox", "safari",
+                    "microsoft edge", "edge", "opera", "plexamp"}
+TV_PRODUCTS = ("(tv)", "plex for lg", "plex for samsung", "plex for apple tv", "plex for roku", "plex for playstation",
+               "plex for xbox", "plex for vizio", "smart tv", "chromecast")
+MOBILE_PRODUCTS = ("(mobile)", "plex web", "plex for windows", "plex for mac", "plex for ios", "plex for linux",
+                   "plex htpc", "plex media player", "plexamp", "plex desktop")
+TV_PLAYER_WORDS = ("tv", "shield", "chromecast", "streamer", "bravia", "fire", "mibox", "mi box")
+
+
+def tautulli_enabled():
+    return bool(TAUTULLI_URL and TAUTULLI_APIKEY)
+
+
+def tautulli(cmd, **params):
+    """Kald Tautullis API. Fejlbeskederne indeholder aldrig adressen (API-nøglen står i den)."""
+    if not tautulli_enabled():
+        raise RuntimeError("Tautulli er ikke sat op (TAUTULLI_URL og TAUTULLI_APIKEY i fangarr.env)")
+    try:
+        r = httpx.get(f"{TAUTULLI_URL}/api/v2", params={"apikey": TAUTULLI_APIKEY, "cmd": cmd, **params},
+                      timeout=120, follow_redirects=False)
+    except httpx.HTTPError as e:
+        raise RuntimeError(f"Tautulli svarer ikke ({e.__class__.__name__})") from None
+    if r.status_code in (301, 302, 303, 307, 308):
+        raise RuntimeError("Tautulli sendte videre til login – API'en kan ikke nås fra Fangarr")
+    if r.status_code == 401:
+        raise RuntimeError("Tautulli afviste API-nøglen (TAUTULLI_APIKEY)")
+    if r.status_code != 200:
+        raise RuntimeError(f"Tautulli svarede med fejl {r.status_code}")
+    try:
+        resp = r.json().get("response") or {}
+    except ValueError:
+        raise RuntimeError("Tautulli gav et svar, der ikke kunne læses") from None
+    if resp.get("result") != "success":
+        raise RuntimeError("Tautulli: " + str(resp.get("message") or "ukendt fejl")[:200])
+    return resp.get("data")
+
+
+def device_kind(platform, product, player):
+    """'tv', 'mobil' eller 'ukendt'. Telefoner, tablets og computere er 'mobil' (kontoreglerne)."""
+    p, pr, pl = (platform or "").lower().strip(), (product or "").lower(), (player or "").lower()
+    if any(k in pr for k in TV_PRODUCTS) or p in TV_PLATFORMS or any(k in p for k in ("playstation", "xbox", "roku")):
+        return "tv"
+    if any(k in pr for k in MOBILE_PRODUCTS) or p in MOBILE_PLATFORMS:
+        return "mobil"
+    if p == "android" and any(k in pl for k in TV_PLAYER_WORDS):
+        return "tv"   # Android uden oplysning om app: gæt ud fra enhedens navn
+    return "ukendt"
+
+
+def public_ip(ip):
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return not (a.is_private or a.is_loopback or a.is_link_local or a.is_unspecified)
+
+
+def _sharing_session(r, now_ts):
+    a = to_int(r.get("started"))
+    if not a:
+        return None
+    b = to_int(r.get("stopped")) or now_ts
+    if b <= a:
+        return None
+    b = min(b, a + SHARING_MAX_SESSION)
+    # tid på pause trækkes fra, så en afspilning, der står på pause, ikke tæller som i gang
+    b = max(a + 60, b - max(0, to_int(r.get("paused_counter"))))
+    player, platform, product = str(r.get("player") or ""), str(r.get("platform") or ""), str(r.get("product") or "")
+    ip = str(r.get("ip_address") or "").strip()
+    return {"uid": str(r.get("user_id") or r.get("user") or "?"), "user": str(r.get("user") or ""),
+            "name": str(r.get("friendly_name") or r.get("user") or "?"), "a": a, "b": b, "ip": ip, "pub": public_ip(ip),
+            "mid": str(r.get("machine_id") or f"{player}|{platform}"), "player": player or "?", "platform": platform,
+            "product": product, "kind": device_kind(platform, product, player),
+            "title": str(r.get("full_title") or r.get("title") or "")[:80]}
+
+
+def sharing_fetch(job, fetch_from, fetch_to):
+    """Al historik fra Tautulli i perioden (én række pr. afspilning, ikke grupperet)."""
+    after = (fetch_from - datetime.timedelta(days=1)).date().isoformat()
+    before = (fetch_to + datetime.timedelta(days=1)).date().isoformat()
+    lo, hi, now_ts = fetch_from.timestamp(), fetch_to.timestamp(), int(time.time())
+    out, pos = [], 0
+    while True:
+        d = tautulli("get_history", grouping=0, after=after, before=before, start=pos, length=SHARING_PAGE,
+                     order_column="date", order_dir="asc") or {}
+        chunk = d.get("data") or []
+        for r in chunk:
+            s = _sharing_session(r, now_ts)
+            if s and s["b"] >= lo and s["a"] <= hi:
+                out.append(s)
+        pos += len(chunk)
+        job["total"] = max(to_int(d.get("recordsFiltered")), pos)
+        job["done"] = pos
+        if len(chunk) < SHARING_PAGE or pos >= SHARING_MAX_ROWS:
+            break
+    return out
+
+
+def _sharing_groups(tv):
+    """Hvilke tv står sammen? To tv hører til samme sted, når de har brugt samme adresse inden for et døgn
+    på mindst SHARING_COLOC_DAYS forskellige dage. Giver {enhed: gruppe}."""
+    by_ip, days = {}, {}
+    for s in tv:
+        if s["pub"]:
+            by_ip.setdefault(s["ip"], []).append(s)
+    for ss in by_ip.values():
+        last = {}
+        for s in sorted(ss, key=lambda x: x["a"]):
+            for mid, ts in last.items():
+                if mid != s["mid"] and s["a"] - ts <= 86400:
+                    days.setdefault(tuple(sorted((mid, s["mid"]))), set()).add(time.strftime("%Y-%m-%d", time.localtime(s["a"])))
+            last[s["mid"]] = s["a"]
+    parent = {s["mid"]: s["mid"] for s in tv}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for (m1, m2), dd in days.items():
+        if len(dd) >= SHARING_COLOC_DAYS:
+            parent[find(m1)] = find(m2)
+    return {m: find(m) for m in parent}
+
+
+def _sharing_user(ss, lo, hi, min_seconds):
+    """Analyse af én bruger. ss = alle brugerens afspilninger (også før perioden – til at finde ud af, hvad der står sammen)."""
+    fmt = lambda ts: iso(datetime.datetime.fromtimestamp(ts))
+    tv = [s for s in ss if s["kind"] == "tv"]
+    group = _sharing_groups(tv)
+    plays = {}
+    for s in tv:
+        plays[group[s["mid"]]] = plays.get(group[s["mid"]], 0) + 1
+    order = sorted(plays, key=lambda g: -plays[g])           # stedet med flest tv-afspilninger = hjemme
+    place = {g: i for i, g in enumerate(order)}
+
+    # --- overlap: to tv fra hver sit sted, hver sin adresse, på samme tid
+    cur = sorted((s for s in tv if s["pub"] and s["b"] >= lo and s["a"] <= hi), key=lambda s: s["a"])
+    pairs = {}
+    for i, s1 in enumerate(cur):
+        for s2 in cur[i + 1:]:
+            if s2["a"] >= s1["b"]:
+                break
+            if s1["mid"] == s2["mid"] or s1["ip"] == s2["ip"] or group[s1["mid"]] == group[s2["mid"]]:
+                continue
+            a, b = max(s1["a"], s2["a"]), min(s1["b"], s2["b"])
+            if b - a < 60 or a < lo or a > hi:
+                continue
+            x, y = (s1, s2) if place[group[s1["mid"]]] <= place[group[s2["mid"]]] else (s2, s1)
+            pairs.setdefault((x["mid"], y["mid"]), []).append((a, b, x, y))
+    events = []
+    for segs in pairs.values():
+        segs.sort(key=lambda t: t[0])
+        ev = None
+        for a, b, x, y in segs:
+            if ev and a - ev["end"] <= SHARING_MERGE_GAP:
+                ev["seconds"] += max(0, b - max(a, ev["end"]))
+                ev["end"] = max(ev["end"], b)
+                for k, s in (("x", x), ("y", y)):
+                    if s["title"] and s["title"] not in ev[k]["titles"]:
+                        ev[k]["titles"].append(s["title"])
+            else:
+                ev = {"start": a, "end": b, "seconds": b - a,
+                      "x": {"mid": x["mid"], "player": x["player"], "ip": x["ip"], "titles": [x["title"]] if x["title"] else []},
+                      "y": {"mid": y["mid"], "player": y["player"], "ip": y["ip"], "titles": [y["title"]] if y["title"] else []}}
+                events.append(ev)
+    events = sorted((e for e in events if e["seconds"] >= min_seconds), key=lambda e: -e["start"])
+    # en aften = fra kl. 05 til kl. 05, så et overlap efter midnat tæller med aftenen før
+    evenings = sorted({time.strftime("%Y-%m-%d", time.localtime(e["start"] - 5 * 3600)) for e in events})
+    involved = {e[k]["mid"] for e in events for k in ("x", "y")}
+
+    # --- enheder brugt i perioden
+    devs = {}
+    for s in ss:
+        if s["b"] < lo or s["a"] > hi:
+            continue
+        d = devs.setdefault(s["mid"], {"mid": s["mid"], "player": s["player"], "platform": s["platform"],
+                                       "product": s["product"], "kind": s["kind"], "plays": 0, "ips": {},
+                                       "first": s["a"], "last": s["a"]})
+        d["plays"] += 1
+        d["first"], d["last"] = min(d["first"], s["a"]), max(d["last"], s["a"])
+        if s["pub"]:
+            d["ips"][s["ip"]] = d["ips"].get(s["ip"], 0) + 1
+    devices = []
+    for d in devs.values():
+        ips = sorted(d["ips"].items(), key=lambda t: -t[1])
+        devices.append({**d, "ips": [{"ip": ip, "plays": n} for ip, n in ips[:4]], "ip_count": len(ips),
+                        "first": fmt(d["first"]), "last": fmt(d["last"]),
+                        "place": place.get(group.get(d["mid"])) if d["kind"] == "tv" else None,
+                        "in_overlap": d["mid"] in involved})
+    devices.sort(key=lambda d: (d["kind"] != "tv", d["place"] if d["place"] is not None else 99, -d["plays"]))
+    return {"user_id": ss[0]["uid"], "name": ss[-1]["name"], "username": ss[-1]["user"],
+            "plays": sum(d["plays"] for d in devices),
+            "tv_places": len({d["place"] for d in devices if d["place"] is not None}),
+            "evenings": len(evenings), "evening_dates": evenings, "overlaps": len(events),
+            "minutes": round(sum(e["seconds"] for e in events) / 60),
+            "last_overlap": fmt(events[0]["start"]) if events else "",
+            "devices": devices,
+            "events": [{"start": fmt(e["start"]), "end": fmt(e["end"]), "minutes": round(e["seconds"] / 60),
+                        "home": {**e["x"], "titles": e["x"]["titles"][:3]},
+                        "other": {**e["y"], "titles": e["y"]["titles"][:3]}} for e in events[:150]]}
+
+
+def run_sharing(job, start, end, min_minutes, red_days):
+    try:
+        lookback = min(start, end - datetime.timedelta(days=SHARING_LOOKBACK_DAYS))
+        rows = sharing_fetch(job, lookback, end)
+        lo, hi = start.timestamp(), end.timestamp()
+        by_user = {}
+        for s in rows:
+            by_user.setdefault(s["uid"], []).append(s)
+        users, kinds = [], {}
+        for ss in by_user.values():
+            ss.sort(key=lambda s: s["a"])
+            if not any(s["b"] >= lo and s["a"] <= hi for s in ss):
+                continue
+            u = _sharing_user(ss, lo, hi, min_minutes * 60)
+            u["level"] = "rød" if u["evenings"] >= red_days else ("gul" if u["evenings"] >= 1 else "grøn")
+            users.append(u)
+            for d in u["devices"]:
+                k = kinds.setdefault((d["platform"], d["product"], d["kind"]),
+                                     {"platform": d["platform"], "product": d["product"], "kind": d["kind"], "devices": 0, "plays": 0})
+                k["devices"] += 1
+                k["plays"] += d["plays"]
+        rank = {"rød": 0, "gul": 1, "grøn": 2}
+        users.sort(key=lambda u: (rank[u["level"]], -u["evenings"], -u["minutes"], -u["tv_places"], u["name"].lower()))
+        job["results"] = {"from": iso(start), "to": iso(end), "min_minutes": min_minutes, "red_days": red_days,
+                          "sessions": sum(1 for s in rows if s["b"] >= lo and s["a"] <= hi),
+                          "counts": {lv: sum(1 for u in users if u["level"] == lv) for lv in rank},
+                          "users": users, "kinds": sorted(kinds.values(), key=lambda k: -k["plays"])}
+        if len(rows) >= SHARING_MAX_ROWS:
+            job["note"] = "perioden er meget stor – kun de første afspilninger er med. Vælg en kortere periode."
+        unknown = sum(k["devices"] for k in kinds.values() if k["kind"] == "ukendt")
+        if unknown:
+            job["note"] = (job["note"] + " · " if job["note"] else "") + \
+                f"{unknown} enheder kunne ikke bestemmes som tv eller mobil (tælles ikke som tv) – se Enhedstyper nederst"
+        job["status"] = "færdig"
+        _sharing["result"] = {**job}
+    except Exception as e:
+        job["status"] = "fejl"
+        job["error"] = str(e) if isinstance(e, RuntimeError) else f"{e.__class__.__name__}: {e}"
+
+
+def _sharing_day(v, end_of_day=False):
+    try:
+        d = datetime.datetime.strptime(str(v), "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(400, "datoer skal skrives som ÅÅÅÅ-MM-DD")
+    return d + datetime.timedelta(days=1) if end_of_day else d
+
+
+@app.post("/api/sharing/run")
+async def sharing_run(req: Request):
+    try:
+        b = await req.json()
+    except ValueError:
+        b = {}
+    if not tautulli_enabled():
+        raise HTTPException(400, "Tautulli er ikke sat op (TAUTULLI_URL og TAUTULLI_APIKEY i fangarr.env)")
+    if any(j["kind"] == "sharing" and j["status"] == "kører" for j in _jobs.values()):
+        raise HTTPException(409, "en analyse kører allerede")
+    end = now()
+    if b.get("from"):
+        start = _sharing_day(b["from"])
+        end = min(end, _sharing_day(b.get("to") or end.strftime("%Y-%m-%d"), True))
+    else:
+        start = end - datetime.timedelta(days=min(max(to_int(b.get("days")) or 30, 1), 730))
+    if start >= end:
+        raise HTTPException(400, "startdatoen skal ligge før slutdatoen")
+    if (end - start).days > 731:
+        raise HTTPException(400, "perioden må højst være 2 år")
+    min_minutes = min(max(to_int(b.get("min_minutes")) or 10, 1), 240)
+    red_days = min(max(to_int(b.get("red_days")) or 5, 1), 365)
+    job = new_job("sharing")
+    threading.Thread(target=run_sharing, args=(job, start, end, min_minutes, red_days), daemon=True).start()
+    return job
+
+
+@app.get("/api/sharing")
+def sharing_get():
+    return _sharing["result"] or {}
