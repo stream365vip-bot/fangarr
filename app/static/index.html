@@ -106,6 +106,19 @@
   .stack i { display: block; height: 100%; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .lv { font-weight: 600; white-space: nowrap; }
+  .lv-rød { color: var(--bad); } .lv-gul { color: var(--warn); } .lv-grøn { color: var(--ok); }
+  tr.shu { cursor: pointer; } tr.shu:hover td { background: var(--panel2); }
+  tr.shd > td { background: var(--bg); padding: 12px; }
+  .shd h4 { margin: 12px 0 6px; font-size: 13.5px; color: var(--muted); font-weight: 600; }
+  .shd h4:first-child { margin-top: 0; }
+  .shc { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; background: var(--panel); }
+  .shc .tag { font-size: 11.5px; padding: 1px 6px; }
+  @media (max-width: 620px) { .hs { display: none; } #share th, #share td { padding: 8px 6px; } }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .shf { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .shf .field { margin: 0; } .shf input[type=number] { width: 90px; } .shf input[type=date] {
+    background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; }
   @media (max-width: 620px) { .rule { grid-template-columns: 1fr; } .btns { justify-content: flex-start; } }
 </style>
 </head>
@@ -120,6 +133,7 @@
   <button data-tab="wait">Venteliste</button>
   <button data-tab="prem">Premierer</button>
   <button data-tab="stats">Statistik</button>
+  <button data-tab="share">Kontodeling</button>
   <button data-tab="tr">Oversættelser</button>
   <button data-tab="log">Log</button>
   <button data-tab="autobrr">autobrr</button>
@@ -209,6 +223,29 @@
     <div class="card" style="padding:0; overflow-x:auto"><table>
       <thead><tr><th>Titel</th><th>Regel</th><th>Tilføjet</th><th class="num">GB</th><th class="num">Afspilninger</th><th class="num">Seere</th><th class="num">Sidste 30 dage</th></tr></thead>
       <tbody id="statBody"></tbody></table></div>
+  </section>
+
+  <section id="share">
+    <h2>Kontodeling</h2>
+    <p class="hint">Finder konti, hvor <b>to tv afspiller samtidig fra hver sin adresse</b>. Telefoner, tablets og computere tæller ikke med. Tallene hentes fra Tautulli, når du trykker Analysér – intet kører af sig selv, intet gemmes, og ingen bliver blokeret herfra.</p>
+    <div id="shNote"></div>
+    <div class="card"><div class="shf">
+      <div class="field"><label>Periode</label><select id="shDays" onchange="shPeriod()" style="width:auto">
+        <option value="7">Seneste 7 dage</option><option value="14">Seneste 14 dage</option><option value="30" selected>Seneste 30 dage</option>
+        <option value="60">Seneste 60 dage</option><option value="90">Seneste 90 dage</option><option value="0">Egne datoer</option></select></div>
+      <div class="field" id="shFromBox" style="display:none"><label>Fra</label><input type="date" id="shFrom"></div>
+      <div class="field" id="shToBox" style="display:none"><label>Til</label><input type="date" id="shTo"></div>
+      <div class="field"><label>Mindst (minutter)</label><input type="number" id="shMin" value="10" min="1" max="240"></div>
+      <div class="field"><label>Rød fra (aftener)</label><input type="number" id="shRed" value="5" min="1" max="365"></div>
+      <button class="b pri" id="shBtn" onclick="runShare()">Analysér</button>
+    </div>
+    <div class="small">Mindst = hvor længe to tv skal køre samtidig, før det tæller. Rød fra = antal aftener med overlap, før en konto regnes som fast deling.</div></div>
+    <div id="shProg"></div>
+    <div id="shSum"></div>
+    <div class="card" style="padding:0; overflow-x:auto"><table>
+      <thead><tr><th>Bruger</th><th>Vurdering</th><th class="num">Aftener</th><th class="num hs">Timer</th><th>Seneste</th><th class="num hs">Tv-steder</th></tr></thead>
+      <tbody id="shBody"><tr><td colspan="6" class="empty">Vælg periode og tryk Analysér.</td></tr></tbody></table></div>
+    <div id="shKinds"></div>
   </section>
 
   <section id="tr">
@@ -479,6 +516,7 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   if (b.dataset.tab === "autobrr") loadAutobrr();
   if (b.dataset.tab === "prem") loadPrem(0);
   if (b.dataset.tab === "stats") loadStats();
+  if (b.dataset.tab === "share") loadShare();
   clearInterval(window._trTimer);
   if (b.dataset.tab === "tr") { loadTr(); loadTrStats(0); window._trTimer = setInterval(() => loadTr(), 60000); }
   if (b.dataset.tab === "settings") { loadBackups(); loadAliases(); }
@@ -893,6 +931,63 @@ function renderStats() {
     <td>${esc(i.rule)}</td><td style="white-space:nowrap">${esc(i.added)}</td><td class="num">${i.gb.toLocaleString("da-DK")}</td>
     <td class="num">${w ? w.plays : "?"}</td><td class="num">${w ? w.users : "?"}</td><td class="num">${w ? w.plays_30 : "?"}</td></tr>`; }).join("")
     : '<tr><td colspan="7" class="empty">Ingen titler med Fangarr-mærker i Sonarr/Radarr endnu.</td></tr>';
+}
+
+// ---------- kontodeling
+let SH = null, shOpen = new Set();
+const SH_LV = {"rød": "🔴 Fast deling", "gul": "🟡 Enkelte", "grøn": "🟢 Intet"};
+const SH_KIND = {tv: "Tv", mobil: "Mobil", ukendt: "Ukendt"};
+function shPeriod() { const own = $("shDays").value === "0"; $("shFromBox").style.display = $("shToBox").style.display = own ? "" : "none"; }
+async function loadShare() {
+  $("shNote").innerHTML = S.features.tautulli ? "" : '<div class="warn">Tautulli er ikke forbundet. Tilføj TAUTULLI_URL og TAUTULLI_APIKEY i fangarr.env (se LÆSMIG).</div>';
+  $("shBtn").disabled = !S.features.tautulli;
+  if (SH) return;
+  try { const d = await api("/api/sharing"); if (d && d.results && d.results.users) { SH = d; renderShare(); } } catch (e) { toast(e.message, true); }
+}
+async function runShare() {
+  const body = {min_minutes: Number($("shMin").value) || 10, red_days: Number($("shRed").value) || 5};
+  if ($("shDays").value === "0") {
+    if (!$("shFrom").value) { toast("Vælg en startdato", true); return; }
+    body.from = $("shFrom").value; if ($("shTo").value) body.to = $("shTo").value;
+  } else body.days = Number($("shDays").value);
+  $("shBtn").disabled = true;
+  try { const job = await api("/api/sharing/run", {method: "POST", body: JSON.stringify(body)});
+        poll(job, "shProg", j => { $("shBtn").disabled = false; if (j && j.results && j.results.users) { SH = j; shOpen = new Set(); renderShare(); } }); }
+  catch (e) { $("shBtn").disabled = false; toast(e.message, true); }
+}
+function shToggle(id) { shOpen.has(id) ? shOpen.delete(id) : shOpen.add(id); renderShare(); }
+const shDay = t => { const d = new Date(t); return isNaN(d) ? esc(t) : d.toLocaleDateString("da-DK", {day: "numeric", month: "short", year: "numeric"}); };
+const shPlace = p => p == null ? "–" : (p === 0 ? "Hjemme" : "Andet sted " + p);
+function shDetail(u) {
+  const dev = u.devices.map(d => `<div class="shc">
+    <div><b>${esc(d.player)}</b> <span class="tag">${SH_KIND[d.kind] || esc(d.kind)}</span>${d.kind === "tv" ? ` <span class="tag" style="${d.place ? "color:var(--warn)" : "color:var(--ok)"}">${shPlace(d.place)}</span>` : ""}${d.in_overlap && d.place ? ' <span class="tag" style="color:var(--bad)">i overlap</span>' : ""}</div>
+    <div class="small">${esc(d.product || d.platform || "–")} · ${d.plays} afspilninger · sidst ${lt(d.last)}</div>
+    <div class="small">${d.ip_count} ${d.ip_count === 1 ? "adresse" : "adresser"}${d.ip_count >= 4 ? " (skifter – mobilt net?)" : ""}${d.ips.length ? ': <span class="mono">' + d.ips.map(i => `${esc(i.ip)} (${i.plays})`).join(", ") + (d.ip_count > d.ips.length ? " …" : "") + "</span>" : ""}</div>
+    <div class="small mono" style="word-break:break-all">${esc(d.mid)}</div></div>`).join("");
+  const side = (l, x) => `<div class="small"><b>${l}:</b> ${esc(x.player)} <span class="mono">${esc(x.ip)}</span>${x.titles.length ? " – " + esc(x.titles.join(" · ")) : ""}</div>`;
+  const ev = u.events.map(e => `<div class="shc"><div><b>${lt(e.start)}</b> · ${e.minutes} min. samtidig</div>${side("Hjemme", e.home)}${side("Andet sted", e.other)}</div>`).join("");
+  return `<h4>Enheder brugt i perioden</h4>${dev}
+    <div class="small" style="margin-top:6px">Sted: tv, der har delt adresse på mindst 3 forskellige dage, står samme sted. Stedet med flest afspilninger kaldes Hjemme.</div>
+    ${u.events.length ? `<h4>Samtidig afspilning fra forskellige adresser (${u.overlaps})</h4>${ev}`
+    : `<div class="small" style="margin-top:10px">Ingen samtidig afspilning fra forskellige adresser i perioden.${u.tv_places > 1 ? " Kontoen er brugt på tv flere steder, men ikke på samme tid – det er tilladt efter reglerne." : ""}</div>`}`;
+}
+function renderShare() {
+  const R = SH.results, c = R.counts, all = $("shAll") ? $("shAll").checked : false;
+  $("shSum").innerHTML = `<div class="row" style="margin:14px 0 10px">
+    <span class="chip">🔴 Fast deling <b>${c["rød"]}</b></span><span class="chip">🟡 Enkelte tilfælde <b>${c["gul"]}</b></span><span class="chip">🟢 Intet fundet <b>${c["grøn"]}</b></span>
+    <label class="small" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="shAll" onchange="renderShare()" style="width:auto" ${all ? "checked" : ""}> Vis også 🟢</label></div>
+    <div class="small" style="margin-bottom:10px">${shDay(R.from)} – ${shDay(R.to)} · ${R.sessions.toLocaleString("da-DK")} afspilninger · mindst ${R.min_minutes} min. · rød fra ${R.red_days} aftener · beregnet ${fmt(SH.started)}</div>`;
+  const rows = R.users.filter(u => all || u.level !== "grøn");
+  $("shBody").innerHTML = rows.length ? rows.map(u => `<tr class="shu" onclick="shToggle('${esc(u.user_id)}')">
+      <td><b>${esc(u.name)}</b>${u.username && u.username !== u.name ? `<div class="small">${esc(u.username)}</div>` : ""}</td>
+      <td class="lv lv-${u.level}">${SH_LV[u.level]}</td><td class="num">${u.evenings || "–"}</td>
+      <td class="num hs">${u.minutes ? (u.minutes / 60).toLocaleString("da-DK", {maximumFractionDigits: 1}) : "–"}</td>
+      <td>${u.last_overlap ? lt(u.last_overlap) : "–"}</td><td class="num hs">${u.tv_places || "–"}</td></tr>` +
+      (shOpen.has(u.user_id) ? `<tr class="shd"><td colspan="6">${shDetail(u)}</td></tr>` : "")).join("")
+    : `<tr><td colspan="6" class="empty">${R.users.length ? "Ingen konti med samtidig afspilning fra forskellige adresser i perioden." : "Ingen afspilninger i perioden."}</td></tr>`;
+  $("shKinds").innerHTML = `<details style="margin-top:14px"><summary class="small" style="cursor:pointer">Enhedstyper – sådan er enhederne talt (tv / mobil)</summary>
+    <div class="card" style="padding:0; overflow-x:auto; margin-top:8px"><table><thead><tr><th>Platform</th><th>App</th><th>Tælles som</th><th class="num">Enheder</th><th class="num">Afspilninger</th></tr></thead><tbody>` +
+    R.kinds.map(k => `<tr><td>${esc(k.platform || "–")}</td><td>${esc(k.product || "–")}</td><td${k.kind === "ukendt" ? ' style="color:var(--warn)"' : ""}>${SH_KIND[k.kind]}</td><td class="num">${k.devices}</td><td class="num">${k.plays}</td></tr>`).join("") + "</tbody></table></div></details>";
 }
 
 // ---------- Oversættelser

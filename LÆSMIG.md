@@ -6,7 +6,7 @@ Fanger nye serier og film fra autobrr og lægger dem i Sonarr/Radarr ud fra dine
 - Fangarr slår titlen op (genrer, originalsprog, kanal, år, rating) og tjekker reglerne oppefra.
 - Mangler TheTVDB/TMDb titlen endnu, kan den komme på **ventelisten** og prøves igen automatisk.
 
-Faner: Regler · Test en titel (+ prøv en regel på autobrr-historikken) · Venteliste · Premierer (kommende serier fra TMDb via Seerr – tilføj eller følg) · Statistik (størrelse og afspilninger fra Tracearr pr. regel) · Oversættelser (Oversætterens tilstand, forbrug og prognose, skjult for kunderne, på vej, problemer, færdige oversættelser, statistik og indstillinger) · Log · autobrr (opret/opdatér filtre) · Indstillinger (Seerr-tjek, eksport/import, natlig eksport).
+Faner: Regler · Test en titel (+ prøv en regel på autobrr-historikken) · Venteliste · Premierer (kommende serier fra TMDb via Seerr – tilføj eller følg) · Statistik (størrelse og afspilninger fra Tracearr pr. regel) · Kontodeling (konti, hvor to tv afspiller samtidig fra hver sin adresse – fra Tautulli) · Oversættelser (Oversætterens tilstand, forbrug og prognose, skjult for kunderne, på vej, problemer, færdige oversættelser, statistik og indstillinger) · Log · autobrr (opret/opdatér filtre) · Indstillinger (Seerr-tjek, eksport/import, natlig eksport).
 
 Sikringer: prøvetilstand, loft pr. døgn, pladsgrænse, kun præcise titelmatch, Seerr-tjek, Telegram ved fejl og "i orden igen", dagligt resumé.
 
@@ -26,6 +26,18 @@ Sikringer: prøvetilstand, loft pr. døgn, pladsgrænse, kun præcise titelmatch
 - **Problemer:** titler med dansk tale (`ikke_muligt`) er skjult som standard (flueben viser dem). **Prøv igen** behandler titlen forfra i næste runde, **Opgiv** giver status `opgivet`, så den ikke vælges igen. Færdige titler kan ikke røres.
 - **Seerr-ønsker** (hvert 2. minut): ønsker på en serie, der allerede findes i sonarr2, får mærket `seerr-straks`, og Fangarr søger efter de ønskede sæsoner, så første download kommer uden ventetid. Serier med `seerr-straks` mister mærket, når første afsnit efter mærket er kommet hjem. Kræver at `seerr-straks` står i delay-profilen uden ventetid i sonarr2, og at Seerr giver nye serier mærket `seerr-straks`.
 - Alt logges i Fangarrs log (`oversæt nu`, `ingen ventetid`, `seerr uden ventetid`, `seerr-straks fjernet`).
+
+## Kontodeling (1.12.0)
+- Fanen **Kontodeling** finder konti, hvor **to tv afspiller samtidig fra hver sin adresse** (kontoreglen). Telefoner, tablets og computere tæller ikke med. Du vælger selv perioden (7–90 dage eller egne datoer) og trykker **Analysér** – intet kører af sig selv, intet sendes til Telegram, og resultatet gemmes ikke på disken (det ligger kun i hukommelsen, til Fangarr genstartes). Fangarr blokerer ingen.
+- Kilde: Tautullis historik (`get_history`, én række pr. afspilning). Kræver `TAUTULLI_URL` og `TAUTULLI_APIKEY` i `fangarr.env`. Fangarr læser kun – og API-nøglen står aldrig i loggen eller i fejlbeskeder.
+- **Sådan tælles der:** et overlap er to tv med hver sin offentlige adresse, der kører samtidig i mindst *Mindst (minutter)* (standard 10). Tid på pause trækkes fra. Overlap mellem de samme to tv med under 20 minutters pause regnes som ét. En *aften* går fra kl. 05 til kl. 05. 🔴 = mindst *Rød fra (aftener)* aftener med overlap (standard 5), 🟡 = 1 eller flere, 🟢 = ingen.
+- **Sted:** tv, der har delt adresse inden for et døgn på mindst 3 forskellige dage (set over mindst 30 dage), står samme sted – overlap mellem dem tæller ikke (fx når hjemmets adresse skifter midt på aftenen). Stedet med flest afspilninger kaldes *Hjemme*, resten *Andet sted*.
+- **Tv eller mobil** afgøres af platform og app (fx `Plex for Android (TV)` = tv, `Plex for Android (Mobile)` = mobil). Enheder, der ikke kan bestemmes, tælles ikke som tv og står som *Ukendt* under **Enhedstyper** nederst på fanen.
+- Begrænsninger: kun samtidig brug fanges. Sommerhus, VPN på tv'et og flytning kan give falske alarmer – en rød konto bør have en advarsel, før der blokeres.
+- Kopiér nøglen fra Mediabox til feeder uden at vise den (køres fra en maskine med adgang til begge servere, fx Termux). Svaret viser kun, hvor mange tegn nøglen har:
+```
+ssh mediabox "grep -m1 '^api_key' /opt/tautulli/config.ini" | ssh feeder 'K=$(cut -d= -f2 | tr -d " \"\r"); if grep -q "^TAUTULLI_APIKEY=" /opt/fangarr/fangarr.env; then echo "findes allerede"; else printf "\nTAUTULLI_URL=https://tautulli.stream365.vip\nTAUTULLI_APIKEY=%s\n" "$K" >> /opt/fangarr/fangarr.env; echo "tilføjet (${#K} tegn)"; fi'
+```
 
 ## Filer
 - `app/main.py` – server (FastAPI) · `app/static/index.html` – interface · `app/VERSION`
