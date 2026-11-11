@@ -2873,6 +2873,37 @@ def public_ip(ip):
     return not (a.is_private or a.is_loopback or a.is_link_local or a.is_unspecified)
 
 
+import bisect
+import sys
+
+SHARING_PARTED_DAYS = 14     # to enheder er gået hver til sit, når begge er brugt (3+ dage) senere end så mange dage efter sidste fælles dag
+SHARING_STICKY_DAYS = 5      # en adresse er "fast", når kontoens tv har brugt den på mindst så mange forskellige dage
+SHARING_MOVE_OVERLAP = 60    # flytning: det gamle og det nye sted må højst være i brug samtidig i så mange dage
+SHARING_ORIGIN_DAYS = 14     # kontoens start: de første dage efter første tv-afspilning
+SHARING_DEAD_DAYS = 45       # et sted er "ikke i brug", når det ikke er set i så mange dage
+_sh_hist = {"rows": [], "fetched": "", "oldest": ""}
+_sh_lock = threading.Lock()
+SH_MARKS = ("kunde", "ikke", "godkendt")
+SH_STATUS = ("", "advarsel sendt", "blokeres", "blokeret", "afsluttet")
+
+
+def _sharing_db():
+    con = db()
+    with con:
+        con.execute("CREATE TABLE IF NOT EXISTS sharing_marks (user_id TEXT, mid TEXT, mark TEXT, note TEXT, updated TEXT,"
+                    " PRIMARY KEY (user_id, mid))")
+        con.execute("CREATE TABLE IF NOT EXISTS sharing_users (user_id TEXT PRIMARY KEY, status TEXT, note TEXT, updated TEXT)")
+    return con
+
+
+def _ord(ts):
+    return datetime.date.fromtimestamp(ts).toordinal()
+
+
+def _oday(o):
+    return datetime.date.fromordinal(o).isoformat() if o else ""
+
+
 def _sharing_session(r, now_ts):
     a = to_int(r.get("started"))
     if not a:
@@ -2889,50 +2920,111 @@ def _sharing_session(r, now_ts):
     if platform.lower().strip() == "chromecast" or "plex cast" in product.lower():
         # en Chromecast får nyt machine_id, hver gang der castes – regn alle casts fra samme adresse som én enhed
         mid, player = f"chromecast@{ip or '?'}", "Chromecast"
-    return {"uid": str(r.get("user_id") or r.get("user") or "?"), "user": str(r.get("user") or ""),
-            "name": str(r.get("friendly_name") or r.get("user") or "?"), "a": a, "b": b, "ip": ip, "pub": public_ip(ip),
-            "mid": mid, "player": player or "?", "platform": platform,
-            "product": product, "kind": device_kind(platform, product, player),
+    i = sys.intern
+    return {"uid": i(str(r.get("user_id") or r.get("user") or "?")), "user": i(str(r.get("user") or "")),
+            "name": i(str(r.get("friendly_name") or r.get("user") or "?")), "a": a, "b": b, "d": _ord(a),
+            "ip": i(ip), "pub": public_ip(ip), "mid": i(mid), "player": i(player or "?"), "platform": i(platform),
+            "product": i(product), "kind": device_kind(platform, product, player),
             "title": str(r.get("full_title") or r.get("title") or "")[:80]}
 
 
-def sharing_fetch(job, fetch_from, fetch_to):
-    """Al historik fra Tautulli i perioden (én række pr. afspilning, ikke grupperet)."""
-    after = (fetch_from - datetime.timedelta(days=1)).date().isoformat()
-    before = (fetch_to + datetime.timedelta(days=1)).date().isoformat()
-    lo, hi, now_ts = fetch_from.timestamp(), fetch_to.timestamp(), int(time.time())
-    out, pos = [], 0
-    while True:
-        d = tautulli("get_history", grouping=0, after=after, before=before, start=pos, length=SHARING_PAGE,
-                     order_column="date", order_dir="asc") or {}
-        chunk = d.get("data") or []
-        for r in chunk:
-            s = _sharing_session(r, now_ts)
-            if s and s["b"] >= lo and s["a"] <= hi:
-                out.append(s)
-        pos += len(chunk)
-        job["total"] = max(to_int(d.get("recordsFiltered")), pos)
-        job["done"] = pos
-        if len(chunk) < SHARING_PAGE or pos >= SHARING_MAX_ROWS:
-            break
-    return out
+def sharing_history(job, full=False):
+    """Hele historikken fra Tautulli (én række pr. afspilning). Første gang hentes alt; derefter kun det nye,
+    og resten huskes i hukommelsen, til Fangarr genstartes."""
+    with _sh_lock:
+        now_ts, rows = int(time.time()), _sh_hist["rows"]
+        if full or not rows:
+            base, cutoff, after = [], 0, None
+        else:
+            cutoff = max(r["a"] for r in rows) - 2 * 86400
+            base = [r for r in rows if r["a"] < cutoff]
+            after = datetime.date.fromtimestamp(cutoff - 86400).isoformat()
+        new, pos = [], 0
+        job["note"] = "henter hele historikken fra Tautulli (kun første gang)" if not base else "henter nye afspilninger"
+        while True:
+            p = {"grouping": 0, "start": pos, "length": SHARING_PAGE, "order_column": "date", "order_dir": "asc"}
+            if after:
+                p["after"] = after
+            d = tautulli("get_history", **p) or {}
+            chunk = d.get("data") or []
+            for r in chunk:
+                s = _sharing_session(r, now_ts)
+                if s and s["a"] >= cutoff:
+                    new.append(s)
+            pos += len(chunk)
+            job["total"] = max(to_int(d.get("recordsFiltered")), pos)
+            job["done"] = pos
+            if len(chunk) < SHARING_PAGE or pos >= SHARING_MAX_ROWS:
+                break
+        rows = base + new
+        rows.sort(key=lambda s: s["a"])
+        _sh_hist.update(rows=rows, fetched=iso(now()), oldest=iso(datetime.datetime.fromtimestamp(rows[0]["a"])) if rows else "")
+        job["note"] = ""
+        return rows, pos >= SHARING_MAX_ROWS
 
 
-def _sharing_groups(tv):
-    """Hvilke tv står sammen? To tv hører til samme sted, når de har brugt samme adresse inden for et døgn
-    på mindst SHARING_COLOC_DAYS forskellige dage. Giver {enhed: gruppe}."""
-    by_ip, days = {}, {}
-    for s in tv:
+def _dev_label(d):
+    """Enhed i almindeligt sprog til beskeder og Tracearr-hjælp."""
+    p = (d["platform"] or "").lower()
+    if p == "tvos":
+        return "Apple TV"
+    if p == "chromecast" or d["mid"].startswith("chromecast"):
+        return "Chromecast"
+    if p in ("webos", "netcast"):
+        return "LG-tv"
+    if p in ("tizen", "samsung"):
+        return "Samsung-tv"
+    if "playstation" in p:
+        return "PlayStation"
+    if "xbox" in p:
+        return "Xbox"
+    if "roku" in p:
+        return "Roku"
+    return d["player"] if d["kind"] == "tv" else d["player"]
+
+
+def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, end_ord):
+    """Analyse af én bruger ud fra HELE brugerens historik (ss, sorteret efter tid).
+    Kundens enheder findes ved at følge en kæde fra kontoens første tv – der gættes ikke ud fra antal afspilninger."""
+    fmt = lambda ts: iso(datetime.datetime.fromtimestamp(ts))
+    # ---------- 1. enheder
+    dev = {}
+    for s in ss:
+        d = dev.get(s["mid"])
+        if d is None:
+            d = dev[s["mid"]] = {"mid": s["mid"], "player": s["player"], "platform": s["platform"], "product": s["product"],
+                                 "kind": s["kind"], "first": s["a"], "last": s["a"], "days": set(), "all_plays": 0}
+        d["last"], d["player"] = s["a"], s["player"]
+        d["days"].add(s["d"])
+        d["all_plays"] += 1
+    act = {m: sorted(d["days"]) for m, d in dev.items()}
+    later = lambda m, o: len(act[m]) - bisect.bisect_right(act[m], o)   # aktive dage efter dag o
+    tvs = [m for m, d in dev.items() if d["kind"] == "tv"]
+
+    # ---------- 2. hvem har delt adresse (samme offentlige adresse inden for et døgn)
+    by_ip, pair = {}, {}
+    for s in ss:
         if s["pub"]:
             by_ip.setdefault(s["ip"], []).append(s)
-    for ss in by_ip.values():
-        last = {}
-        for s in sorted(ss, key=lambda x: x["a"]):
-            for mid, ts in last.items():
-                if mid != s["mid"] and s["a"] - ts <= 86400:
-                    days.setdefault(tuple(sorted((mid, s["mid"]))), set()).add(time.strftime("%Y-%m-%d", time.localtime(s["a"])))
+    ipdays = {}
+    for ip, lst in by_ip.items():
+        last, per = {}, ipdays.setdefault(ip, {})
+        for s in lst:
+            per.setdefault(s["mid"], set()).add(s["d"])
+            for m, ts in last.items():
+                if m != s["mid"] and s["a"] - ts <= 86400:
+                    pair.setdefault((m, s["mid"]) if m < s["mid"] else (s["mid"], m), set()).add(s["d"])
             last[s["mid"]] = s["a"]
-    parent = {s["mid"]: s["mid"] for s in tv}
+
+    def parted(a, b):
+        dd = pair.get((a, b) if a < b else (b, a))
+        if not dd:
+            return False
+        L = max(dd) + SHARING_PARTED_DAYS
+        return later(a, L) >= 3 and later(b, L) >= 3
+
+    # ---------- 3. steder = tv, der står sammen
+    parent = {m: m for m in tvs}
 
     def find(x):
         while parent[x] != x:
@@ -2940,61 +3032,240 @@ def _sharing_groups(tv):
             x = parent[x]
         return x
 
-    for (m1, m2), dd in days.items():
-        if len(dd) >= SHARING_COLOC_DAYS:
-            parent[find(m1)] = find(m2)
-    # Enheder, der kun er brugt få dage (en Chromecast på en skiftende adresse, en geninstalleret app, et nyt tv),
-    # kan ikke nå 3 fælles dage. De hægtes på det sted, de har delt adresse med – men to steder lægges aldrig sammen.
-    active, plays, size = {}, {}, {}
-    for s in tv:
-        active.setdefault(s["mid"], set()).add(time.strftime("%Y-%m-%d", time.localtime(s["a"])))
-        plays[s["mid"]] = plays.get(s["mid"], 0) + 1
-    for m in parent:
+    links, former = {}, {}     # links[(a,b)] = bevis for koblingen; former[m] = [(anden enhed, sidste fælles dag)]
+    left_addr = {}             # tv, der har forladt en fast adresse, mens andre blev der: {enhed: en af dem, der blev}
+
+    def link(a, b, kind, n, first, last_):
+        links[(a, b)] = links[(b, a)] = {"kind": kind, "days": n, "first": first, "last": last_}
+        parent[find(a)] = find(b)
+
+    for (a, b), dd in pair.items():
+        if dev[a]["kind"] != "tv" or dev[b]["kind"] != "tv":
+            continue
+        if parted(a, b):
+            if len(dd) >= SHARING_COLOC_DAYS:
+                former.setdefault(a, []).append((b, max(dd)))
+                former.setdefault(b, []).append((a, max(dd)))
+        elif len(dd) >= SHARING_COLOC_DAYS:
+            link(a, b, "delt adresse", len(dd), min(dd), max(dd))
+    # faste adresser: tv, der har brugt samme faste adresse, står samme sted – også når det ene har afløst det andet
+    for ip, per in ipdays.items():
+        tvd = {m: dd for m, dd in per.items() if dev[m]["kind"] == "tv"}
+        alld = sorted(set().union(*tvd.values())) if tvd else []
+        if len(alld) < SHARING_STICKY_DAYS:
+            continue
+        members = []
+        for m, dd in tvd.items():
+            if len(dd) < SHARING_COLOC_DAYS:
+                continue
+            L = max(dd) + SHARING_PARTED_DAYS
+            others_later = len({o for mm, d2 in tvd.items() if mm != m for o in d2 if o > L})
+            if later(m, L) >= 3 and others_later >= 3:
+                stay = max(((len(d2), mm) for mm, d2 in tvd.items() if mm != m), default=(0, None))[1]
+                if stay:
+                    former.setdefault(m, []).append((stay, max(dd)))   # har forladt adressen, mens andre blev
+                    left_addr[m] = stay
+                continue
+            members.append((min(dd), m))
+        members.sort()
+        for (_, m) in members[1:]:
+            a = members[0][1]
+            if find(a) != find(m) and (a, m) not in links:
+                link(a, m, "samme faste adresse", len(tvd[m]), min(tvd[m]), max(tvd[m]))
+    # løse enheder (brugt få dage): hægtes på det sted, de har delt adresse med
+    size = {}
+    for m in tvs:
         size[find(m)] = size.get(find(m), 0) + 1
-    loose = [m for m in parent if size[find(m)] == 1 and len(active.get(m, ())) < SHARING_COLOC_DAYS]
-    target = {}
+    loose = {m for m in tvs if size[find(m)] == 1 and len(act[m]) < SHARING_COLOC_DAYS}
     for m in loose:
         best = None
-        for (m1, m2), dd in days.items():
-            if m not in (m1, m2):
+        for (a, b), dd in pair.items():
+            if m not in (a, b):
                 continue
-            o = m2 if m == m1 else m1
-            if o in loose:
+            o = b if m == a else a
+            if o in loose or dev[o]["kind"] != "tv" or parted(a, b):
                 continue
-            key = (len(dd), plays.get(o, 0))
+            key = (len(dd), dev[o]["all_plays"])
             if best is None or key > best[0]:
-                best = (key, o)
+                best = (key, o, dd)
         if best:
-            target[m] = best[1]
-    for m, o in target.items():
-        parent[m] = find(o)
-    return {m: find(m) for m in parent}
+            link(m, best[1], "delt adresse (få dage)", len(best[2]), min(best[2]), max(best[2]))
+    group = {m: find(m) for m in tvs}
+    places = {}
+    for m in tvs:
+        p = places.setdefault(group[m], {"members": [], "first": dev[m]["first"], "last": dev[m]["last"]})
+        p["members"].append(m)
+        p["first"], p["last"] = min(p["first"], dev[m]["first"]), max(p["last"], dev[m]["last"])
 
+    # ---------- 4. flytninger: en telefon/tablet set begge steder, og det gamle sted holdt op, da det nye begyndte
+    mob_place = {}
+    for (a, b), dd in pair.items():
+        ka, kb = dev[a]["kind"], dev[b]["kind"]
+        if (ka == "tv") == (kb == "tv"):
+            continue
+        t, m = (a, b) if ka == "tv" else (b, a)
+        e = mob_place.setdefault(m, {}).setdefault(group[t], {"days": set(), "tv": t})
+        e["days"] |= dd
+    bridges = {}
+    for m, pl in mob_place.items():
+        gs = list(pl)
+        for i, g1 in enumerate(gs):
+            for g2 in gs[i + 1:]:
+                p1, p2 = places[g1], places[g2]
+                both = min(p1["last"], p2["last"]) - max(p1["first"], p2["first"])
+                if both > SHARING_MOVE_OVERLAP * 86400:
+                    continue     # begge steder i brug samtidig i lang tid = to hjem, ikke en flytning
+                n = min(len(pl[g1]["days"]), len(pl[g2]["days"]))
+                cur = bridges.get((g1, g2))
+                if cur is None or n > cur["days"]:
+                    bridges[(g1, g2)] = bridges[(g2, g1)] = {
+                        "kind": "flytning", "days": n, "via": m, "a": pl[g1]["tv"], "b": pl[g2]["tv"],
+                        "first": min(min(pl[g1]["days"]), min(pl[g2]["days"])),
+                        "last": max(max(pl[g1]["days"]), max(pl[g2]["days"]))}
 
-def _sharing_user(ss, lo, hi, min_seconds):
-    """Analyse af én bruger. ss = alle brugerens afspilninger (også før perioden – til at finde ud af, hvad der står sammen)."""
-    fmt = lambda ts: iso(datetime.datetime.fromtimestamp(ts))
-    tv = [s for s in ss if s["kind"] == "tv"]
-    group = _sharing_groups(tv)
-    plays = {}
-    for s in tv:
-        plays[group[s["mid"]]] = plays.get(group[s["mid"]], 0) + 1
-    order = sorted(plays, key=lambda g: -plays[g])           # stedet med flest tv-afspilninger = hjemme
-    place = {g: i for i, g in enumerate(order)}
+    # ---------- 5. udgangspunkt: kontoens første tv
+    notes, origin, first_tv = [], None, None
+    if tvs:
+        first_tv = min(tvs, key=lambda m: dev[m]["first"])
+        origin = group[first_tv]
+        # er det første tv senere gået fra dem, det stod sammen med? Så er udgangspunktet dem, der blev tilbage
+        weight = lambda g: len(places[g]["members"]) + sum(1 for pl in mob_place.values() if g in pl and len(pl[g]["days"]) >= SHARING_COLOC_DAYS)
+        if first_tv in left_addr:
+            origin = group[left_addr[first_tv]]
+            notes.append("Kontoens første tv er senere flyttet væk fra den faste adresse, kontoen startede på – enhederne, der blev på adressen, regnes som kunden.")
+        else:
+            for (o, _last) in former.get(first_tv, []):
+                g = group[o]
+                if g == origin or o in left_addr or dev[o]["first"] > dev[first_tv]["first"] + 90 * 86400:
+                    continue
+                if weight(g) > weight(origin):
+                    origin = g
+                    notes.append("Kontoens første tv er senere gået fra de enheder, det stod sammen med – de regnes som kunden, fordi flest enheder blev der.")
+                elif weight(g) == weight(origin):
+                    notes.append("Usikkert udgangspunkt: kontoens første tv og et tv, det stod sammen med fra start, er gået hver til sit.")
+                break
+        # blev kontoen brugt flere steder (uden fælles adresse) allerede i de første dage?
+        t0 = dev[first_tv]["first"]
+        early, par0 = {}, {}
+        for x in ss:
+            if x["a"] > t0 + SHARING_ORIGIN_DAYS * 86400:
+                break
+            if x["kind"] == "tv":
+                par0.setdefault(x["mid"], x["mid"])
+                if x["pub"]:
+                    early.setdefault(x["ip"], set()).add(x["mid"])
 
-    # --- overlap: to tv fra hver sit sted, hver sin adresse, på samme tid
-    cur = sorted((s for s in tv if s["pub"] and s["b"] >= lo and s["a"] <= hi), key=lambda s: s["a"])
-    pairs = {}
+        def f0(v):
+            while par0[v] != v:
+                v = par0[v]
+            return v
+
+        for ms in early.values():
+            ms = list(ms)
+            for o in ms[1:]:
+                par0[f0(o)] = f0(ms[0])
+        n0 = len({f0(v) for v in par0})
+        if n0 > 1:
+            notes.append(f"Usikkert udgangspunkt: kontoen blev brugt på tv {n0} forskellige steder i de første {SHARING_ORIGIN_DAYS} dage.")
+    chain, via_bridge = set(), {}
+    if origin is not None:
+        chain, todo = {origin}, [origin]
+        while todo:
+            g = todo.pop()
+            for (g1, g2), br in bridges.items():
+                if g1 == g and g2 not in chain:
+                    chain.add(g2)
+                    via_bridge[g2] = (g1, br)
+                    todo.append(g2)
+
+    # ---------- 6. dine egne afgørelser
+    forced, approved, denied = set(), set(), set()
+    for m, mk in marks.items():
+        g = group.get(m)
+        if g is None:
+            continue
+        (forced if mk["mark"] == "kunde" else approved if mk["mark"] == "godkendt" else denied).add(g)
+    chain = (chain | forced) - denied
+    chain_last = max((places[g]["last"] for g in chain), default=0)
+    now_cut = time.time() - SHARING_DEAD_DAYS * 86400
+    chain_alive = chain_last >= now_cut
+
+    def status_of(g):
+        if g in denied:
+            return "ikke", "valgt af dig: ikke kundens"
+        if g in forced:
+            return "kunde", "valgt af dig: kundens"
+        if g in approved:
+            return "godkendt", "godkendt undtagelse (valgt af dig)"
+        if g in chain:
+            return "kunde", ""
+        for m in places[g]["members"]:
+            for (o, lastd) in former.get(m, []):
+                if group.get(o) in chain:
+                    return "tidligere", f"stod sammen med {dev[o]['player']} til {_oday(lastd)}, men er siden brugt et andet sted"
+        if chain and not chain_alive and places[g]["last"] >= now_cut:
+            return "uafklaret", f"kundens kendte enheder er ikke brugt siden {fmt(chain_last)[:10]} – muligvis en flytning, som ikke kan ses i historikken"
+        if not chain:
+            return "uafklaret", "kontoen har ingen kendt start"
+        return "aldrig", "har aldrig delt adresse med kundens enheder"
+
+    pstat = {g: status_of(g) for g in places}
+
+    # ---------- 7. bevis for hver enhed i kæden (hvordan er den koblet til kontoens første tv?)
+    why = {}
+    if first_tv is not None and group[first_tv] in chain:
+        why[first_tv] = f"kontoens første tv ({fmt(dev[first_tv]['first'])[:10]})"
+    seen, todo = set(why), list(why)
+    if not todo and chain:
+        for g in chain:   # udgangspunktet er dem, der blev tilbage – start ved stedets ældste tv
+            m0 = min(places[g]["members"], key=lambda m: dev[m]["first"])
+            if g == origin:
+                why[m0] = f"stod sammen med kontoens første tv fra starten ({fmt(dev[m0]['first'])[:10]})"
+                seen.add(m0)
+                todo.append(m0)
+    while todo:
+        a = todo.pop(0)
+        for (x, b), lk in links.items():
+            if x == a and b not in seen and group[b] in chain:
+                seen.add(b)
+                why[b] = f"{lk['kind']} med {dev[a]['player']} på {lk['days']} dage ({_oday(lk['first'])} – {_oday(lk['last'])})"
+                todo.append(b)
+        for g2, (g1, br) in via_bridge.items():
+            if group[a] == g1:
+                b = br["b"] if group[br["b"]] == g2 else br["a"]
+                if b not in seen:
+                    seen.add(b)
+                    weak = " – svagt bevis" if br["days"] < SHARING_COLOC_DAYS else ""
+                    why[b] = (f"flytning: {dev[br['via']]['player']} er set både på det gamle sted og her "
+                              f"(mindst {br['days']} {'dag' if br['days'] == 1 else 'dage'} hvert sted{weak})")
+                    todo.append(b)
+    weak_chain = any(br["days"] < SHARING_COLOC_DAYS for (_g1, br) in via_bridge.values())
+    if weak_chain:
+        notes.append("En flytning i kæden bygger på få dage (svagt bevis) – tjek enhederne og bekræft selv.")
+
+    # ---------- 8. overlap i perioden: to tv fra hvert sit sted, hver sin adresse, på samme tid
+    cur = [s for s in ss if s["kind"] == "tv" and s["pub"] and s["b"] >= lo and s["a"] <= hi]
+    order = sorted(places, key=lambda g: (g not in chain, -sum(dev[m]["all_plays"] for m in places[g]["members"])))
+    pidx, n = {}, 0
+    for g in order:
+        if g in chain:
+            pidx[g] = 0
+        else:
+            n += 1
+            pidx[g] = n
+    pairs, ok_events = {}, 0
     for i, s1 in enumerate(cur):
         for s2 in cur[i + 1:]:
             if s2["a"] >= s1["b"]:
                 break
             if s1["mid"] == s2["mid"] or s1["ip"] == s2["ip"] or group[s1["mid"]] == group[s2["mid"]]:
                 continue
+            if group[s1["mid"]] in chain and group[s2["mid"]] in chain:
+                continue     # begge er kundens (fx gammelt og nyt hjem under en flytning)
             a, b = max(s1["a"], s2["a"]), min(s1["b"], s2["b"])
             if b - a < 60 or a < lo or a > hi:
                 continue
-            x, y = (s1, s2) if place[group[s1["mid"]]] <= place[group[s2["mid"]]] else (s2, s1)
+            x, y = (s1, s2) if pidx[group[s1["mid"]]] <= pidx[group[s2["mid"]]] else (s2, s1)
             pairs.setdefault((x["mid"], y["mid"]), []).append((a, b, x, y))
     events = []
     for segs in pairs.values():
@@ -3008,89 +3279,179 @@ def _sharing_user(ss, lo, hi, min_seconds):
                     if s["title"] and s["title"] not in ev[k]["titles"]:
                         ev[k]["titles"].append(s["title"])
             else:
-                ev = {"start": a, "end": b, "seconds": b - a,
-                      "x": {"mid": x["mid"], "player": x["player"], "ip": x["ip"], "place": place[group[x["mid"]]],
-                            "titles": [x["title"]] if x["title"] else []},
-                      "y": {"mid": y["mid"], "player": y["player"], "ip": y["ip"], "place": place[group[y["mid"]]],
-                            "titles": [y["title"]] if y["title"] else []}}
+                ev = {"start": a, "end": b, "seconds": b - a}
+                for k, s in (("x", x), ("y", y)):
+                    g = group[s["mid"]]
+                    ev[k] = {"mid": s["mid"], "player": s["player"], "ip": s["ip"], "place": pidx[g],
+                             "status": pstat[g][0], "titles": [s["title"]] if s["title"] else []}
                 events.append(ev)
-    events = sorted((e for e in events if e["seconds"] >= min_seconds), key=lambda e: -e["start"])
-    # en aften = fra kl. 05 til kl. 05, så et overlap efter midnat tæller med aftenen før
-    evenings = sorted({time.strftime("%Y-%m-%d", time.localtime(e["start"] - 5 * 3600)) for e in events})
-    involved = {e[k]["mid"] for e in events for k in ("x", "y")}
+    events = [e for e in events if e["seconds"] >= min_seconds]
+    for e in events:
+        e["approved"] = "godkendt" in (e["x"]["status"], e["y"]["status"])
+    counted = sorted((e for e in events if not e["approved"]), key=lambda e: -e["start"])
+    ok_events = sum(1 for e in events if e["approved"])
+    eve = lambda e: time.strftime("%Y-%m-%d", time.localtime(e["start"] - 5 * 3600))   # en aften = kl. 05 til kl. 05
+    evenings = sorted({eve(e) for e in counted})
+    before = sorted({eve(e) for e in counted if cut_ts and e["start"] < cut_ts})
+    after = sorted({eve(e) for e in counted if cut_ts and e["start"] >= cut_ts})
+    involved = {e[k]["mid"] for e in counted for k in ("x", "y")}
 
-    # --- enheder brugt i perioden
-    devs = {}
+    # ---------- 9. enheder til visning
+    per = {}
     for s in ss:
         if s["b"] < lo or s["a"] > hi:
             continue
-        cast = s["mid"].startswith("chromecast@")
-        pl = place.get(group.get(s["mid"])) if s["kind"] == "tv" else None
-        # Chromecast vises som én linje pr. sted (ellers én linje pr. adresse på et net, hvor adressen skifter)
-        d = devs.setdefault(f"chromecast#{pl}" if cast else s["mid"],
-                            {"mid": "Chromecast (nyt id ved hver cast)" if cast else s["mid"], "mids": set(),
-                             "player": s["player"], "platform": s["platform"], "product": s["product"],
-                             "kind": s["kind"], "place": pl, "plays": 0, "ips": {}, "first": s["a"], "last": s["a"]})
-        d["mids"].add(s["mid"])
-        d["plays"] += 1
-        d["first"], d["last"] = min(d["first"], s["a"]), max(d["last"], s["a"])
+        p = per.setdefault(s["mid"], {"plays": 0, "ips": {}, "days": set()})
+        p["plays"] += 1
+        p["days"].add(s["d"])
         if s["pub"]:
-            d["ips"][s["ip"]] = d["ips"].get(s["ip"], 0) + 1
-    devices = []
-    for d in devs.values():
-        ips = sorted(d["ips"].items(), key=lambda t: -t[1])
-        mids = d.pop("mids")
-        devices.append({**d, "ips": [{"ip": ip, "plays": n} for ip, n in ips[:4]], "ip_count": len(ips),
-                        "first": fmt(d["first"]), "last": fmt(d["last"]), "in_overlap": bool(mids & involved)})
-    devices.sort(key=lambda d: (d["kind"] != "tv", d["place"] if d["place"] is not None else 99, -d["plays"]))
+            p["ips"][s["ip"]] = p["ips"].get(s["ip"], 0) + 1
+    devices, cast = [], {}
+    for m, d in dev.items():
+        g = group.get(m)
+        in_period = m in per
+        st, why_not = pstat[g] if g is not None else ("", "")
+        relevant = in_period or (g is not None and (g in chain or st in ("tidligere", "godkendt") or m in marks))
+        if not relevant:
+            continue
+        p = per.get(m, {"plays": 0, "ips": {}, "days": set()})
+        if d["kind"] != "tv":   # mobil: vis blot, om den er set hos kunden
+            at = [gg for gg in mob_place.get(m, {}) if gg in chain]
+            st, why_not = ("set hos kunden" if at else ""), ""
+        row = {"mid": m, "mids": {m}, "player": d["player"], "label": _dev_label(d), "platform": d["platform"],
+               "product": d["product"], "kind": d["kind"], "place": pidx.get(g) if g is not None else None,
+               "status": st, "why": why.get(m) or why_not or "", "mark": (marks.get(m) or {}).get("mark", ""),
+               "mark_note": (marks.get(m) or {}).get("note", ""), "plays": p["plays"], "period_days": len(p["days"]),
+               "ips": dict(p["ips"]), "first": d["first"], "last": d["last"], "in_period": in_period}
+        if m.startswith("chromecast@") and g is not None:   # Chromecast: én linje pr. sted
+            c = cast.get(g)
+            if c:
+                c["mids"].add(m)
+                c["plays"] += row["plays"]
+                c["period_days"] = max(c["period_days"], row["period_days"])
+                for ip, k in row["ips"].items():
+                    c["ips"][ip] = c["ips"].get(ip, 0) + k
+                c["first"], c["last"] = min(c["first"], row["first"]), max(c["last"], row["last"])
+                c["in_period"] = c["in_period"] or in_period
+                c["mark"], c["mark_note"] = c["mark"] or row["mark"], c["mark_note"] or row["mark_note"]
+                continue
+            cast[g] = row
+        devices.append(row)
+    out_devices = []
+    for r in devices:
+        ips = sorted(r["ips"].items(), key=lambda t: -t[1])
+        mids = r.pop("mids")
+        out_devices.append({**r, "ips": [{"ip": ip, "plays": k} for ip, k in ips[:4]], "ip_count": len(ips),
+                            "first": fmt(r["first"]), "last": fmt(r["last"]), "in_overlap": bool(mids & involved),
+                            "all_mids": sorted(mids)[:100]})
+    rank = {"kunde": 0, "godkendt": 1, "uafklaret": 2, "tidligere": 3, "aldrig": 4, "ikke": 4}
+    out_devices.sort(key=lambda d: (not d["in_period"], d["kind"] != "tv", rank.get(d["status"], 5), -d["plays"]))
+
+    # ---------- 10. skiftevis brug: tv, der ikke er kundens, brugt i perioden
+    others = []
+    for g in places:
+        st = pstat[g][0]
+        if st in ("kunde", "godkendt"):
+            continue
+        ms = [m for m in places[g]["members"] if m in per]
+        if not ms:
+            continue
+        nights = len({eve(e) for e in counted if group[e["x"]["mid"]] == g or group[e["y"]["mid"]] == g})
+        others.append({"place": pidx[g], "status": st, "devices": sorted({dev[m]["player"] for m in ms}),
+                       "plays": sum(per[m]["plays"] for m in ms), "days": len(set().union(*(per[m]["days"] for m in ms))),
+                       "evenings": nights})
+    others.sort(key=lambda o: -o["plays"])
+
+    # ---------- 11. hjælp til Tracearr: kan de fremmede tv rammes med en regel?
+    tr = None
+    foreign = [d for d in out_devices if d["kind"] == "tv" and d["in_period"] and d["status"] in ("aldrig", "tidligere", "ikke")]
+    own = [d for d in out_devices if d["kind"] == "tv" and d["status"] == "kunde"
+           and time.mktime(time.strptime(d["last"][:10], "%Y-%m-%d")) >= time.time() - 90 * 86400]
+    if foreign and own:
+        fp, op = sorted({d["product"] for d in foreign if d["product"]}), {d["product"] for d in own}
+        home = {}
+        for d in own:
+            for i in d["ips"]:
+                home[i["ip"]] = home.get(i["ip"], 0) + i["plays"]
+        tot = sum(home.values())
+        top = sorted(home.items(), key=lambda t: -t[1])[:2]
+        tr = {"user": ss[-1]["user"], "foreign": sorted({d["label"] for d in foreign}), "own": sorted({d["label"] for d in own}),
+              "player": fp if fp and not (set(fp) & op) else [],
+              "home_ips": [ip for ip, k in top] if tot and sum(k for _ip, k in top) >= 0.95 * tot and tot >= 10 else []}
+
     return {"user_id": ss[0]["uid"], "name": ss[-1]["name"], "username": ss[-1]["user"],
-            "plays": sum(d["plays"] for d in devices),
-            "tv_places": len({d["place"] for d in devices if d["place"] is not None}),
-            "evenings": len(evenings), "evening_dates": evenings, "overlaps": len(events),
-            "minutes": round(sum(e["seconds"] for e in events) / 60),
-            "last_overlap": fmt(events[0]["start"]) if events else "",
-            "devices": devices,
+            "plays": sum(p["plays"] for p in per.values()),
+            "tv_places": len({d["place"] for d in out_devices if d["place"] is not None and d["in_period"]}),
+            "evenings": len(evenings), "evening_dates": evenings, "before": len(before), "after": len(after),
+            "overlaps": len(counted), "approved_overlaps": ok_events,
+            "minutes": round(sum(e["seconds"] for e in counted) / 60),
+            "last_overlap": fmt(counted[0]["start"]) if counted else "",
+            "first_seen": fmt(ss[0]["a"]), "notes": notes, "others": others, "tracearr": tr,
+            "unclear": any(d["status"] == "uafklaret" and d["in_period"] for d in out_devices) or bool(notes),
+            "devices": out_devices,
             "events": [{"start": fmt(e["start"]), "end": fmt(e["end"]), "minutes": round(e["seconds"] / 60),
+                        "approved": e["approved"],
                         "home": {**e["x"], "titles": e["x"]["titles"][:3]},
-                        "other": {**e["y"], "titles": e["y"]["titles"][:3]}} for e in events[:150]]}
+                        "other": {**e["y"], "titles": e["y"]["titles"][:3]}}
+                       for e in sorted(events, key=lambda e: -e["start"])[:150]]}
 
 
-def run_sharing(job, start, end, min_minutes, red_days):
+def sharing_marks():
+    con = _sharing_db()
+    marks, users = {}, {}
+    for r in con.execute("SELECT * FROM sharing_marks").fetchall():
+        marks.setdefault(r["user_id"], {})[r["mid"]] = {"mark": r["mark"], "note": r["note"] or ""}
+    for r in con.execute("SELECT * FROM sharing_users").fetchall():
+        users[r["user_id"]] = {"status": r["status"] or "", "note": r["note"] or "", "updated": r["updated"] or ""}
+    con.close()
+    return marks, users
+
+
+def run_sharing(job, start, end, min_minutes, red_days, cut, full):
     try:
-        lookback = min(start, end - datetime.timedelta(days=SHARING_LOOKBACK_DAYS))
-        rows = sharing_fetch(job, lookback, end)
+        rows, capped = sharing_history(job, full)
         lo, hi = start.timestamp(), end.timestamp()
+        marks, ustat = sharing_marks()
         by_user = {}
         for s in rows:
-            by_user.setdefault(s["uid"], []).append(s)
-        users, kinds = [], {}
-        for ss in by_user.values():
-            ss.sort(key=lambda s: s["a"])
-            if not any(s["b"] >= lo and s["a"] <= hi for s in ss):
+            if s["a"] <= hi:
+                by_user.setdefault(s["uid"], []).append(s)
+        users, kinds, end_ord = [], {}, end.date().toordinal()
+        cut_ts = cut.timestamp() if cut else 0
+        for uid, ss in by_user.items():
+            if max(x["b"] for x in ss[-50:]) < lo:
+                continue     # ingen afspilninger i perioden
+            u = _sharing_user(ss, lo, hi, min_minutes * 60, marks.get(uid, {}), cut_ts, end_ord)
+            if not u["plays"]:
                 continue
-            u = _sharing_user(ss, lo, hi, min_minutes * 60)
             u["level"] = "rød" if u["evenings"] >= red_days else ("gul" if u["evenings"] >= 1 else "grøn")
+            u["case"] = ustat.get(uid, {"status": "", "note": "", "updated": ""})
             users.append(u)
             for d in u["devices"]:
+                if not d["in_period"]:
+                    continue
                 k = kinds.setdefault((d["platform"], d["product"], d["kind"]),
                                      {"platform": d["platform"], "product": d["product"], "kind": d["kind"], "devices": 0, "plays": 0})
                 k["devices"] += 1
                 k["plays"] += d["plays"]
         rank = {"rød": 0, "gul": 1, "grøn": 2}
-        users.sort(key=lambda u: (rank[u["level"]], -u["evenings"], -u["minutes"], -u["tv_places"], u["name"].lower()))
-        job["results"] = {"from": iso(start), "to": iso(end), "min_minutes": min_minutes, "red_days": red_days,
-                          "sessions": sum(1 for s in rows if s["b"] >= lo and s["a"] <= hi),
+        users.sort(key=lambda u: (rank[u["level"]], -(u["after"] if cut else u["evenings"]), -u["evenings"], -u["minutes"], u["name"].lower()))
+        job["results"] = {"from": iso(start), "to": iso(end), "cut": iso(cut) if cut else "", "min_minutes": min_minutes,
+                          "red_days": red_days, "sessions": sum(u["plays"] for u in users),
+                          "history": {"rows": len(rows), "oldest": _sh_hist["oldest"], "fetched": _sh_hist["fetched"]},
                           "counts": {lv: sum(1 for u in users if u["level"] == lv) for lv in rank},
                           "users": users, "kinds": sorted(kinds.values(), key=lambda k: -k["plays"])}
-        if len(rows) >= SHARING_MAX_ROWS:
-            job["note"] = "perioden er meget stor – kun de første afspilninger er med. Vælg en kortere periode."
+        note = []
+        if capped:
+            note.append("historikken er meget stor – kun de første afspilninger er med")
         unknown = sum(k["devices"] for k in kinds.values() if k["kind"] == "ukendt")
         if unknown:
-            job["note"] = (job["note"] + " · " if job["note"] else "") + \
-                f"{unknown} enheder kunne ikke bestemmes som tv eller mobil (tælles ikke som tv) – se Enhedstyper nederst"
+            note.append(f"{unknown} enheder kunne ikke bestemmes som tv eller mobil (tælles ikke som tv) – se Enhedstyper nederst")
+        job["note"] = " · ".join(note)
         job["status"] = "færdig"
         _sharing["result"] = {**job}
     except Exception as e:
+        log.exception("Kontodeling: analysen fejlede") if not isinstance(e, RuntimeError) else None
         job["status"] = "fejl"
         job["error"] = str(e) if isinstance(e, RuntimeError) else f"{e.__class__.__name__}: {e}"
 
@@ -3118,18 +3479,62 @@ async def sharing_run(req: Request):
         start = _sharing_day(b["from"])
         end = min(end, _sharing_day(b.get("to") or end.strftime("%Y-%m-%d"), True))
     else:
-        start = end - datetime.timedelta(days=min(max(to_int(b.get("days")) or 30, 1), 730))
+        start = end - datetime.timedelta(days=min(max(to_int(b.get("days")) or 30, 1), 1500))
     if start >= end:
         raise HTTPException(400, "startdatoen skal ligge før slutdatoen")
-    if (end - start).days > 731:
-        raise HTTPException(400, "perioden må højst være 2 år")
+    cut = _sharing_day(b["cut"]) if b.get("cut") else None
+    if cut and not (start < cut < end):
+        raise HTTPException(400, "skæringsdatoen skal ligge inde i perioden")
     min_minutes = min(max(to_int(b.get("min_minutes")) or 10, 1), 240)
     red_days = min(max(to_int(b.get("red_days")) or 5, 1), 365)
     job = new_job("sharing")
-    threading.Thread(target=run_sharing, args=(job, start, end, min_minutes, red_days), daemon=True).start()
+    threading.Thread(target=run_sharing, args=(job, start, end, min_minutes, red_days, cut, bool(b.get("refresh"))),
+                     daemon=True).start()
     return job
 
 
 @app.get("/api/sharing")
 def sharing_get():
     return _sharing["result"] or {}
+
+
+@app.put("/api/sharing/mark")
+async def sharing_mark(req: Request):
+    """Din egen afgørelse for en enhed: 'kunde' (kundens), 'ikke' (ikke kundens), 'godkendt' (fx sommerhus) eller '' (fjern)."""
+    b = await req.json()
+    uid, mids, mark = str(b.get("user_id") or ""), b.get("mids") or [], str(b.get("mark") or "")
+    if not uid or not mids or mark not in SH_MARKS + ("",):
+        raise HTTPException(400, "mangler bruger, enhed eller gyldigt valg")
+    con = _sharing_db()
+    with con:
+        for m in mids[:200]:
+            if mark:
+                con.execute("INSERT INTO sharing_marks VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id, mid) DO UPDATE SET"
+                            " mark=excluded.mark, note=excluded.note, updated=excluded.updated",
+                            (uid, str(m), mark, str(b.get("note") or "")[:300], iso(now())))
+            else:
+                con.execute("DELETE FROM sharing_marks WHERE user_id=? AND mid=?", (uid, str(m)))
+    con.close()
+    log.info("Kontodeling: afgørelse '%s' gemt for bruger %s (%s enheder)", mark or "fjernet", uid, len(mids))
+    return {"ok": True}
+
+
+@app.put("/api/sharing/user")
+async def sharing_user_put(req: Request):
+    """Status og note på en bruger (hvor langt er du med sagen?)."""
+    b = await req.json()
+    uid, status = str(b.get("user_id") or ""), str(b.get("status") or "")
+    if not uid or status not in SH_STATUS:
+        raise HTTPException(400, "mangler bruger eller gyldig status")
+    con = _sharing_db()
+    with con:
+        con.execute("INSERT INTO sharing_users VALUES (?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET"
+                    " status=excluded.status, note=excluded.note, updated=excluded.updated",
+                    (uid, status, str(b.get("note") or "")[:1000], iso(now())))
+    con.close()
+    res = _sharing["result"]
+    if res and res.get("results"):
+        for u in res["results"].get("users", []):
+            if u["user_id"] == uid:
+                u["case"] = {"status": status, "note": str(b.get("note") or "")[:1000], "updated": iso(now())}
+    return {"ok": True}

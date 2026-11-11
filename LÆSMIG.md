@@ -27,18 +27,43 @@ Sikringer: prøvetilstand, loft pr. døgn, pladsgrænse, kun præcise titelmatch
 - **Seerr-ønsker** (hvert 2. minut): ønsker på en serie, der allerede findes i sonarr2, får mærket `seerr-straks`, og Fangarr søger efter de ønskede sæsoner, så første download kommer uden ventetid. Serier med `seerr-straks` mister mærket, når første afsnit efter mærket er kommet hjem. Kræver at `seerr-straks` står i delay-profilen uden ventetid i sonarr2, og at Seerr giver nye serier mærket `seerr-straks`.
 - Alt logges i Fangarrs log (`oversæt nu`, `ingen ventetid`, `seerr uden ventetid`, `seerr-straks fjernet`).
 
-## Kontodeling (1.12.0)
-- Fanen **Kontodeling** finder konti, hvor **to tv afspiller samtidig fra hver sin adresse** (kontoreglen). Telefoner, tablets og computere tæller ikke med. Du vælger selv perioden (7–90 dage eller egne datoer) og trykker **Analysér** – intet kører af sig selv, intet sendes til Telegram, og resultatet gemmes ikke på disken (det ligger kun i hukommelsen, til Fangarr genstartes). Fangarr blokerer ingen.
-- Kilde: Tautullis historik (`get_history`, én række pr. afspilning). Kræver `TAUTULLI_URL` og `TAUTULLI_APIKEY` i `fangarr.env`. Fangarr læser kun – og API-nøglen står aldrig i loggen eller i fejlbeskeder.
-- **Sådan tælles der:** et overlap er to tv med hver sin offentlige adresse, der kører samtidig i mindst *Mindst (minutter)* (standard 10). Tid på pause trækkes fra. Overlap mellem de samme to tv med under 20 minutters pause regnes som ét. En *aften* går fra kl. 05 til kl. 05. 🔴 = mindst *Rød fra (aftener)* aftener med overlap (standard 5), 🟡 = 1 eller flere, 🟢 = ingen.
-- **Sted:** tv, der har delt adresse inden for et døgn på mindst 3 forskellige dage (set over mindst 30 dage), står samme sted – overlap mellem dem tæller ikke (fx når hjemmets adresse skifter midt på aftenen). Stedet med flest afspilninger kaldes *Hjemme*, resten *Andet sted*.
-- **Chromecast og løse enheder (1.12.1):** en Chromecast får nyt machine_id, hver gang der castes, så alle casts fra samme adresse regnes som én enhed. Enheder, der kun er brugt få dage (Chromecast på en skiftende adresse, en geninstalleret app, et nyt tv), hægtes på det sted, de har delt adresse med. To steder lægges aldrig sammen på den måde. I listen over overlap står det rigtige sted ved begge tv (fx *Andet sted 1* og *Andet sted 2*, når to tv uden for hjemmet kører samtidig).
-- **Tv eller mobil** afgøres af platform og app (fx `Plex for Android (TV)` = tv, `Plex for Android (Mobile)` = mobil). Enheder, der ikke kan bestemmes, tælles ikke som tv og står som *Ukendt* under **Enhedstyper** nederst på fanen.
-- Begrænsninger: kun samtidig brug fanges. Sommerhus, VPN på tv'et og flytning kan give falske alarmer – en rød konto bør have en advarsel, før der blokeres.
-- Kopiér nøglen fra Mediabox til feeder uden at vise den (køres fra en maskine med adgang til begge servere, fx Termux). Svaret viser kun, hvor mange tegn nøglen har:
+## Kontodeling (1.12.0 – 1.13.0)
+Fanen **Kontodeling** finder konti, hvor **to tv afspiller samtidig fra hver sin adresse** (kontoreglen), og viser, hvilke enheder der er kundens egne. Telefoner, tablets og computere tæller ikke som tv. Intet kører af sig selv, intet sendes til Telegram, og Fangarr blokerer ingen. Samme forklaring står i selve fanen under **Sådan læser du fanen**.
+
+**Opsætning:** `TAUTULLI_URL` og `TAUTULLI_APIKEY` i `fangarr.env`. Fangarr læser kun fra Tautulli (`get_history`), og API-nøglen står aldrig i loggen eller i fejlbeskeder. Kopiér nøglen fra Mediabox til feeder uden at vise den (køres fra en maskine med adgang til begge servere; svaret viser kun, hvor mange tegn nøglen har):
 ```
 ssh mediabox "grep -m1 '^api_key' /opt/tautulli/config.ini" | ssh feeder 'K=$(cut -d= -f2 | tr -d " \"\r"); if grep -q "^TAUTULLI_APIKEY=" /opt/fangarr/fangarr.env; then echo "findes allerede"; else printf "\nTAUTULLI_URL=https://tautulli.stream365.vip\nTAUTULLI_APIKEY=%s\n" "$K" >> /opt/fangarr/fangarr.env; echo "tilføjet (${#K} tegn)"; fi'
 ```
+
+### Hvad bliver talt
+- **Overlap:** to tv med hver sin offentlige adresse, der kører samtidig i mindst *Mindst (minutter)* (standard 10). Tid på pause trækkes fra. Overlap mellem de samme to tv med under 20 minutters pause regnes som ét. Afspilninger over 8 timer skæres af.
+- **Aften:** fra kl. 05 til kl. 05. 🔴 = mindst *Rød fra (aftener)* aftener med overlap (standard 5), 🟡 = 1 eller flere, 🟢 = ingen.
+- **Tv eller mobil** afgøres af platform og app (fx `Plex for Android (TV)` = tv, `Plex for Android (Mobile)` = mobil). Enheder, der ikke kan bestemmes, tælles ikke som tv og står som *Ukendt* under **Enhedstyper** nederst.
+- **Chromecast** får nyt machine_id ved hver cast, så alle casts fra samme adresse regnes som én enhed (én linje pr. sted).
+
+### Hvilke enheder er kundens? (1.13.0 – kæden)
+Der gættes ikke ud fra antal afspilninger. Fangarr bruger **hele** Tautullis historik:
+1. **Udgangspunktet er kontoens første tv.** Er det senere flyttet væk fra en fast adresse, mens andre blev, er det dem, der blev, som regnes som kunden.
+2. **Et tv kommer med i kæden**, når det har stået på samme adresse som et tv i kæden inden for et døgn på mindst 3 forskellige dage, eller har brugt samme faste adresse (en adresse brugt på mindst 5 dage). Tv, der kun er brugt få dage, hægtes på det sted, de har delt adresse med.
+3. **Gået hver til sit:** to tv, der begge er brugt (3+ dage) senere end 14 dage efter deres sidste fælles dag, står ikke længere sammen.
+4. **Flytning:** en telefon/tablet set både på det gamle og det nye sted binder dem sammen – men kun hvis de to steder højst har været i brug samtidig i 60 dage. Under 3 dage hvert sted = *svagt bevis* (knappen **Bekræft: kundens**).
+5. Mærker: **Kundens**, **Tidligere hos kunden** (stod hos kunden, men er siden brugt et andet sted), **Aldrig hos kunden**, **Uafklaret** (kundens kendte enheder er ikke brugt i 45 dage, og et andet sted er i brug – muligvis en flytning uden spor) og **Godkendt undtagelse**. Ved hver enhed står **beviset**.
+6. Overlap mellem to af kundens egne steder (fx under en flytning) tæller ikke.
+
+Begrænsninger: var kontoen delt fra første dag, eller er kunden ældre end Tautullis historik, kan udgangspunktet være forkert (gul bemærkning ⚠ på brugeren). Sommerhus, VPN på tv'et og flytning uden spor kræver, at du selv afgør det.
+
+### Funktioner i fanen
+- **Analysér** – periode (7–90 dage eller egne datoer). Første gang hentes hele historikken (et par minutter); derefter huskes den i hukommelsen, til Fangarr genstartes, og kun nye afspilninger hentes. **Hent historikken forfra** glemmer det huskede.
+- **Skæringsdato** – deler perioden i to (fx datoen, hvor en besked gik ud). Kolonnerne *Før* og *Efter* viser, hvem der er fortsat.
+- **Kundens / Ikke kundens** – din egen afgørelse for et tv og de tv, det står sammen med. Gemmes i Fangarrs database (`sharing_marks`) og gælder ved alle senere analyser. **Fjern valg** sletter den.
+- **Godkend undtagelse** – et sted, kunden har lov til (sommerhus o.l.), med en note. Overlap med stedet tæller ikke længere.
+- **Sag** – status (advarsel sendt, blokeres, blokeret, afsluttet) og note pr. bruger (`sharing_users`). Afsluttede skjules, til *Vis afsluttede* slås til.
+- **Fakta til besked** – kort tekst med antal aftener, seneste dato og de enheder, det drejer sig om, uden adresser. Til at sætte ind i advarslen.
+- **Hjælp til Tracearr** – viser, hvad der skal stå i en Tracearr-regel (Automations) for at stoppe de tv, der ikke er kundens: enten på app (`Client/Player`), når de fremmede tv bruger en anden app end kundens, eller på adresse (`Device Type` = TV og `IP Range` not equals kundens adresse), når kunden har fast adresse. Fangarr opretter ikke reglen. Feltnavnene er fra Tracearrs kildekode (nov. 2026) – tjek dem i din udgave.
+- **Skiftevis brug** (nederst) – tv, der ikke er kundens, men aldrig kører samtidig med kundens. Tilladt efter reglerne, kun til orientering.
+- **Enhedstyper** (nederst) – hvordan hver platform/app er talt.
+
+Det, der gemmes på disken, er kun dine egne afgørelser og sager. Historikken og resultatet ligger i hukommelsen.
 
 ## Filer
 - `app/main.py` – server (FastAPI) · `app/static/index.html` – interface · `app/VERSION`
