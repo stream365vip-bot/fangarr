@@ -46,9 +46,11 @@ Der gættes ikke ud fra antal afspilninger. Fangarr bruger **hele** Tautullis hi
 1. **Udgangspunktet er kontoens første tv.** Er det senere flyttet væk fra en fast adresse, mens andre blev, er det dem, der blev, som regnes som kunden.
 2. **Et tv kommer med i kæden**, når det har stået på samme adresse som et tv i kæden inden for et døgn på mindst 3 forskellige dage, eller har brugt samme faste adresse (en adresse brugt på mindst 5 dage). Tv, der kun er brugt få dage, hægtes på det sted, de har delt adresse med.
 3. **Gået hver til sit:** to tv, der begge er brugt (3+ dage) senere end 14 dage efter deres sidste fælles dag, står ikke længere sammen.
-4. **Flytning:** en telefon/tablet set både på det gamle og det nye sted binder dem sammen – men kun hvis de to steder højst har været i brug samtidig i 60 dage. Under 3 dage hvert sted = *svagt bevis* (knappen **Bekræft: kundens**).
+4. **Flytning:** en telefon/tablet/computer set på mindst 3 dage både på det gamle og det nye sted binder dem sammen – men kun hvis det gamle sted holdt op, omkring da det nye begyndte (højst 60 dages overlap). To steder, der er i brug samtidig i lang tid, er to hjem. Under 3 dage hvert sted er for lidt: det nye sted bliver **Uafklaret**, og du afgør det selv (1.13.1 – før kom svage flytninger med i kæden, og korte "mellemsteder" kunne binde to hjem sammen).
 5. Mærker: **Kundens**, **Tidligere hos kunden** (stod hos kunden, men er siden brugt et andet sted), **Aldrig hos kunden**, **Uafklaret** (kundens kendte enheder er ikke brugt i 45 dage, og et andet sted er i brug – muligvis en flytning uden spor) og **Godkendt undtagelse**. Ved hver enhed står **beviset**.
 6. Overlap mellem to af kundens egne steder (fx under en flytning) tæller ikke.
+
+**⚠ ved navnet** (1.13.1): kun når kontoen blev brugt flere steder i de første 14 dage, eller et uafklaret tv er i brug (i overlap eller 5+ afspilninger). Er kontoen ældre end Tautullis historik, står det som en almindelig oplysning (ℹ). Chromecast på et net med skiftende adresser, som ikke kan kobles til et tv, samles til ét sted pr. net.
 
 Begrænsninger: var kontoen delt fra første dag, eller er kunden ældre end Tautullis historik, kan udgangspunktet være forkert (gul bemærkning ⚠ på brugeren). Sommerhus, VPN på tv'et og flytning uden spor kræver, at du selv afgør det.
 
