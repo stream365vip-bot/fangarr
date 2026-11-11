@@ -965,7 +965,7 @@ function shDetail(u) {
     <div class="small">${d.ip_count} ${d.ip_count === 1 ? "adresse" : "adresser"}${d.ip_count >= 4 ? " (skifter – mobilt net?)" : ""}${d.ips.length ? ': <span class="mono">' + d.ips.map(i => `${esc(i.ip)} (${i.plays})`).join(", ") + (d.ip_count > d.ips.length ? " …" : "") + "</span>" : ""}</div>
     <div class="small mono" style="word-break:break-all">${esc(d.mid)}</div></div>`).join("");
   const side = (l, x) => `<div class="small"><b>${l}:</b> ${esc(x.player)} <span class="mono">${esc(x.ip)}</span>${x.titles.length ? " – " + esc(x.titles.join(" · ")) : ""}</div>`;
-  const ev = u.events.map(e => `<div class="shc"><div><b>${lt(e.start)}</b> · ${e.minutes} min. samtidig</div>${side("Hjemme", e.home)}${side("Andet sted", e.other)}</div>`).join("");
+  const ev = u.events.map(e => `<div class="shc"><div><b>${lt(e.start)}</b> · ${e.minutes} min. samtidig</div>${side(shPlace(e.home.place), e.home)}${side(shPlace(e.other.place), e.other)}</div>`).join("");
   return `<h4>Enheder brugt i perioden</h4>${dev}
     <div class="small" style="margin-top:6px">Sted: tv, der har delt adresse på mindst 3 forskellige dage, står samme sted. Stedet med flest afspilninger kaldes Hjemme.</div>
     ${u.events.length ? `<h4>Samtidig afspilning fra forskellige adresser (${u.overlaps})</h4>${ev}`

@@ -2885,9 +2885,13 @@ def _sharing_session(r, now_ts):
     b = max(a + 60, b - max(0, to_int(r.get("paused_counter"))))
     player, platform, product = str(r.get("player") or ""), str(r.get("platform") or ""), str(r.get("product") or "")
     ip = str(r.get("ip_address") or "").strip()
+    mid = str(r.get("machine_id") or f"{player}|{platform}")
+    if platform.lower().strip() == "chromecast" or "plex cast" in product.lower():
+        # en Chromecast får nyt machine_id, hver gang der castes – regn alle casts fra samme adresse som én enhed
+        mid, player = f"chromecast@{ip or '?'}", "Chromecast"
     return {"uid": str(r.get("user_id") or r.get("user") or "?"), "user": str(r.get("user") or ""),
             "name": str(r.get("friendly_name") or r.get("user") or "?"), "a": a, "b": b, "ip": ip, "pub": public_ip(ip),
-            "mid": str(r.get("machine_id") or f"{player}|{platform}"), "player": player or "?", "platform": platform,
+            "mid": mid, "player": player or "?", "platform": platform,
             "product": product, "kind": device_kind(platform, product, player),
             "title": str(r.get("full_title") or r.get("title") or "")[:80]}
 
@@ -2939,6 +2943,31 @@ def _sharing_groups(tv):
     for (m1, m2), dd in days.items():
         if len(dd) >= SHARING_COLOC_DAYS:
             parent[find(m1)] = find(m2)
+    # Enheder, der kun er brugt få dage (en Chromecast på en skiftende adresse, en geninstalleret app, et nyt tv),
+    # kan ikke nå 3 fælles dage. De hægtes på det sted, de har delt adresse med – men to steder lægges aldrig sammen.
+    active, plays, size = {}, {}, {}
+    for s in tv:
+        active.setdefault(s["mid"], set()).add(time.strftime("%Y-%m-%d", time.localtime(s["a"])))
+        plays[s["mid"]] = plays.get(s["mid"], 0) + 1
+    for m in parent:
+        size[find(m)] = size.get(find(m), 0) + 1
+    loose = [m for m in parent if size[find(m)] == 1 and len(active.get(m, ())) < SHARING_COLOC_DAYS]
+    target = {}
+    for m in loose:
+        best = None
+        for (m1, m2), dd in days.items():
+            if m not in (m1, m2):
+                continue
+            o = m2 if m == m1 else m1
+            if o in loose:
+                continue
+            key = (len(dd), plays.get(o, 0))
+            if best is None or key > best[0]:
+                best = (key, o)
+        if best:
+            target[m] = best[1]
+    for m, o in target.items():
+        parent[m] = find(o)
     return {m: find(m) for m in parent}
 
 
@@ -2980,8 +3009,10 @@ def _sharing_user(ss, lo, hi, min_seconds):
                         ev[k]["titles"].append(s["title"])
             else:
                 ev = {"start": a, "end": b, "seconds": b - a,
-                      "x": {"mid": x["mid"], "player": x["player"], "ip": x["ip"], "titles": [x["title"]] if x["title"] else []},
-                      "y": {"mid": y["mid"], "player": y["player"], "ip": y["ip"], "titles": [y["title"]] if y["title"] else []}}
+                      "x": {"mid": x["mid"], "player": x["player"], "ip": x["ip"], "place": place[group[x["mid"]]],
+                            "titles": [x["title"]] if x["title"] else []},
+                      "y": {"mid": y["mid"], "player": y["player"], "ip": y["ip"], "place": place[group[y["mid"]]],
+                            "titles": [y["title"]] if y["title"] else []}}
                 events.append(ev)
     events = sorted((e for e in events if e["seconds"] >= min_seconds), key=lambda e: -e["start"])
     # en aften = fra kl. 05 til kl. 05, så et overlap efter midnat tæller med aftenen før
@@ -2993,9 +3024,14 @@ def _sharing_user(ss, lo, hi, min_seconds):
     for s in ss:
         if s["b"] < lo or s["a"] > hi:
             continue
-        d = devs.setdefault(s["mid"], {"mid": s["mid"], "player": s["player"], "platform": s["platform"],
-                                       "product": s["product"], "kind": s["kind"], "plays": 0, "ips": {},
-                                       "first": s["a"], "last": s["a"]})
+        cast = s["mid"].startswith("chromecast@")
+        pl = place.get(group.get(s["mid"])) if s["kind"] == "tv" else None
+        # Chromecast vises som én linje pr. sted (ellers én linje pr. adresse på et net, hvor adressen skifter)
+        d = devs.setdefault(f"chromecast#{pl}" if cast else s["mid"],
+                            {"mid": "Chromecast (nyt id ved hver cast)" if cast else s["mid"], "mids": set(),
+                             "player": s["player"], "platform": s["platform"], "product": s["product"],
+                             "kind": s["kind"], "place": pl, "plays": 0, "ips": {}, "first": s["a"], "last": s["a"]})
+        d["mids"].add(s["mid"])
         d["plays"] += 1
         d["first"], d["last"] = min(d["first"], s["a"]), max(d["last"], s["a"])
         if s["pub"]:
@@ -3003,10 +3039,9 @@ def _sharing_user(ss, lo, hi, min_seconds):
     devices = []
     for d in devs.values():
         ips = sorted(d["ips"].items(), key=lambda t: -t[1])
+        mids = d.pop("mids")
         devices.append({**d, "ips": [{"ip": ip, "plays": n} for ip, n in ips[:4]], "ip_count": len(ips),
-                        "first": fmt(d["first"]), "last": fmt(d["last"]),
-                        "place": place.get(group.get(d["mid"])) if d["kind"] == "tv" else None,
-                        "in_overlap": d["mid"] in involved})
+                        "first": fmt(d["first"]), "last": fmt(d["last"]), "in_overlap": bool(mids & involved)})
     devices.sort(key=lambda d: (d["kind"] != "tv", d["place"] if d["place"] is not None else 99, -d["plays"]))
     return {"user_id": ss[0]["uid"], "name": ss[-1]["name"], "username": ss[-1]["user"],
             "plays": sum(d["plays"] for d in devices),
