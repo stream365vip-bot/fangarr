@@ -2884,7 +2884,7 @@ SHARING_DEAD_DAYS = 45       # et sted er "ikke i brug", når det ikke er set i 
 _sh_hist = {"rows": [], "fetched": "", "oldest": ""}
 _sh_lock = threading.Lock()
 SH_MARKS = ("kunde", "ikke", "godkendt")
-SH_STATUS = ("", "advarsel sendt", "blokeres", "blokeret", "afsluttet")
+SH_STATUS = ("", "blokeres", "blokeret", "undtagelse aftalt", "afsluttet", "advarsel sendt")
 
 
 def _sharing_db():
@@ -2983,10 +2983,130 @@ def _dev_label(d):
     return d["player"] if d["kind"] == "tv" else d["player"]
 
 
+def _sharing_identities(ss):
+    """Nogle tv (især Samsung) får nyt machine_id med jævne mellemrum, fx når Plex-appen opdateres.
+    Et tv med samme navn og app, der begynder, når et andet er holdt op (højst 30 dage efter, og uden at de
+    er brugt samtidig), regnes som det samme tv. Deler de en adresse, er det sikkert; ellers kræves, at der
+    kun er én mulig forgænger. Giver {id: fælles id}, {fælles id: antal id'er} og {fælles id: forklaring}."""
+    info = {}
+    for x in ss:
+        m = x["mid"]
+        if x["kind"] != "tv" or m.startswith("chromecast@"):
+            continue
+        d = info.get(m)
+        if d is None:
+            d = info[m] = {"key": (x["player"], x["platform"], x["product"]), "first": x["a"], "last": x["a"], "ips": set()}
+        d["last"] = max(d["last"], x["a"])
+        if x["pub"]:
+            d["ips"].add(x["ip"])
+    canon = {x["mid"]: x["mid"] for x in ss}
+    lines = {}     # nøgle -> liste af "linjer": {id, last, ips, n, weak}
+    for m, d in sorted(info.items(), key=lambda t: t[1]["first"]):
+        cands = [L for L in lines.get(d["key"], []) if L["last"] <= d["first"] + 86400 and d["first"] - L["last"] <= 30 * 86400]
+        pick = None
+        shared = [L for L in cands if L["ips"] & d["ips"]]
+        if shared:
+            pick = max(shared, key=lambda L: L["last"])
+        elif len(cands) == 1:
+            pick = cands[0]
+            pick["weak"] = True     # samme navn og app, men ingen fælles adresse
+        if pick is None:
+            lines.setdefault(d["key"], []).append({"id": m, "last": d["last"], "ips": set(d["ips"]), "n": 1, "weak": False})
+        else:
+            canon[m] = pick["id"]
+            pick["last"], pick["n"] = max(pick["last"], d["last"]), pick["n"] + 1
+            pick["ips"] |= d["ips"]
+    count = {L["id"]: L["n"] for ls in lines.values() for L in ls if L["n"] > 1}
+    why = {L["id"]: ("samme navn og app, afløser hinanden uden fælles adresse" if L["weak"] else "samme navn, app og adresse")
+           for ls in lines.values() for L in ls if L["n"] > 1}
+    return canon, count, why
+
+
+def _sharing_rules(username, sim, own_products, own_nets):
+    """Find den bedste Tracearr-regel til at stoppe de tv, der ikke er kundens, og prøv hver mulighed af på
+    brugerens egne afspilninger. sim = tv-afspilninger fra de seneste 90 dage: (klasse, app, adresse, dag, enhed),
+    klasse = 'blok' (aldrig hos kunden / valgt: ikke kundens), 'egen' (kundens) eller 'andet' (tidligere/uafklaret)."""
+    blk = [x for x in sim if x[0] == "blok"]
+    own = [x for x in sim if x[0] == "egen"]
+    oth = [x for x in sim if x[0] == "andet"]
+    if not blk:
+        return []
+    net = lambda ip: ".".join(ip.split(".")[:2]) + ".0.0/16" if ip.count(".") == 3 else ""
+    bprod = sorted({x[1] for x in blk if x[1]})
+    free_prod = [p for p in bprod if p not in own_products]
+    home = {}
+    for x in own:
+        home[x[2]] = home.get(x[2], 0) + 1
+    htot = sum(home.values())
+    htop = sorted(home.items(), key=lambda t: -t[1])[:2]
+    home_ips = [ip for ip, _n in htop] if htot >= 10 and sum(n for _ip, n in htop) >= 0.98 * htot else []
+    fdays = {}
+    for x in blk:
+        fdays.setdefault(x[2], set()).add(x[3])
+    fixed = sorted(ip for ip, dd in fdays.items() if len(dd) >= 4 and ip not in home)
+    rest = [x for x in blk if x[2] not in fixed]
+    nets = sorted({net(x[2]) for x in rest if net(x[2]) and net(x[2]) not in own_nets})
+    user = {"field": "User", "op": "is", "value": [username]}
+    tv = {"field": "Device Type", "op": "is", "value": ["TV"]}
+    cands = []
+
+    def add(key, rank, title, conds, pred, why, risk):
+        b, o, a = sum(1 for x in blk if pred(x)), sum(1 for x in own if pred(x)), sum(1 for x in oth if pred(x))
+        if b:
+            cands.append({"key": key, "rank": rank, "title": title, "conds": [user] + conds, "why": why, "risk": risk,
+                          "blk_hit": b, "blk_total": len(blk), "own_hit": o, "own_total": len(own),
+                          "oth_hit": a, "oth_total": len(oth),
+                          "devices": sorted({x[4] for x in blk if pred(x)}), "missed": sorted({x[4] for x in blk if not pred(x)})})
+
+    if free_prod:
+        add("app", 5, "Stop appen, de fremmede tv bruger",
+            [{"field": "Client/Player", "op": "equals" if len(free_prod) == 1 else "is one of", "value": free_prod}],
+            lambda x: x[1] in free_prod,
+            "Kundens egne tv har ikke brugt den app det seneste år, så reglen kan ikke ramme dem.",
+            "Reglen rammer alle afspillere af den slags på kontoen. Køber kunden selv sådan en, bliver den også stoppet.")
+    if fixed:
+        add("adresse", 4, "Stop tv på de fremmede adresser",
+            [tv, {"field": "IP Range", "op": "equals" if len(fixed) == 1 else "is one of", "value": [ip + "/32" for ip in fixed]}],
+            lambda x: x[2] in fixed,
+            "De fremmede tv står på en fast adresse, som kundens tv aldrig bruger.",
+            "Skifter den fremmede adresse (ny internetudbyder, genstart af router hos nogle udbydere), holder reglen op med at virke, og du skal rette adressen.")
+    if nets and len(nets) <= 6:
+        allv = [ip + "/32" for ip in fixed] + nets
+        add("net", 3, "Stop tv på de fremmede adresser og net" if fixed else "Stop tv på det fremmede net",
+            [tv, {"field": "IP Range", "op": "equals" if len(allv) == 1 else "is one of", "value": allv}],
+            lambda x: x[2] in fixed or net(x[2]) in nets,
+            "De fremmede tv bruger et net med skiftende adresser (typisk mobilt bredbånd). Kundens tv har ikke brugt det net det seneste år.",
+            "Et helt net dækker mange tusinde adresser hos samme udbyder. Tager kunden sit eget tv med et sted, der bruger samme udbyder, bliver det stoppet. Telefoner og tablets er ikke berørt.")
+    if home_ips and bprod and bprod != free_prod:
+        add("app-ude", 2, "Stop appen, når den bruges uden for kundens adresse",
+            [{"field": "Client/Player", "op": "equals" if len(bprod) == 1 else "is one of", "value": bprod},
+             {"field": "IP Range", "op": "not equals" if len(home_ips) == 1 else "is not one of", "value": [ip + "/32" for ip in home_ips]}],
+            lambda x: x[1] in bprod and x[2] not in home_ips,
+            "Kunden bruger selv samme app, men kun på sin faste adresse.",
+            "Skifter kundens egen adresse, bliver kundens tv med den app stoppet, indtil reglen rettes.")
+    if home_ips:
+        add("hjemme", 1, "Tillad kun tv på kundens adresse",
+            [tv, {"field": "IP Range", "op": "not equals" if len(home_ips) == 1 else "is not one of", "value": [ip + "/32" for ip in home_ips]}],
+            lambda x: x[2] not in home_ips,
+            "Kunden har fast adresse. Alt tv uden for den stoppes – også nye fremmede tv, der kommer til senere.",
+            "Skifter kundens adresse, bliver kundens egne tv stoppet, indtil reglen rettes. Kundens tv på ferie eller i sommerhus stoppes også.")
+    for c in cands:
+        c["cover"] = round(100 * c["blk_hit"] / c["blk_total"])
+    cands.sort(key=lambda c: (c["own_hit"] == 0, c["oth_hit"] == 0, c["cover"] >= 90, c["rank"], c["cover"]), reverse=True)
+    if cands:
+        cands[0]["recommended"] = cands[0]["own_hit"] == 0
+    return cands
+
+
 def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, hist_start):
     """Analyse af én bruger ud fra HELE brugerens historik (ss, sorteret efter tid).
     Kundens enheder findes ved at følge en kæde fra kontoens første tv – der gættes ikke ud fra antal afspilninger."""
     fmt = lambda ts: iso(datetime.datetime.fromtimestamp(ts))
+    # ---------- 0. samme tv med nyt id (Samsung m.fl. skifter machine_id): slå dem sammen til ét tv
+    canon, id_count, id_why = _sharing_identities(ss)
+    if any(k != v for k, v in canon.items()):
+        ss = [x if canon[x["mid"]] == x["mid"] else {**x, "mid": canon[x["mid"]]} for x in ss]
+    marks = {canon.get(m, m): mk for m, mk in marks.items()}
     # ---------- 1. enheder
     dev = {}
     for s in ss:
@@ -3147,7 +3267,7 @@ def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, hist_start):
         weight = lambda g: len(places[g]["members"]) + sum(1 for pl in mob_place.values() if g in pl and len(pl[g]["days"]) >= SHARING_COLOC_DAYS)
         if first_tv in left_addr:
             origin = group[left_addr[first_tv]]
-            notes.append("Kontoens første tv er senere flyttet væk fra den faste adresse, kontoen startede på – enhederne, der blev på adressen, regnes som kunden.")
+            info.append("Kontoens første tv er senere flyttet væk fra den faste adresse, kontoen startede på – enhederne, der blev på adressen, regnes som kunden.")
         else:
             for (o, _last) in former.get(first_tv, []):
                 g = group[o]
@@ -3207,6 +3327,9 @@ def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, hist_start):
             continue
         (forced if mk["mark"] == "kunde" else approved if mk["mark"] == "godkendt" else denied).add(g)
     chain = (chain | forced) - denied
+    if forced and notes:     # du har selv valgt kundens sted – så er udgangspunktet ikke længere i tvivl
+        info.append("Du har selv valgt kundens sted, så Fangarrs tvivl om udgangspunktet gælder ikke længere.")
+        notes = []
     chain_last = max((places[g]["last"] for g in chain), default=0)
     now_cut = time.time() - SHARING_DEAD_DAYS * 86400
     chain_alive = chain_last >= now_cut
@@ -3344,7 +3467,8 @@ def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, hist_start):
                "product": d["product"], "kind": d["kind"], "place": pidx.get(g) if g is not None else None,
                "status": st, "why": why.get(m) or why_not or "", "mark": (marks.get(m) or {}).get("mark", ""),
                "mark_note": (marks.get(m) or {}).get("note", ""), "plays": p["plays"], "period_days": len(p["days"]),
-               "ips": dict(p["ips"]), "first": d["first"], "last": d["last"], "in_period": in_period}
+               "ips": dict(p["ips"]), "first": d["first"], "last": d["last"], "in_period": in_period,
+               "ids": id_count.get(m, 1), "ids_why": id_why.get(m, ""), "group": g}
         if m.startswith("chromecast@") and g is not None:   # Chromecast: én linje pr. sted
             c = cast.get(g)
             if c:
@@ -3384,22 +3508,72 @@ def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, hist_start):
                        "evenings": nights})
     others.sort(key=lambda o: -o["plays"])
 
-    # ---------- 11. hjælp til Tracearr: kan de fremmede tv rammes med en regel?
-    tr = None
-    foreign = [d for d in out_devices if d["kind"] == "tv" and d["in_period"] and d["status"] in ("aldrig", "tidligere", "ikke")]
-    own = [d for d in out_devices if d["kind"] == "tv" and d["status"] == "kunde"
-           and time.mktime(time.strptime(d["last"][:10], "%Y-%m-%d")) >= time.time() - 90 * 86400]
-    if foreign and own:
-        fp, op = sorted({d["product"] for d in foreign if d["product"]}), {d["product"] for d in own}
-        home = {}
-        for d in own:
+    # ---------- 11. steder (det, man afgør): ét sted = de tv, der står sammen
+    BLOCK = ("aldrig", "ikke")
+    place_rows = []
+    for g in order:
+        st, why_g = pstat[g]
+        ds = [d for d in out_devices if d.get("group") == g]
+        if not ds:
+            continue
+        act_ds = [d for d in ds if d["in_period"]]
+        if not act_ds and st != "kunde":
+            continue
+        ipc = {}
+        for d in act_ds:
             for i in d["ips"]:
-                home[i["ip"]] = home.get(i["ip"], 0) + i["plays"]
-        tot = sum(home.values())
-        top = sorted(home.items(), key=lambda t: -t[1])[:2]
-        tr = {"user": ss[-1]["user"], "foreign": sorted({d["label"] for d in foreign}), "own": sorted({d["label"] for d in own}),
-              "player": fp if fp and not (set(fp) & op) else [],
-              "home_ips": [ip for ip, k in top] if tot and sum(k for _ip, k in top) >= 0.95 * tot and tot >= 10 else []}
+                ipc[i["ip"]] = ipc.get(i["ip"], 0) + i["plays"]
+        nip = sum(d["ip_count"] for d in act_ds)
+        tot_ip = sum(ipc.values())
+        top2 = sum(sorted(ipc.values(), reverse=True)[:2])
+        nights = sorted({eve(e) for e in counted if group[e["x"]["mid"]] == g or group[e["y"]["mid"]] == g})
+        place_rows.append({
+            "place": pidx[g], "status": st, "why": (next((why[d["mid"]] for d in ds if d["mid"] in why), "") if st == "kunde" and not why_g else why_g),
+            "names": sorted({d["player"] for d in (act_ds or ds)}), "tv_count": len(act_ds or ds), "active": bool(act_ds),
+            "plays": sum(d["plays"] for d in act_ds), "days": max((d["period_days"] for d in act_ds), default=0),
+            "net": "" if not act_ds else ("fast adresse" if tot_ip and nip <= 2 or (tot_ip and top2 >= 0.9 * tot_ip) else "skiftende adresser (mobilt net?)"),
+            "first": min(d["first"] for d in ds), "last": max(d["last"] for d in ds),
+            "evenings": len(nights), "last_overlap": max(nights) if nights else "",
+            "mark": next((d["mark"] for d in ds if d["mark"]), ""), "mark_note": next((d["mark_note"] for d in ds if d["mark_note"]), ""),
+            "mids": sorted({m for d in ds for m in d["all_mids"]})[:100]})
+    for d in out_devices:
+        d.pop("group", None)
+
+    # ---------- 12. bedste blokering: prøv hver mulig Tracearr-regel af på de seneste 90 dage
+    t90, t365 = time.time() - 90 * 86400, time.time() - 365 * 86400
+    cls = lambda g: "egen" if pstat[g][0] in ("kunde", "godkendt") else ("blok" if pstat[g][0] in BLOCK else "andet")
+    sim = [(cls(group[x["mid"]]), x["product"], x["ip"], x["d"], dev[x["mid"]]["player"])
+           for x in ss if x["kind"] == "tv" and x["pub"] and x["a"] >= t90]
+    own_long = [x for x in ss if x["kind"] == "tv" and x["a"] >= t365 and cls(group[x["mid"]]) == "egen"]
+    rules = _sharing_rules(ss[-1]["user"], sim, {x["product"] for x in own_long},
+                           {".".join(x["ip"].split(".")[:2]) + ".0.0/16" for x in own_long if x["pub"]})
+
+    # ---------- 13. konklusion i klart sprog + hvilken bunke brugeren hører til
+    blockable = [p for p in place_rows if p["status"] in BLOCK and p["active"]]
+    b_over = [p for p in blockable if p["evenings"]]
+    unclear_p = [p for p in place_rows if p["status"] == "uafklaret" and p["active"] and (p["evenings"] or p["plays"] >= 5)]
+    former_p = [p for p in place_rows if p["status"] == "tidligere" and p["active"] and p["evenings"]]
+    ntv = lambda ps: sum(p["tv_count"] for p in ps)
+    tvs_txt = lambda ps: f"{ntv(ps)} tv ({', '.join(sorted({n for p in ps for n in p['names']}))})"
+    if notes:
+        bucket, concl = "afgoer", "Fangarr kan ikke se, hvilket sted der er kundens. Vælg selv kundens sted nedenfor – så får du en blokering."
+    elif b_over:
+        bucket = "bloker"
+        rel = "som du har markeret som ikke kundens" if all(p["status"] == "ikke" for p in b_over) else "der aldrig har stået hos kunden"
+        concl = (f"{tvs_txt(b_over)}, {rel}, bruges samtidig med kundens tv "
+                 f"({len(evenings)} {'aften' if len(evenings) == 1 else 'aftener'} i perioden).")
+    elif unclear_p:
+        bucket, concl = "afgoer", f"{tvs_txt(unclear_p)} kan ikke kobles til kundens kendte tv. Afgør selv, om stedet er kundens."
+    elif former_p:
+        bucket, concl = "afgoer", f"{tvs_txt(former_p)} har tidligere stået hos kunden, men bruges nu et andet sted samtidig med kundens tv. Afgør selv, om det skal blokeres."
+    elif blockable:
+        bucket, concl = "skift", f"{tvs_txt(blockable)}, der aldrig har stået hos kunden, er brugt i perioden – men ikke samtidig med kundens tv."
+    else:
+        bucket, concl = "intet", "Ingen fremmede tv i perioden."
+    if bucket in ("bloker", "skift") and rules:
+        r0 = rules[0]
+        concl += (f" Bedste blokering: {r0['title'].lower()} – den ville have stoppet {r0['blk_hit']} af {r0['blk_total']} fremmede "
+                  f"afspilninger og {r0['own_hit']} af kundens {r0['own_total']} de seneste 90 dage.")
 
     return {"user_id": ss[0]["uid"], "name": ss[-1]["name"], "username": ss[-1]["user"],
             "plays": sum(p["plays"] for p in per.values()),
@@ -3408,7 +3582,10 @@ def _sharing_user(ss, lo, hi, min_seconds, marks, cut_ts, hist_start):
             "overlaps": len(counted), "approved_overlaps": ok_events,
             "minutes": round(sum(e["seconds"] for e in counted) / 60),
             "last_overlap": fmt(counted[0]["start"]) if counted else "",
-            "first_seen": fmt(ss[0]["a"]), "notes": notes, "info": info, "others": others, "tracearr": tr,
+            "first_seen": fmt(ss[0]["a"]), "notes": notes, "info": info, "others": others,
+            "places": place_rows,
+            "rules": rules, "bucket": bucket, "conclusion": concl,
+            "foreign_tv": ntv(blockable),
             "unclear": bool(notes) or any(d["status"] == "uafklaret" and d["in_period"] and (d["in_overlap"] or d["plays"] >= 5)
                                           for d in out_devices),
             "devices": out_devices,
@@ -3458,11 +3635,15 @@ def run_sharing(job, start, end, min_minutes, red_days, cut, full):
                 k["devices"] += 1
                 k["plays"] += d["plays"]
         rank = {"rød": 0, "gul": 1, "grøn": 2}
-        users.sort(key=lambda u: (rank[u["level"]], -(u["after"] if cut else u["evenings"]), -u["evenings"], -u["minutes"], u["name"].lower()))
+        for u in users:
+            if (u["case"].get("status") or "") in ("blokeres", "blokeret", "undtagelse aftalt", "advarsel sendt"):
+                u["bucket"] = "igang"
+        users.sort(key=lambda u: (-(u["after"] if cut else u["evenings"]), -u["evenings"], -u["foreign_tv"], -u["minutes"], u["name"].lower()))
         job["results"] = {"from": iso(start), "to": iso(end), "cut": iso(cut) if cut else "", "min_minutes": min_minutes,
                           "red_days": red_days, "sessions": sum(u["plays"] for u in users),
                           "history": {"rows": len(rows), "oldest": _sh_hist["oldest"], "fetched": _sh_hist["fetched"]},
                           "counts": {lv: sum(1 for u in users if u["level"] == lv) for lv in rank},
+                          "buckets": {b: sum(1 for u in users if u["bucket"] == b) for b in ("bloker", "afgoer", "skift", "igang", "intet")},
                           "users": users, "kinds": sorted(kinds.values(), key=lambda k: -k["plays"])}
         note = []
         if capped:
