@@ -54,15 +54,22 @@ Der gættes ikke ud fra antal afspilninger. Fangarr bruger **hele** Tautullis hi
 
 Begrænsninger: var kontoen delt fra første dag, eller er kunden ældre end Tautullis historik, kan udgangspunktet være forkert (gul bemærkning ⚠ på brugeren). Sommerhus, VPN på tv'et og flytning uden spor kræver, at du selv afgør det.
 
-### Funktioner i fanen
-- **Analysér** – periode (7–90 dage eller egne datoer). Første gang hentes hele historikken (et par minutter); derefter huskes den i hukommelsen, til Fangarr genstartes, og kun nye afspilninger hentes. **Hent historikken forfra** glemmer det huskede.
-- **Skæringsdato** – deler perioden i to (fx datoen, hvor en besked gik ud). Kolonnerne *Før* og *Efter* viser, hvem der er fortsat.
-- **Kundens / Ikke kundens** – din egen afgørelse for et tv og de tv, det står sammen med. Gemmes i Fangarrs database (`sharing_marks`) og gælder ved alle senere analyser. **Fjern valg** sletter den.
-- **Godkend undtagelse** – et sted, kunden har lov til (sommerhus o.l.), med en note. Overlap med stedet tæller ikke længere.
-- **Sag** – status (advarsel sendt, blokeres, blokeret, afsluttet) og note pr. bruger (`sharing_users`). Afsluttede skjules, til *Vis afsluttede* slås til.
-- **Fakta til besked** – kort tekst med antal aftener, seneste dato og de enheder, det drejer sig om, uden adresser. Til at sætte ind i advarslen.
-- **Hjælp til Tracearr** – viser, hvad der skal stå i en Tracearr-regel (Automations) for at stoppe de tv, der ikke er kundens: enten på app (`Client/Player`), når de fremmede tv bruger en anden app end kundens, eller på adresse (`Device Type` = TV og `IP Range` not equals kundens adresse), når kunden har fast adresse. Fangarr opretter ikke reglen. Feltnavnene er fra Tracearrs kildekode (nov. 2026) – tjek dem i din udgave.
-- **Skiftevis brug** (nederst) – tv, der ikke er kundens, men aldrig kører samtidig med kundens. Tilladt efter reglerne, kun til orientering.
+### Fanen fra 1.14.0 – bygget til at blokere
+Fanen svarer på ét spørgsmål pr. bruger: **hvilke tv har aldrig stået hos kunden, og hvordan blokeres de bedst i Tracearr uden at ramme kundens egne?** Fangarr blokerer ikke selv og skriver ikke til nogen (beskedfunktionen fra 1.13 er fjernet).
+
+- **Fem grupper** i stedet for rød/gul: 🔴 *Kan blokeres* (fremmede tv bruges samtidig med kundens) · 🟡 *Afgør selv* (Fangarr kan ikke se, hvilket sted der er kundens – vælg det, så flytter brugeren gruppe) · ⚙️ *I gang* (brugere med en sag) · ⚪ *Fremmede tv uden samtidig brug* (tilladt efter kontoreglerne) · 🟢 *Ingen fremmede tv*. De to sidste vises med "Vis alle grupper".
+- **Konklusion** øverst på hver bruger i almindeligt sprog.
+- **Bedste blokering:** op til fem slags Tracearr-regler prøves af på brugerens egne tv-afspilninger fra de seneste 90 dage. For hver vises, hvor mange fremmede afspilninger reglen ville have stoppet, hvor mange af kundens egne, præcis hvad der skal stå i reglen, hvorfor den virker, og hvad man skal passe på. Den anbefalede er den, der rammer flest fremmede og ingen af kundens.
+  - *Stop appen* (`Client/Player`) – når de fremmede tv bruger en app, kundens egne ikke har brugt det seneste år.
+  - *Stop tv på de fremmede adresser* (`Device Type` TV + `IP Range`) – når de fremmede tv har fast adresse (brugt 4+ dage).
+  - *Stop tv på det fremmede net* (`IP Range` med et helt net, fx `109.56.0.0/16`) – mobilt bredbånd med skiftende adresser, som kundens tv ikke har brugt det seneste år.
+  - *Stop appen uden for kundens adresse* og *Tillad kun tv på kundens adresse* – kræver, at kunden har fast adresse (98 % af afspilningerne på højst 2 adresser).
+  - Tracearr kan ikke blokere ét bestemt machine_id. Feltnavnene er fra Tracearrs kildekode (nov. 2026) – tjek dem i din udgave.
+- **Steder i stedet for enheder:** ét kort pr. sted (de tv, der står sammen) med mærke, bevis og knapperne *Dette er kundens*, *Ikke kundens*, *Godkend undtagelse* og *Fjern valg*. Afgørelsen gælder hele stedet og gemmes (`sharing_marks`). Enheder, adresser og id'er er foldet sammen under stedet.
+- **Samme tv, nyt id:** Samsung m.fl. skifter machine_id med jævne mellemrum. Et tv med samme navn og app, der begynder, når et andet er holdt op (højst 30 dage efter, aldrig brugt samtidig), regnes som det samme tv. Deler de en adresse, er det sikkert; ellers kræves, at der kun er én mulig forgænger. Vises som "3 id'er – samme tv".
+- **Sag** – status (blokeres, blokeret, undtagelse aftalt, afsluttet) og note pr. bruger (`sharing_users`).
+- **Skæringsdato** – kolonnerne *Før* og *Efter*; brug fx datoen, hvor reglen blev lavet, for at se, om den virker.
+- **Analysér / Hent historikken forfra** – første analyse efter en genstart henter hele historikken (et par minutter); derefter kun nye afspilninger.
 - **Enhedstyper** (nederst) – hvordan hver platform/app er talt.
 
 Det, der gemmes på disken, er kun dine egne afgørelser og sager. Historikken og resultatet ligger i hukommelsen.
