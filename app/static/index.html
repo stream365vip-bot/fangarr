@@ -115,6 +115,13 @@
   .shc { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; background: var(--panel); }
   .shc .tag { font-size: 11.5px; padding: 1px 6px; }
   @media (max-width: 620px) { .hs { display: none; } #share th, #share td { padding: 8px 6px; } }
+  .shc.old { opacity: .7; }
+  .tag.st-kunde { color: var(--ok); } .tag.st-godkendt, .tag.st-set-hos-kunden { color: var(--info); }
+  .tag.st-uafklaret { color: var(--warn); } .tag.st-tidligere { color: #e8913a; } .tag.st-aldrig, .tag.st-ikke { color: var(--bad); }
+  .shbox { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: var(--panel); }
+  .shbox summary, .shhelp summary { cursor: pointer; } .shbox ol { margin: 8px 0; padding-left: 20px; } .shbox code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  .shhelp h4 { margin: 14px 0 4px; font-size: 14px; } .shhelp ul { margin: 0; padding-left: 20px; color: var(--muted); font-size: 13.5px; } .shhelp li { margin: 3px 0; } .shhelp b { color: var(--text); }
+  button.b.sm { padding: 4px 10px; font-size: 13px; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
   .shf { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
   .shf .field { margin: 0; } .shf input[type=number] { width: 90px; } .shf input[type=date] {
@@ -227,24 +234,67 @@
 
   <section id="share">
     <h2>Kontodeling</h2>
-    <p class="hint">Finder konti, hvor <b>to tv afspiller samtidig fra hver sin adresse</b>. Telefoner, tablets og computere tæller ikke med. Tallene hentes fra Tautulli, når du trykker Analysér – intet kører af sig selv, intet gemmes, og ingen bliver blokeret herfra.</p>
+    <p class="hint">Finder konti, hvor <b>to tv afspiller samtidig fra hver sin adresse</b>, og viser, hvilke enheder der er kundens egne. Telefoner, tablets og computere tæller ikke som tv. Intet kører af sig selv, og ingen bliver blokeret herfra.</p>
+    <details class="card shhelp"><summary><b>Sådan læser du fanen</b> <span class="small">(tryk for at folde ud)</span></summary>
+      <h4>Hvad bliver talt?</h4>
+      <ul>
+        <li><b>Overlap:</b> to tv på samme konto, der kører på samme tid fra to forskellige adresser i mindst det antal minutter, du har valgt. Tid på pause tæller ikke. Flere korte overlap samme aften mellem de samme to tv lægges sammen til ét.</li>
+        <li><b>Aften:</b> fra kl. 05 til kl. 05, så et overlap efter midnat hører til aftenen før. Det er antal <i>aftener</i>, der afgør farven, ikke antal overlap.</li>
+        <li>🔴 <b>Fast deling</b> = mindst så mange aftener, som der står i "Rød fra". 🟡 <b>Enkelte</b> = 1 eller flere. 🟢 <b>Intet</b> = ingen overlap.</li>
+      </ul>
+      <h4>Hvordan ved Fangarr, hvilke enheder der er kundens?</h4>
+      <ul>
+        <li>Der gættes ikke ud fra, hvor meget der bliver set. Fangarr starter ved <b>kontoens første tv</b> og følger en kæde frem: et tv hører til kunden, når det beviseligt har stået på samme adresse som et tv, der allerede er i kæden (mindst 3 forskellige dage), eller har afløst det på samme faste adresse.</li>
+        <li><b>Flytning:</b> ses en telefon eller tablet både på det gamle og det nye sted, og holdt det gamle sted op, da det nye begyndte, følger kæden med. Er der kun få dage at bygge på, står der "svagt bevis".</li>
+        <li>Ved hver enhed står <b>beviset</b>: hvilken enhed den er koblet til, hvor mange dage og i hvilken periode.</li>
+      </ul>
+      <h4>Mærkerne på et tv</h4>
+      <ul>
+        <li><span class="tag st-kunde">Kundens</span> i kæden fra kontoens første tv.</li>
+        <li><span class="tag st-tidligere">Tidligere hos kunden</span> har stået hos kunden, men er siden brugt et andet sted, mens kundens øvrige enheder blev (fx en, der er flyttet hjemmefra og tog boksen med).</li>
+        <li><span class="tag st-aldrig">Aldrig hos kunden</span> har aldrig delt adresse med kundens enheder.</li>
+        <li><span class="tag st-uafklaret">Uafklaret</span> kæden er knækket (fx en flytning, hvor intet binder gammelt og nyt sammen). Fangarr gætter ikke – afgør det selv med knapperne.</li>
+        <li><span class="tag st-godkendt">Godkendt undtagelse</span> et sted, du har sagt god for (fx sommerhus). Overlap med det tæller ikke.</li>
+      </ul>
+      <h4>Knapperne</h4>
+      <ul>
+        <li><b>Kundens / Ikke kundens:</b> din egen afgørelse for et tv (og de tv, det står sammen med). Den gemmes og gælder ved alle senere analyser, også når Fangarr selv mente noget andet.</li>
+        <li><b>Godkend undtagelse:</b> brug den til sommerhus, kolonihave eller lignende, som kunden har lov til. Skriv gerne hvorfor.</li>
+        <li><b>Fjern valg:</b> sletter din afgørelse, så Fangarrs egen vurdering gælder igen.</li>
+        <li><b>Sag (status og note):</b> hold styr på, hvor langt du er: advarsel sendt, blokeres, blokeret eller afsluttet. Afsluttede sager skjules, til du slår "Vis afsluttede" til.</li>
+        <li><b>Fakta til besked:</b> laver en kort tekst med antal aftener, seneste dato og de enheder, det drejer sig om – uden adresser – som du kan sætte ind i din advarsel.</li>
+        <li><b>Hjælp til Tracearr:</b> viser, hvad der skal stå i en regel i Tracearr for at stoppe netop de tv, der ikke er kundens. Fangarr laver ikke reglen for dig.</li>
+        <li><b>Skæringsdato:</b> deler perioden i to (fx 1. november, hvor beskeden gik ud), så du kan se, hvem der er fortsat bagefter.</li>
+        <li><b>Hent historikken forfra:</b> Fangarr husker Tautullis historik, til den genstartes, og henter ellers kun det nye. Brug knappen, hvis tallene ser forkerte ud.</li>
+      </ul>
+      <h4>Husk</h4>
+      <ul>
+        <li>Kun samtidig brug giver rød eller gul. Deling på skift ses i listen "Skiftevis brug" nederst – det er tilladt efter reglerne og kun til orientering.</li>
+        <li>Sommerhus, VPN på tv'et og flytning kan ligne deling. Kig på beviset, før du skriver til kunden.</li>
+        <li>Er kontoen delt fra første dag, eller er kunden ældre end Tautullis historik, kan udgangspunktet være forkert. Så står der en gul bemærkning på brugeren.</li>
+      </ul>
+    </details>
     <div id="shNote"></div>
     <div class="card"><div class="shf">
       <div class="field"><label>Periode</label><select id="shDays" onchange="shPeriod()" style="width:auto">
         <option value="7">Seneste 7 dage</option><option value="14">Seneste 14 dage</option><option value="30" selected>Seneste 30 dage</option>
-        <option value="60">Seneste 60 dage</option><option value="90">Seneste 90 dage</option><option value="0">Egne datoer</option></select></div>
+        <option value="60">Seneste 60 dage</option><option value="90">Seneste 90 dage</option><option value="0">Egne datoer</option></select>
+        <div class="small">Hvilke afspilninger der tælles overlap i.</div></div>
       <div class="field" id="shFromBox" style="display:none"><label>Fra</label><input type="date" id="shFrom"></div>
-      <div class="field" id="shToBox" style="display:none"><label>Til</label><input type="date" id="shTo"></div>
-      <div class="field"><label>Mindst (minutter)</label><input type="number" id="shMin" value="10" min="1" max="240"></div>
-      <div class="field"><label>Rød fra (aftener)</label><input type="number" id="shRed" value="5" min="1" max="365"></div>
-      <button class="b pri" id="shBtn" onclick="runShare()">Analysér</button>
+      <div class="field" id="shToBox" style="display:none"><label>Til</label><input type="date" id="shTo"><div class="small">Tom = til i dag.</div></div>
+      <div class="field"><label>Skæringsdato (valgfri)</label><input type="date" id="shCut"><div class="small">Viser aftener før og efter datoen.</div></div>
+      <div class="field"><label>Mindst (minutter)</label><input type="number" id="shMin" value="10" min="1" max="240"><div class="small">Så længe skal to tv køre samtidig.</div></div>
+      <div class="field"><label>Rød fra (aftener)</label><input type="number" id="shRed" value="5" min="1" max="365"><div class="small">Aftener, før det er fast deling.</div></div>
     </div>
-    <div class="small">Mindst = hvor længe to tv skal køre samtidig, før det tæller. Rød fra = antal aftener med overlap, før en konto regnes som fast deling.</div></div>
+    <div class="row" style="margin:12px 0 0"><button class="b pri" id="shBtn" onclick="runShare()">Analysér</button>
+      <button class="b" id="shFull" onclick="runShare(true)" title="Glem den huskede historik og hent alt fra Tautulli igen">Hent historikken forfra</button>
+      <span class="small" id="shHist"></span></div></div>
     <div id="shProg"></div>
     <div id="shSum"></div>
     <div class="card" style="padding:0; overflow-x:auto"><table>
-      <thead><tr><th>Bruger</th><th>Vurdering</th><th class="num">Aftener</th><th class="num hs">Timer</th><th>Seneste</th><th class="num hs">Tv-steder</th></tr></thead>
-      <tbody id="shBody"><tr><td colspan="6" class="empty">Vælg periode og tryk Analysér.</td></tr></tbody></table></div>
+      <thead><tr id="shHead"><th>Bruger</th><th>Vurdering</th><th class="num">Aftener</th><th>Seneste</th></tr></thead>
+      <tbody id="shBody"><tr><td colspan="8" class="empty">Vælg periode og tryk Analysér. Første gang hentes hele Tautullis historik – det kan tage et par minutter.</td></tr></tbody></table></div>
+    <div id="shOthers"></div>
     <div id="shKinds"></div>
   </section>
 
@@ -934,58 +984,150 @@ function renderStats() {
 }
 
 // ---------- kontodeling
-let SH = null, shOpen = new Set();
+let SH = null, shOpen = new Set(), shLast = null;
 const SH_LV = {"rød": "🔴 Fast deling", "gul": "🟡 Enkelte", "grøn": "🟢 Intet"};
 const SH_KIND = {tv: "Tv", mobil: "Mobil", ukendt: "Ukendt"};
+const SH_ST = {kunde: "Kundens", tidligere: "Tidligere hos kunden", aldrig: "Aldrig hos kunden", uafklaret: "Uafklaret",
+  godkendt: "Godkendt undtagelse", ikke: "Ikke kundens (valgt af dig)", "set hos kunden": "set hos kunden"};
+const SH_CASE = ["", "advarsel sendt", "blokeres", "blokeret", "afsluttet"];
 function shPeriod() { const own = $("shDays").value === "0"; $("shFromBox").style.display = $("shToBox").style.display = own ? "" : "none"; }
 async function loadShare() {
   $("shNote").innerHTML = S.features.tautulli ? "" : '<div class="warn">Tautulli er ikke forbundet. Tilføj TAUTULLI_URL og TAUTULLI_APIKEY i fangarr.env (se LÆSMIG).</div>';
-  $("shBtn").disabled = !S.features.tautulli;
+  $("shBtn").disabled = $("shFull").disabled = !S.features.tautulli;
   if (SH) return;
   try { const d = await api("/api/sharing"); if (d && d.results && d.results.users) { SH = d; renderShare(); } } catch (e) { toast(e.message, true); }
 }
-async function runShare() {
+function shParams() {
   const body = {min_minutes: Number($("shMin").value) || 10, red_days: Number($("shRed").value) || 5};
   if ($("shDays").value === "0") {
-    if (!$("shFrom").value) { toast("Vælg en startdato", true); return; }
+    if (!$("shFrom").value) { toast("Vælg en startdato", true); return null; }
     body.from = $("shFrom").value; if ($("shTo").value) body.to = $("shTo").value;
   } else body.days = Number($("shDays").value);
-  $("shBtn").disabled = true;
+  if ($("shCut").value) body.cut = $("shCut").value;
+  return body;
+}
+async function runShare(full, again) {
+  const body = again && shLast ? {...shLast} : shParams();
+  if (!body) return;
+  if (full && !confirm("Glem den huskede historik og hent alt fra Tautulli igen? Det kan tage et par minutter.")) return;
+  body.refresh = !!full; shLast = {...body, refresh: false};
+  $("shBtn").disabled = $("shFull").disabled = true;
   try { const job = await api("/api/sharing/run", {method: "POST", body: JSON.stringify(body)});
-        poll(job, "shProg", j => { $("shBtn").disabled = false; if (j && j.results && j.results.users) { SH = j; shOpen = new Set(); renderShare(); } }); }
-  catch (e) { $("shBtn").disabled = false; toast(e.message, true); }
+        poll(job, "shProg", j => { $("shBtn").disabled = $("shFull").disabled = false; if (j && j.results && j.results.users) { SH = j; if (!again) shOpen = new Set(); renderShare(); } }); }
+  catch (e) { $("shBtn").disabled = $("shFull").disabled = false; toast(e.message, true); }
 }
 function shToggle(id) { shOpen.has(id) ? shOpen.delete(id) : shOpen.add(id); renderShare(); }
 const shDay = t => { const d = new Date(t); return isNaN(d) ? esc(t) : d.toLocaleDateString("da-DK", {day: "numeric", month: "short", year: "numeric"}); };
-const shPlace = p => p == null ? "–" : (p === 0 ? "Hjemme" : "Andet sted " + p);
+const shPlace = x => x.status === "kunde" ? "Kunden" : (x.status === "godkendt" ? "Godkendt sted" : "Andet sted" + (x.place ? " " + x.place : ""));
+const shUser = id => SH.results.users.find(u => u.user_id === id);
+async function shMark(uid, i, mark) {
+  const d = shUser(uid).devices[i]; let note = "";
+  if (mark === "godkendt") { note = prompt("Hvorfor er stedet godkendt? (fx sommerhus i Blokhus)", d.mark_note || ""); if (note === null) return; }
+  if (mark === "ikke" && !confirm(`Marker ${d.player} som ikke kundens? Det gælder også de tv, det står sammen med.`)) return;
+  try { await api("/api/sharing/mark", {method: "PUT", body: JSON.stringify({user_id: uid, mids: d.all_mids || [d.mid], mark, note})});
+        toast(mark ? "Gemt – regner igen" : "Valget er fjernet – regner igen"); runShare(false, true); }
+  catch (e) { toast(e.message, true); }
+}
+async function shCase(uid) {
+  try { await api("/api/sharing/user", {method: "PUT", body: JSON.stringify({user_id: uid, status: $("shc_s_" + uid).value, note: $("shc_n_" + uid).value})});
+        const u = shUser(uid); u.case = {status: $("shc_s_" + uid).value, note: $("shc_n_" + uid).value}; toast("Sagen er gemt"); renderShare(); }
+  catch (e) { toast(e.message, true); }
+}
+function shFacts(u) {
+  const R = SH.results, bad = u.devices.filter(d => d.kind === "tv" && d.in_overlap && !["kunde", "godkendt"].includes(d.status));
+  const own = u.devices.filter(d => d.kind === "tv" && d.status === "kunde" && d.in_period);
+  const names = l => [...new Set(l.map(d => d.label + (d.player && d.player !== d.label && !/^(LG|Apple TV|Chromecast)/i.test(d.player) ? ` (${d.player})` : "")))].join(", ");
+  const d1 = t => new Date(t).toLocaleDateString("da-DK", {day: "numeric", month: "long"});
+  let t = `Din Stream365-konto er brugt på tv fra forskellige adresser på samme tid på ${u.evenings} ${u.evenings === 1 ? "aften" : "aftener"} siden ${d1(R.from)} – senest ${d1(u.last_overlap)}.`;
+  if (R.cut) t += ` Heraf ${u.after} ${u.after === 1 ? "aften" : "aftener"} efter ${d1(R.cut)}.`;
+  if (bad.length) t += `\n\nDet drejer sig om: ${names(bad)}, som ikke står hos dig.`;
+  if (own.length) t += `\n\nDine egne tv (${names(own)}) og dine mobile enheder er ikke berørt.`;
+  return t;
+}
+function shCopy(id) {
+  const el = $(id); el.select();
+  (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.reject()).catch(() => document.execCommand("copy")).finally(() => toast("Kopieret"));
+}
+function shTracearr(u) {
+  const t = u.tracearr; if (!t) return "";
+  let o = [];
+  if (t.player.length) o.push(`<b>Mulighed A – stop en bestemt slags afspiller</b> (anbefalet her)
+    <ol><li>Trigger: <code>A stream starts</code></li><li>Betingelse: <code>User</code> is <code>${esc(t.user)}</code></li>
+    <li>Betingelse: <code>Client/Player</code> ${t.player.length > 1 ? "is one of" : "equals"} <code>${t.player.map(esc).join("</code>, <code>")}</code></li>
+    <li>Handling: <code>Kill Stream</code>, Target <code>Triggering session</code>, med din besked til kunden</li></ol>
+    <div class="small">Virker, fordi kundens egne tv (${esc(t.own.join(", "))}) bruger en anden app end de fremmede (${esc(t.foreign.join(", "))}). Reglen rammer <i>alle</i> afspillere af den slags på kontoen – køber kunden selv sådan en, bliver den også stoppet.</div>`);
+  if (t.home_ips.length) o.push(`<b>Mulighed ${t.player.length ? "B" : "A"} – kun tv på kundens adresse</b>
+    <ol><li>Trigger: <code>A stream starts</code></li><li>Betingelse: <code>User</code> is <code>${esc(t.user)}</code></li>
+    <li>Betingelse: <code>Device Type</code> is <code>TV</code></li>
+    <li>Betingelse: <code>IP Range</code> ${t.home_ips.length > 1 ? "is not one of" : "not equals"} <code>${t.home_ips.map(i => esc(i) + "/32").join("</code>, <code>")}</code></li>
+    <li>Handling: <code>Kill Stream</code>, Target <code>Triggering session</code></li></ol>
+    <div class="small">Stopper alle tv uden for kundens adresse – også kundens eget tv på ferie. Skifter kundens internetudbyder adressen, bliver kundens egne tv stoppet, indtil reglen rettes.</div>`);
+  if (!o.length) o.push(`De fremmede tv (${esc(t.foreign.join(", "))}) kan ikke skilles fra kundens egne (${esc(t.own.join(", "))}) med en regel: de bruger samme app, og kundens adresse skifter. Brug den almindelige regel om to tv på forskellige adresser.`);
+  return `<details class="shbox"><summary><b>Hjælp til Tracearr</b> <span class="small">– sådan stoppes de tv, der ikke er kundens</span></summary>
+    <div class="small" style="margin:6px 0">Laves i Tracearr under Automations. Fangarr laver ikke reglen. Felterne hedder sådan i Tracearrs engelske udgave – tjek, at navnene står præcis sådan hos dig, og prøv reglen, før du stoler på den.</div>${o.join('<hr style="border:0;border-top:1px solid var(--line);margin:10px 0">')}</details>`;
+}
+function shDevice(u, d, i) {
+  const tv = d.kind === "tv", st = d.status;
+  const btn = (m, l, cls) => `<button class="b sm ${cls || ""}" onclick="event.stopPropagation();shMark('${esc(u.user_id)}',${i},'${m}')">${l}</button>`;
+  return `<div class="shc${d.in_period ? "" : " old"}">
+    <div><b>${esc(d.player)}</b> <span class="tag">${SH_KIND[d.kind] || esc(d.kind)}</span>${st ? ` <span class="tag st-${esc(st.replace(/ /g, "-"))}">${esc(SH_ST[st] || st)}</span>` : ""}${d.in_overlap && tv && st !== "kunde" ? ' <span class="tag" style="color:var(--bad)">i overlap</span>' : ""}</div>
+    ${d.why ? `<div class="small"><b>Bevis:</b> ${esc(d.why)}${d.mark_note ? " – " + esc(d.mark_note) : ""}</div>` : ""}
+    <div class="small">${esc(d.product || d.platform || "–")} · ${d.in_period ? `${d.plays} afspilninger på ${d.period_days} ${d.period_days === 1 ? "dag" : "dage"} i perioden` : "ikke brugt i perioden"} · brugt ${shDay(d.first)} – ${shDay(d.last)}</div>
+    ${d.ip_count ? `<div class="small">${d.ip_count} ${d.ip_count === 1 ? "adresse" : "adresser"}${d.ip_count >= 4 ? " (skifter – mobilt net?)" : ""}: <span class="mono">${d.ips.map(x => `${esc(x.ip)} (${x.plays})`).join(", ")}${d.ip_count > d.ips.length ? " …" : ""}</span></div>` : ""}
+    <div class="small mono" style="word-break:break-all">${esc(d.mid)}</div>
+    ${tv ? `<div class="row" style="margin:8px 0 0;gap:6px">${d.mark ? btn("", "Fjern valg") : ""}${d.mark !== "kunde" && st !== "kunde" ? btn("kunde", "Kundens") : ""}${!d.mark && st === "kunde" && /svagt bevis/.test(d.why) ? btn("kunde", "Bekræft: kundens") : ""}${d.mark !== "ikke" ? btn("ikke", "Ikke kundens") : ""}${d.mark !== "godkendt" && st !== "kunde" ? btn("godkendt", "Godkend undtagelse") : ""}</div>` : ""}</div>`;
+}
 function shDetail(u) {
-  const dev = u.devices.map(d => `<div class="shc">
-    <div><b>${esc(d.player)}</b> <span class="tag">${SH_KIND[d.kind] || esc(d.kind)}</span>${d.kind === "tv" ? ` <span class="tag" style="${d.place ? "color:var(--warn)" : "color:var(--ok)"}">${shPlace(d.place)}</span>` : ""}${d.in_overlap && d.place ? ' <span class="tag" style="color:var(--bad)">i overlap</span>' : ""}</div>
-    <div class="small">${esc(d.product || d.platform || "–")} · ${d.plays} afspilninger · sidst ${lt(d.last)}</div>
-    <div class="small">${d.ip_count} ${d.ip_count === 1 ? "adresse" : "adresser"}${d.ip_count >= 4 ? " (skifter – mobilt net?)" : ""}${d.ips.length ? ': <span class="mono">' + d.ips.map(i => `${esc(i.ip)} (${i.plays})`).join(", ") + (d.ip_count > d.ips.length ? " …" : "") + "</span>" : ""}</div>
-    <div class="small mono" style="word-break:break-all">${esc(d.mid)}</div></div>`).join("");
-  const side = (l, x) => `<div class="small"><b>${l}:</b> ${esc(x.player)} <span class="mono">${esc(x.ip)}</span>${x.titles.length ? " – " + esc(x.titles.join(" · ")) : ""}</div>`;
-  const ev = u.events.map(e => `<div class="shc"><div><b>${lt(e.start)}</b> · ${e.minutes} min. samtidig</div>${side(shPlace(e.home.place), e.home)}${side(shPlace(e.other.place), e.other)}</div>`).join("");
-  return `<h4>Enheder brugt i perioden</h4>${dev}
-    <div class="small" style="margin-top:6px">Sted: tv, der har delt adresse på mindst 3 forskellige dage, står samme sted. Stedet med flest afspilninger kaldes Hjemme.</div>
-    ${u.events.length ? `<h4>Samtidig afspilning fra forskellige adresser (${u.overlaps})</h4>${ev}`
-    : `<div class="small" style="margin-top:10px">Ingen samtidig afspilning fra forskellige adresser i perioden.${u.tv_places > 1 ? " Kontoen er brugt på tv flere steder, men ikke på samme tid – det er tilladt efter reglerne." : ""}</div>`}`;
+  const idx = u.devices.map((d, i) => [d, i]);
+  const part = (t, f, hint) => { const l = idx.filter(([d]) => f(d)); return l.length ? `<h4>${t} (${l.length})</h4>${hint ? `<div class="small" style="margin:-2px 0 6px">${hint}</div>` : ""}${l.map(([d, i]) => shDevice(u, d, i)).join("")}` : ""; };
+  const side = x => `<div class="small"><b>${shPlace(x)}:</b> ${esc(x.player)} <span class="mono">${esc(x.ip)}</span>${x.titles.length ? " – " + esc(x.titles.join(" · ")) : ""}</div>`;
+  const ev = u.events.map(e => `<div class="shc${e.approved ? " old" : ""}"><div><b>${lt(e.start)}</b> · ${e.minutes} min. samtidig${e.approved ? ' <span class="tag st-godkendt">godkendt – tæller ikke</span>' : ""}</div>${side(e.home)}${side(e.other)}</div>`).join("");
+  const c = u.case || {};
+  const sw = u.others.filter(o => !o.evenings);
+  return `${u.notes.map(n => `<div class="warn" style="margin-bottom:8px">${esc(n)}</div>`).join("")}
+    <div class="shbox"><b>Sag</b> <span class="small">– hvor langt er du med denne bruger?</span>
+      <div class="row" style="margin:8px 0 0"><select id="shc_s_${esc(u.user_id)}" style="width:auto" onclick="event.stopPropagation()">${SH_CASE.map(s => `<option value="${s}" ${c.status === s ? "selected" : ""}>${s ? s[0].toUpperCase() + s.slice(1) : "Ingen status"}</option>`).join("")}</select>
+      <input type="text" id="shc_n_${esc(u.user_id)}" value="${esc(c.note || "")}" placeholder="Note, fx: skrevet på Messenger 10. nov." style="flex:1;min-width:160px">
+      <button class="b" onclick="shCase('${esc(u.user_id)}')">Gem</button></div></div>
+    ${u.evenings ? `<details class="shbox"><summary><b>Fakta til besked</b> <span class="small">– tekst uden adresser, til at sætte ind i advarslen</span></summary>
+      <textarea id="shf_${esc(u.user_id)}" rows="9" style="margin-top:8px" readonly>${esc(shFacts(u))}</textarea>
+      <div class="row" style="margin:8px 0 0"><button class="b" onclick="shCopy('shf_${esc(u.user_id)}')">Kopiér</button><span class="small">Tjek teksten mod enhederne nedenfor, før du sender.</span></div></details>` : ""}
+    ${shTracearr(u)}
+    ${part("Kundens tv", d => d.kind === "tv" && d.in_period && (d.status === "kunde" || d.status === "godkendt"))}
+    ${part("Tv, der ikke er kundens", d => d.kind === "tv" && d.in_period && !["kunde", "godkendt"].includes(d.status))}
+    ${part("Mobile enheder", d => d.kind !== "tv" && d.in_period, "Telefoner, tablets og computere tæller ikke som tv og må bruges alle steder.")}
+    ${part("Ældre enheder – grundlaget for kæden", d => !d.in_period, "Ikke brugt i perioden, men viser, hvordan kundens enheder hænger sammen bagud i tiden.")}
+    ${sw.length ? `<h4>Skiftevis brug</h4><div class="small">${sw.map(o => `${esc(o.devices.join(", "))}: ${o.plays} afspilninger på ${o.days} dage, aldrig samtidig med kundens tv`).join("<br>")}. Tilladt efter reglerne – kun til orientering.</div>` : ""}
+    ${u.events.length ? `<h4>Samtidig afspilning fra forskellige adresser (${u.overlaps}${u.approved_overlaps ? ` + ${u.approved_overlaps} godkendte` : ""})</h4>${ev}`
+    : `<div class="small" style="margin-top:10px">Ingen samtidig afspilning fra forskellige adresser i perioden.</div>`}`;
 }
 function renderShare() {
-  const R = SH.results, c = R.counts, all = $("shAll") ? $("shAll").checked : false;
+  const R = SH.results, c = R.counts, cut = !!R.cut;
+  const all = $("shAll") ? $("shAll").checked : false, done = $("shDone") ? $("shDone").checked : false;
+  const H = R.history || {};
+  $("shHist").textContent = H.rows ? `Husket historik: ${H.rows.toLocaleString("da-DK")} afspilninger fra ${shDay(H.oldest)}, hentet ${fmt(H.fetched)}` : "";
+  const closed = R.users.filter(u => (u.case || {}).status === "afsluttet").length;
   $("shSum").innerHTML = `<div class="row" style="margin:14px 0 10px">
     <span class="chip">🔴 Fast deling <b>${c["rød"]}</b></span><span class="chip">🟡 Enkelte tilfælde <b>${c["gul"]}</b></span><span class="chip">🟢 Intet fundet <b>${c["grøn"]}</b></span>
-    <label class="small" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="shAll" onchange="renderShare()" style="width:auto" ${all ? "checked" : ""}> Vis også 🟢</label></div>
-    <div class="small" style="margin-bottom:10px">${shDay(R.from)} – ${shDay(R.to)} · ${R.sessions.toLocaleString("da-DK")} afspilninger · mindst ${R.min_minutes} min. · rød fra ${R.red_days} aftener · beregnet ${fmt(SH.started)}</div>`;
-  const rows = R.users.filter(u => all || u.level !== "grøn");
+    <label class="small" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="shAll" onchange="renderShare()" style="width:auto" ${all ? "checked" : ""}> Vis også 🟢</label>
+    <label class="small" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="shDone" onchange="renderShare()" style="width:auto" ${done ? "checked" : ""}> Vis afsluttede (${closed})</label></div>
+    <div class="small" style="margin-bottom:10px">${shDay(R.from)} – ${shDay(R.to)}${cut ? ` · skæringsdato ${shDay(R.cut)}` : ""} · ${R.sessions.toLocaleString("da-DK")} afspilninger · mindst ${R.min_minutes} min. · rød fra ${R.red_days} aftener · beregnet ${fmt(SH.started)}. Tryk på en bruger for at se enheder, bevis og overlap.</div>`;
+  $("shHead").innerHTML = `<th>Bruger</th><th>Vurdering</th><th class="num">Aftener</th>${cut ? '<th class="num">Før</th><th class="num">Efter</th>' : ""}<th>Seneste</th><th class="hs">Sag</th>`;
+  const n = cut ? 7 : 5;
+  const rows = R.users.filter(u => (all || u.level !== "grøn") && (done || (u.case || {}).status !== "afsluttet"));
   $("shBody").innerHTML = rows.length ? rows.map(u => `<tr class="shu" onclick="shToggle('${esc(u.user_id)}')">
-      <td><b>${esc(u.name)}</b>${u.username && u.username !== u.name ? `<div class="small">${esc(u.username)}</div>` : ""}</td>
+      <td><b>${esc(u.name)}</b>${u.unclear ? ' <span title="Se bemærkningen på brugeren" style="color:var(--warn)">⚠</span>' : ""}${u.username && u.username !== u.name ? `<div class="small">${esc(u.username)}</div>` : ""}</td>
       <td class="lv lv-${u.level}">${SH_LV[u.level]}</td><td class="num">${u.evenings || "–"}</td>
-      <td class="num hs">${u.minutes ? (u.minutes / 60).toLocaleString("da-DK", {maximumFractionDigits: 1}) : "–"}</td>
-      <td>${u.last_overlap ? lt(u.last_overlap) : "–"}</td><td class="num hs">${u.tv_places || "–"}</td></tr>` +
-      (shOpen.has(u.user_id) ? `<tr class="shd"><td colspan="6">${shDetail(u)}</td></tr>` : "")).join("")
-    : `<tr><td colspan="6" class="empty">${R.users.length ? "Ingen konti med samtidig afspilning fra forskellige adresser i perioden." : "Ingen afspilninger i perioden."}</td></tr>`;
-  $("shKinds").innerHTML = `<details style="margin-top:14px"><summary class="small" style="cursor:pointer">Enhedstyper – sådan er enhederne talt (tv / mobil)</summary>
+      ${cut ? `<td class="num">${u.before || "–"}</td><td class="num"${u.after ? ' style="color:var(--bad);font-weight:600"' : ""}>${u.after || "–"}</td>` : ""}
+      <td>${u.last_overlap ? lt(u.last_overlap) : "–"}</td><td class="hs small">${esc((u.case || {}).status || "")}${(u.case || {}).note ? `<div>${esc(u.case.note)}</div>` : ""}</td></tr>` +
+      (shOpen.has(u.user_id) ? `<tr class="shd"><td colspan="${n}">${shDetail(u)}</td></tr>` : "")).join("")
+    : `<tr><td colspan="${n}" class="empty">${R.users.length ? "Ingen konti med samtidig afspilning fra forskellige adresser i perioden." : "Ingen afspilninger i perioden."}</td></tr>`;
+  const sw = R.users.map(u => ({u, o: u.others.filter(o => !o.evenings && o.plays >= 5)})).filter(x => x.o.length);
+  $("shOthers").innerHTML = `<details style="margin-top:14px"><summary class="small" style="cursor:pointer">Skiftevis brug (${sw.length}) – tv, der ikke er kundens, men aldrig kører samtidig med kundens. Tilladt efter reglerne, kun til orientering</summary>
+    <div class="card" style="padding:0; overflow-x:auto; margin-top:8px"><table><thead><tr><th>Bruger</th><th>Tv, der ikke er kundens</th><th>Mærke</th><th class="num">Afspilninger</th><th class="num">Dage</th></tr></thead><tbody>` +
+    (sw.length ? sw.map(x => x.o.map(o => `<tr class="shu" onclick="shOpen.add('${esc(x.u.user_id)}');$('shAll').checked=true;renderShare();window.scrollTo(0,$('shSum').offsetTop)"><td><b>${esc(x.u.name)}</b></td><td>${esc(o.devices.join(", "))}</td><td><span class="tag st-${esc(o.status)}">${esc(SH_ST[o.status] || o.status)}</span></td><td class="num">${o.plays}</td><td class="num">${o.days}</td></tr>`).join("")).join("")
+      : '<tr><td colspan="5" class="empty">Ingen.</td></tr>') + "</tbody></table></div></details>";
+  $("shKinds").innerHTML = `<details style="margin-top:8px"><summary class="small" style="cursor:pointer">Enhedstyper – sådan er enhederne talt (tv / mobil)</summary>
     <div class="card" style="padding:0; overflow-x:auto; margin-top:8px"><table><thead><tr><th>Platform</th><th>App</th><th>Tælles som</th><th class="num">Enheder</th><th class="num">Afspilninger</th></tr></thead><tbody>` +
     R.kinds.map(k => `<tr><td>${esc(k.platform || "–")}</td><td>${esc(k.product || "–")}</td><td${k.kind === "ukendt" ? ' style="color:var(--warn)"' : ""}>${SH_KIND[k.kind]}</td><td class="num">${k.devices}</td><td class="num">${k.plays}</td></tr>`).join("") + "</tbody></table></div></details>";
 }
