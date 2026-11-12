@@ -226,6 +226,28 @@
   .shf { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
   .shf .field { margin: 0; } .shf input[type=number] { width: 90px; }
 
+  /* ---------- kunder og betalinger */
+  .kl { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-bottom: 12px; }
+  .kr { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; padding: 12px 18px; border-top: 1px solid var(--line2); }
+  .kr:first-child { border-top: 0; }
+  .kr.click { cursor: pointer; } .kr.click:hover { background: var(--panel2); }
+  .kr .who { flex: 1 1 220px; min-width: 0; } .kr .who b { font-weight: 600; } .kr .who .small { margin-top: 1px; }
+  .kr .amt { font: 600 16px var(--head); white-space: nowrap; min-width: 84px; text-align: right; }
+  .kr .meta { color: var(--muted); font-size: 13.5px; white-space: nowrap; }
+  .kr.done .who b, .kr.done .amt { color: var(--muted); }
+  .kr.late { background: rgba(242,125,119,.06); }
+  .kr .btns { flex: 0 0 auto; }
+  .ktags { display: inline-flex; flex-wrap: wrap; gap: 5px; margin-left: 4px; vertical-align: 1px; }
+  .kmonth { display: flex; align-items: center; gap: 8px; } .kmonth b { font: 600 17px var(--head); min-width: 150px; text-align: center; text-transform: capitalize; }
+  .ksec { margin: 22px 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .ksec h3 { margin: 0; font: 600 16px var(--head); }
+  .kitem { display: flex; gap: 10px 14px; align-items: center; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 6px; background: var(--bg); }
+  .kitem .who { flex: 1 1 200px; min-width: 0; } .kitem .amt { font-weight: 600; white-space: nowrap; }
+  .ksecret { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; background: var(--panel2); border-radius: 6px; padding: 2px 7px; user-select: all; overflow-wrap: anywhere; }
+  .kdoubt { margin: 6px 0 0; padding-left: 20px; font-size: 13.5px; } .kdoubt li { margin: 3px 0; }
+  textarea.kta { min-height: 150px; font-size: 14px; line-height: 1.45; resize: vertical; }
+  @media (max-width: 880px) { .kr { padding: 12px 14px; } .kr .amt { text-align: left; min-width: 0; } .kr .btns { flex: 1 1 100%; } .kmonth b { min-width: 120px; } }
+
   /* ---------- telefon og smal skærm */
   @media (max-width: 880px) {
     #side { position: fixed; left: 0; top: 0; bottom: 0; z-index: 40; transform: translateX(-102%); transition: transform .18s ease; width: min(84vw, 300px); height: auto; }
@@ -264,6 +286,10 @@
     <button class="nv" data-tab="prem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v14H5zM5 10h14M9 4v4M15 4v4"/></svg><span class="t">Premierer</span><span class="bdg" data-bdg="prem"></span></button>
     <button class="nv" data-tab="tr"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg><span class="t">Oversættelser</span><span class="bdg" data-bdg="tr"></span></button>
     <div class="grp">Kunder</div>
+    <button class="nv" data-tab="pay"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v11H3zM3 11h18M7 15h3"/></svg><span class="t">Opkrævning</span><span class="bdg" data-bdg="pay"></span></button>
+    <button class="nv" data-tab="cust"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20a8 8 0 0 1 16 0"/></svg><span class="t">Kunder</span><span class="bdg" data-bdg="cust"></span></button>
+    <button class="nv" data-tab="iptv"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v11H3zM8 21h8M12 17v4"/></svg><span class="t">IPTV-linjer</span><span class="bdg" data-bdg="iptv"></span></button>
+    <button class="nv" data-tab="eco"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16l4-5 3 3 5-7"/></svg><span class="t">Økonomi</span></button>
     <button class="nv" data-tab="share"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a3 3 0 0 0 0-6M21 20a6 6 0 0 0-3-5"/></svg><span class="t">Kontodeling</span><span class="bdg" data-bdg="share"></span></button>
     <div class="grp">Indsigt</div>
     <button class="nv" data-tab="stats"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10M12 20V4M19 20v-7"/></svg><span class="t">Statistik</span></button>
@@ -423,6 +449,86 @@
     <div id="shSum"></div>
     <div id="shGroups"><div class="card empty">Vælg periode og tryk Analysér. Allerførste gang hentes hele Tautullis historik – det kan tage et par minutter. Derefter er den gemt.</div></div>
     <div id="shKinds"></div>
+  </section>
+
+  <section id="pay">
+    <h2>Opkrævning</h2>
+    <p class="hint">Månedens liste laves af sig selv ud fra kundernes cyklus. Tryk <b>Kopiér besked</b>, send den selv i Messenger eller Telegram, og tryk <b>Anmodet</b>. Tryk <b>Betalt</b>, når pengene er kommet. Fangarr skriver aldrig til kunderne.</p>
+    <div class="row" style="justify-content:space-between">
+      <div class="kmonth"><button class="b" onclick="loadPay(KP.prev)" aria-label="Forrige måned">←</button><b id="payMonth">…</b><button class="b" onclick="loadPay(KP.next)" aria-label="Næste måned">→</button>
+        <button class="b sm" id="payNow" onclick="loadPay(KP.current)">Denne måned</button></div>
+    </div>
+    <div class="card" id="payHead"></div>
+    <div class="pills" id="payPills"></div>
+    <div id="payList"><div class="empty">Henter …</div></div>
+  </section>
+
+  <section id="cust">
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">Kunder</h2>
+      <div class="btns"><button class="b" id="kSyncBtn" onclick="kSync()">Synk fra Tautulli</button><button class="b pri" onclick="kNew()">Ny kunde</button></div></div>
+    <p class="hint">Plex-brugere hentes fra Tautulli hver nat og med knappen. Kunder uden Plex opretter du selv med <b>Ny kunde</b>. Én kunde kan betale for flere konti og tjenester.</p>
+    <div class="subs" role="tablist"><button data-sub="liste">Kundeliste</button><button data-sub="logins">Delte logins</button><button data-sub="import">Import fra regneark</button><button data-sub="indst">Indstillinger</button></div>
+    <div data-p="liste">
+      <div id="kSyncInfo" class="small" style="margin:0 0 10px"></div>
+      <div id="kDoubts"></div>
+      <div class="row"><div class="search" style="flex:1 1 260px;max-width:none"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input type="search" id="kq" placeholder="Søg på navn, brugernavn, telefon eller e-mail …" oninput="renderCust()" autocomplete="off"></div></div>
+      <div class="pills" id="kPills"></div>
+      <div id="kList"><div class="empty">Henter …</div></div>
+    </div>
+    <div data-p="logins">
+      <div class="row" style="justify-content:space-between"><h2 style="margin:0">Delte logins</h2><button class="b pri" onclick="kLoginEdit()">Nyt login</button></div>
+      <p class="hint">Logins til konti, som flere kunder deler (fx Spotify, YouTube). Koden vises først, når du trykker <b>Vis</b>, og den står aldrig i loggen eller i Telegram.</p>
+      <div id="kLogins"></div>
+    </div>
+    <div data-p="import">
+      <h2>Import fra regnearket</h2>
+      <p class="hint">Hent fanerne som CSV-filer fra dit regneark, og vælg dem her. Filerne sendes kun til Fangarr på feeder. Du ser først, hvad der bliver oprettet, og intet gemmes, før du trykker <b>Importér</b>. Importen kan køres igen – kunder med samme navn bliver opdateret, ikke oprettet to gange.</p>
+      <div class="card">
+        <div class="grid">
+          <div class="field"><label>1. Fanen "Abonnementer (Optimeret)" – skal med</label><input type="file" id="imp_ab" accept=".csv,text/csv"></div>
+          <div class="field"><label>2. Fanen "IPTV" – valgfri (udløbsdatoer og koder)</label><input type="file" id="imp_iptv" accept=".csv,text/csv"></div>
+          <div class="field"><label>3. Fanen "Måneds-Cockpit" – valgfri (hvem har betalt)</label><input type="file" id="imp_cp" accept=".csv,text/csv"></div>
+          <div class="field"><label>Måned, cockpittet gælder</label><input type="text" id="imp_period" placeholder="2026-11"></div>
+        </div>
+        <div class="row" style="margin:14px 0 0"><button class="b" onclick="kImport(false)">Vis, hvad der sker</button><button class="b pri" id="impGo" onclick="kImport(true)" disabled>Importér</button></div>
+      </div>
+      <div id="impOut"></div>
+    </div>
+    <div data-p="indst">
+      <h2>Indstillinger for kunder</h2>
+      <div class="card">
+        <div class="grid">
+          <div class="field"><label>Besked om manglende betaling efter (dage)</label><input type="number" id="ks_remind_days" min="1">
+            <div class="small">Tælles fra du trykker Anmodet.</div></div>
+          <div class="field"><label>Derefter påmindelse hver (dage)</label><input type="number" id="ks_remind_repeat_days" min="1"></div>
+          <div class="field"><label>Mærk kunden "Ikke set længe" efter (dage)</label><input type="number" id="ks_inactive_days" min="1"></div>
+          <div class="field"><label>Pris pr. måned for en ny Plex-konto (kr.)</label><input type="text" inputmode="decimal" id="ks_plex_price"></div>
+          <div class="field"><label>Beskeder på Stream365 Drift kl.</label><input type="number" id="ks_message_hour" min="0" max="23"></div>
+          <div class="field"><label>Natlig synk fra Tautulli kl.</label><input type="number" id="ks_sync_hour" min="0" max="23"></div>
+        </div>
+        <div class="field" style="margin-top:14px"><label>Besked til kunden (kopieres fra Opkrævning)</label><textarea class="kta" id="ks_template"></textarea>
+          <div class="small">Du kan bruge: {fornavn} {navn} {tjenester} {beløb} {frekvens} {cyklus} {metode}</div></div>
+        <div class="field" style="margin-top:14px"><label>Faste udgifter pr. måned (til Økonomi) – én pr. linje</label><textarea class="kta" id="ks_fixed_costs" style="min-height:90px" placeholder="Hetzner: 2813"></textarea></div>
+        <div class="row" style="margin:14px 0 0"><button class="b pri" onclick="kSaveSettings()">Gem</button><a class="b" href="/api/kunder/export.csv">Hent kundelisten som CSV (uden koder)</a></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="iptv">
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">IPTV-linjer</h2><button class="b pri" onclick="kLineEdit()">Ny linje</button></div>
+    <p class="hint">Alle linjer med udløbsdato. Den 1. i hver måned får du besked på Stream365 Drift om, hvor mange der skal fornyes. Tryk <b>Fornyet</b>, når du har fornyet en linje hos leverandøren. Brugernavn og kode vises først, når du trykker <b>Vis kode</b>.</p>
+    <div class="pills" id="iptvPills"></div>
+    <div id="iptvList"><div class="empty">Henter …</div></div>
+  </section>
+
+  <section id="eco">
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">Økonomi</h2>
+      <div class="kmonth"><button class="b" onclick="loadEco(KE.year - 1)" aria-label="Forrige år">←</button><b id="ecoYear" style="min-width:70px">…</b><button class="b" onclick="loadEco(KE.year + 1)" aria-label="Næste år">→</button></div></div>
+    <p class="hint">Indtægt fra kunderne mod udgiften til IPTV-linjer og dine faste udgifter. Tidligere måneder viser det, der er <b>betalt</b>. Kommende måneder er et skøn ud fra de kunder og priser, du har nu.</p>
+    <div class="kpis" id="ecoKpis"></div>
+    <div class="card tp"><table><thead><tr><th>Måned</th><th class="num">Opkrævet</th><th class="num">Betalt</th><th class="num hs">IPTV-linjer</th><th class="num hs">Faste udgifter</th><th class="num">Resultat</th></tr></thead>
+      <tbody id="ecoBody"></tbody></table></div>
+    <div class="small" id="ecoNote"></div>
   </section>
 
   <section id="tr">
@@ -657,7 +763,7 @@
   <button data-tab="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>Overblik</button>
   <button data-tab="wait"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>Venteliste<span class="bdg" data-bdg="wait"></span></button>
   <button data-tab="log"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Log</button>
-  <button data-tab="share"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a3 3 0 0 0 0-6M21 20a6 6 0 0 0-3-5"/></svg>Kunder<span class="bdg" data-bdg="share"></span></button>
+  <button data-tab="pay"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v11H3zM3 11h18M7 15h3"/></svg>Opkrævning<span class="bdg" data-bdg="pay"></span></button>
   <button data-menu><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>Mere</button>
 </nav>
 
@@ -734,6 +840,18 @@
       <span class="small" id="dlgErr" style="color:var(--bad)"></span>
       <div class="btns"><button class="b" onclick="dlg.close()">Annullér</button><button class="b pri" onclick="saveRule()">Gem regel</button></div>
     </div>
+  </form>
+</dialog>
+<dialog id="kdlg">
+  <div class="dlg-head"><b id="kdTitle">Kunde</b><button class="b" onclick="kdlg.close()">Luk</button></div>
+  <div class="dlg-body" id="kdBody"></div>
+  <div class="dlg-foot"><span class="small" id="kdErr" style="color:var(--bad)"></span><div class="btns" id="kdFoot"></div></div>
+</dialog>
+<dialog id="edlg" style="width:min(560px,96vw)">
+  <form method="dialog" onsubmit="return false">
+    <div class="dlg-head"><b id="edTitle"></b><button class="b" onclick="edlg.close()">Luk</button></div>
+    <div class="dlg-body" id="edBody"></div>
+    <div class="dlg-foot"><span class="small" id="edErr" style="color:var(--bad)"></span><div class="btns"><button class="b" onclick="edlg.close()">Annullér</button><button class="b pri" id="edSave">Gem</button></div></div>
   </form>
 </dialog>
 <div id="toast"></div>
@@ -1525,8 +1643,8 @@ async function importFile(inp) {
 const ICON = {
   home: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z", wait: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
   log: "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01", share: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a3 3 0 0 0 0-6M21 20a6 6 0 0 0-3-5"};
-const SUBDEF = {tr: "status", settings: "gen", setup: "test"};
-const TAB_IDS = ["home", "wait", "log", "rules", "prem", "tr", "share", "stats", "settings", "setup", "search"];
+const SUBDEF = {tr: "status", settings: "gen", setup: "test", cust: "liste"};
+const TAB_IDS = ["home", "wait", "log", "rules", "prem", "tr", "pay", "cust", "iptv", "eco", "share", "stats", "settings", "setup", "search"];
 let TAB = "home", SUB = {...SUBDEF}, OV = null, CONN = null, VER = null, ADDED = null, logFirst = true;
 
 function showSub(tab) {
@@ -1550,6 +1668,10 @@ function go(tab, sub) {
   if (tab === "prem") loadPrem(0);
   if (tab === "stats") loadStats();
   if (tab === "share") loadShare();
+  if (tab === "pay") loadPay();
+  if (tab === "cust") { loadCust().then(renderKSet); if (SUB.cust === "logins") loadLogins(); }
+  if (tab === "iptv") loadIptv();
+  if (tab === "eco") loadEco();
   if (tab === "tr") { loadTr(); loadTrStats(0); window._trTimer = setInterval(() => loadTr(), 60000); }
   if (tab === "settings") { loadBackups(); loadAliases(); loadIgnored(); }
   if (tab === "setup") { fillRuleSelect("sim_rule", null); if (SUB.setup === "autobrr") loadAutobrr(); }
@@ -1596,6 +1718,7 @@ async function loadHome() {
   try { OV = await api("/api/overview"); } catch (e) { return; }
   const t = OV.translator || {}, sh = (OV.sharing || {}).buckets || {};
   setBadge("wait", OV.suggestions, false); setBadge("tr", t.problems, true); setBadge("share", sh.bloker, true); setBadge("prem", OV.premieres_new, false);
+  const kb = OV.kunder || {}; setBadge("pay", kb.overdue, true); setBadge("cust", kb.setup, false); setBadge("iptv", (kb.iptv_due || 0) + (kb.iptv_expired || 0), !!kb.iptv_expired);
   if ($("trProbN")) $("trProbN").textContent = t.problems ? ` (${t.problems})` : "";
   S.disk_pct = OV.disk_pct; S.today = OV.today; renderStatus();
   renderHome();
@@ -1611,6 +1734,12 @@ function renderHome() {
   if (t.problems) add(t.problems, true, t.problems === 1 ? "Oversættelse er gået galt" : "Oversættelser er gået galt", "Prøv igen, eller opgiv dem, så de vises uden dansk tekst.", "Se problemer", "go('tr','problemer')");
   if (sh.bloker) add(sh.bloker, true, sh.bloker === 1 ? "Bruger kan blokeres" : "Brugere kan blokeres", `Fremmede tv er brugt samtidig med kundens egne. Seneste analyse ${fmt(shS.at)}.`, "Åbn kontodeling", "go('share')");
   if (sh.afgoer) add(sh.afgoer, false, "Brugere skal du selv afgøre", "Fangarr kan ikke se, hvilket sted der er kundens. Vælg kundens sted.", "Åbn kontodeling", "go('share')");
+  const kb = OV.kunder || {};
+  if (kb.overdue) add(kb.overdue, true, kb.overdue === 1 ? "Kunde mangler at betale" : "Kunder mangler at betale", `${kkr(kb.overdue_kr)} er anmodet for længe siden og ikke markeret som betalt.`, "Åbn opkrævning", "KPF='mangler';go('pay')");
+  if (kb.unrequested) add(kb.unrequested, false, kb.unrequested === 1 ? "Kunde er ikke anmodet endnu" : "Kunder er ikke anmodet endnu", `Opkrævningen for ${kb.label} er klar. Kopiér beskeden, send den, og tryk Anmodet.`, "Åbn opkrævning", "KPF='ny';go('pay')");
+  if (kb.iptv_due) add(kb.iptv_due, false, kb.iptv_due === 1 ? "IPTV-linje skal fornyes i denne måned" : "IPTV-linjer skal fornyes i denne måned", "Tryk Fornyet på linjen, når den er fornyet hos leverandøren.", "Se linjerne", "KIF='maaned';go('iptv')");
+  if (kb.iptv_expired) add(kb.iptv_expired, true, kb.iptv_expired === 1 ? "IPTV-linje står som udløbet" : "IPTV-linjer står som udløbet", "Udløbsdatoen er overskredet. Forny linjen, eller ret datoen, hvis den allerede er fornyet.", "Se linjerne", "KIF='udloebet';go('iptv')");
+  if (kb.setup) add(kb.setup, false, kb.setup === 1 ? "Kunde mangler opsætning" : "Kunder mangler opsætning", "Der mangler cyklus, betalingsmetode eller pris, så de bliver ikke opkrævet endnu.", "Åbn kunder", "KCF='opsaet';go('cust')");
   if (OV.premieres_new) add(OV.premieres_new, false, OV.premieres_new === 1 ? "Ny premiere" : "Nye premierer", "Kommende danske serier, du ikke har set på listen endnu.", "Se premierer", "go('prem')");
   if (VER && VER.update) add("↑", false, `Version ${esc(VER.latest)} er klar`, "Kør ./opdater.sh i /opt/fangarr på feeder. Fangarr er væk i få sekunder, og streaming påvirkes ikke.", "", "");
   $("homeWarn").innerHTML = OV.dry_run ? '<div class="warn">Prøvetilstand er slået til. Fangarr logger kun, hvad den ville tilføje. Slå den fra under Indstillinger.</div>' : "";
@@ -1732,6 +1861,357 @@ function statSorted(rows) {
 
 // ---------- premierer: markér som set
 function premSeen() { const ids = (PREM || []).map(p => p.tmdb).filter(Boolean); if (ids.length) api("/api/premieres/seen", {method: "POST", body: JSON.stringify({ids})}).then(() => setBadge("prem", 0)).catch(() => {}); }
+
+// ====================================================================== 1.16: kunder og betalinger
+let K = null, KC = [], KP = null, KPF = "alle", KCF = "aktive", KI = null, KIF = "maaned", KE = null, KCUR = null, IMP = null;
+const kdlg = $("kdlg"), edlg = $("edlg");
+const kkr = v => Number(v || 0).toLocaleString("da-DK") + " kr.";
+const kDay = t => { if (!t) return "–"; const d = new Date(t); return isNaN(d) ? esc(t) : d.toLocaleDateString("da-DK", {day: "numeric", month: "short", year: "numeric"}); };
+const kAgo = ts => { if (!ts) return "aldrig set"; const d = Math.floor((Date.now() / 1000 - ts) / 86400); return d <= 0 ? "set i dag" : d === 1 ? "set i går" : `set for ${d} dage siden`; };
+const K_FLAG = {cyklus: ["Mangler cyklus", "warn"], metode: ["Mangler betalingsmetode", "warn"], pris: ["Mangler pris", "warn"],
+  plexvaek: ["Plex-brugeren findes ikke længere", "bad"], ulinket: ["Plex-konto ikke fundet i Tautulli", "info"], inaktiv: ["Ikke set længe", ""]};
+const K_ST = {ny: ["Ikke anmodet", ""], anmodet: ["Anmodet", "info"], betalt: ["Betalt", "ok"], "sprunget over": ["Sprunget over", ""], kommer: ["Kommer", ""]};
+const K_STATUS = {aktiv: "Aktiv", pause: "Pause", stoppet: "Stoppet"};
+const K_MONTH = ["januar", "februar", "marts", "april", "maj", "juni", "juli", "august", "september", "oktober", "november", "december"];
+const kSvc = s => (K.services.find(x => x[0] === s) || [s, s])[1];
+const kFlags = f => f.length ? `<span class="ktags">${f.map(x => `<span class="pill ${K_FLAG[x][1]}">${K_FLAG[x][0]}</span>`).join("")}</span>` : "";
+async function kState() { K = await api("/api/kunder/state"); return K; }
+async function kNeed() { if (!K) await kState(); }
+
+// ---------- lille formular til at rette én ting (tjeneste, linje, fradrag, login)
+function kForm(title, fields, vals, onSave, saveText) {
+  $("edTitle").textContent = title; $("edErr").textContent = ""; $("edSave").textContent = saveText || "Gem";
+  $("edBody").innerHTML = fields.map(f => {
+    const v = vals[f.k] ?? "", id = "ef_" + f.k, hint = f.hint ? `<div class="small">${f.hint}</div>` : "";
+    if (f.type === "check") return `<div class="field" style="margin-bottom:12px"><label class="check"><input type="checkbox" id="${id}" ${v ? "checked" : ""}> ${esc(f.label)}</label>${hint}</div>`;
+    let inp;
+    if (f.type === "select") inp = `<select id="${id}">${f.options.map(([o, l]) => `<option value="${esc(o)}" ${String(o) === String(v) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+    else if (f.type === "textarea") inp = `<textarea id="${id}" style="min-height:70px">${esc(v)}</textarea>`;
+    else if (f.type === "secret") inp = `<div style="display:flex;gap:6px"><input type="text" id="${id}" autocomplete="off" spellcheck="false" placeholder="${f.has ? "gemt – lad feltet stå tomt for at beholde den" : ""}">` +
+      (f.has ? `<button class="b" type="button" onclick="kFill('${f.ref[0]}', ${f.ref[1]}, '${id}')">Vis</button>` : "") + `</div>`;
+    else inp = `<input type="${f.type === "date" ? "date" : "text"}" ${f.type === "money" || f.type === "int" ? 'inputmode="decimal"' : ""} id="${id}" value="${esc(v)}" placeholder="${esc(f.ph || "")}" autocomplete="off">`;
+    return `<div class="field" style="margin-bottom:12px"><label for="${id}">${esc(f.label)}</label>${inp}${hint}</div>`;
+  }).join("");
+  $("edSave").onclick = async () => {
+    const out = {};
+    fields.forEach(f => { const el = $("ef_" + f.k); out[f.k] = f.type === "check" ? el.checked : el.value.trim(); });
+    try { await onSave(out); edlg.close(); } catch (e) { $("edErr").textContent = e.message; }
+  };
+  edlg.showModal();
+}
+async function kFill(kind, id, inputId) { try { $(inputId).value = (await api(`/api/kunder/secret/${kind}/${id}`)).password || ""; } catch (e) { toast(e.message, true); } }
+async function kShow(kind, id, btn) {
+  try {
+    const s = await api(`/api/kunder/secret/${kind}/${id}`), box = document.createElement("span");
+    box.innerHTML = (s.username ? `<span class="ksecret">${esc(s.username)}</span> ` : "") + (s.password ? `<span class="ksecret">${esc(s.password)}</span>` : '<span class="small">ingen kode gemt</span>');
+    btn.replaceWith(box);
+    setTimeout(() => { if (box.isConnected) { const b = document.createElement("button"); b.className = "b sm"; b.textContent = "Vis kode"; b.onclick = () => kShow(kind, id, b); box.replaceWith(b); } }, 60000);
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---------- opkrævning
+async function loadPay(period) {
+  try { await kNeed(); KP = await api("/api/kunder/charges" + ((period || (KP && KP.period)) ? "?period=" + (period || KP.period) : "")); }
+  catch (e) { toast(e.message, true); return; }
+  renderPay();
+}
+function renderPay() {
+  if (!KP) return;
+  const L = KP.charges, live = L.filter(c => c.status !== "sprunget over");
+  const tot = live.reduce((a, c) => a + c.amount, 0), paid = live.filter(c => c.status === "betalt").reduce((a, c) => a + c.amount, 0);
+  const pct = tot ? Math.round(paid / tot * 100) : 0, n = s => L.filter(c => c.status === s).length, late = L.filter(c => c.late).length;
+  $("payMonth").textContent = KP.label; $("payNow").style.display = KP.period === KP.current ? "none" : "";
+  $("payHead").innerHTML = KP.preview
+    ? `<b>${kkr(tot)}</b> fra ${live.length} kunder ventes opkrævet i ${esc(KP.label)}. <span class="small" style="display:block">Listen oprettes af sig selv den 1. i måneden. Beløbene er et skøn ud fra de nuværende priser.</span>`
+    : (live.length ? `<div class="row" style="justify-content:space-between;margin:0"><div><b style="font:600 22px var(--head)">${kkr(paid)}</b> <span style="color:var(--muted)">af ${kkr(tot)} modtaget</span></div><b style="font:600 18px var(--head);color:var(--accent)">${pct} %</b></div>
+      <div class="money"><i style="width:${pct}%"></i></div>
+      <div class="small">${n("betalt")} af ${live.length} har betalt${n("ny") ? ` · ${n("ny")} er ikke anmodet endnu` : ""}${late ? ` · <span style="color:var(--bad)">${late} har ventet mere end ${K.settings.remind_days} dage</span>` : ""}</div>`
+      : (KP.period < KP.current ? `Der er ingen opkrævninger gemt for ${esc(KP.label)}. <button class="b sm" onclick="payGen()">Opret dem nu</button>` : "Ingen kunder skal opkræves i denne måned."));
+  const F = [["alle", "Alle", L.length], ["mangler", "Mangler", L.filter(c => c.status === "ny" || c.status === "anmodet").length], ["ny", "Ikke anmodet", n("ny")], ["anmodet", "Anmodet", n("anmodet")],
+    ["betalt", "Betalt", n("betalt")], ["MobilePay", "MobilePay", L.filter(c => c.method === "MobilePay").length], ["Revolut", "Revolut", L.filter(c => c.method === "Revolut").length]];
+  $("payPills").innerHTML = KP.preview ? "" : F.map(([k, l, c]) => `<button class="${KPF === k ? "on" : ""}" onclick="KPF='${k}';renderPay()">${l}<span>${c}</span></button>`).join("");
+  const show = L.filter(c => KP.preview || KPF === "alle" || (KPF === "mangler" ? (c.status === "ny" || c.status === "anmodet") : (c.status === KPF || c.method === KPF)));
+  $("payList").innerHTML = show.length ? `<div class="kl">${show.map(c => {
+    const [st, cl] = K_ST[c.status], adj = c.adjust.map(a => `${esc(a.text || (a.amount < 0 ? "Fradrag" : "Tillæg"))} ${a.amount > 0 ? "+" : ""}${kkr(a.amount)}`).join(" · ");
+    let b = "";
+    if (c.id) {
+      if (c.status === "ny") b = `<button class="b sm" onclick="payCopy(${c.id})">Kopiér besked</button><button class="b sm" onclick="payAct(${c.id},'request')">Anmodet</button><button class="b sm pri" onclick="payAct(${c.id},'paid')">Betalt</button>`;
+      else if (c.status === "anmodet") b = `<button class="b sm" onclick="payCopy(${c.id})">Kopiér besked</button><button class="b sm pri" onclick="payAct(${c.id},'paid')">Betalt</button>`;
+      else if (c.status === "betalt") b = `<button class="b sm" onclick="payAct(${c.id},'unpaid')">Fortryd betalt</button>`;
+      else b = `<button class="b sm" onclick="payAct(${c.id},'unskip')">Tag med igen</button>`;
+      b += `<button class="b sm" onclick="payEdit(${c.id})" aria-label="Ret opkrævningen">Ret</button>`;
+    }
+    return `<div class="kr ${c.status === "betalt" || c.status === "sprunget over" ? "done" : ""} ${c.late ? "late" : ""}">
+      <div class="who"><b style="cursor:pointer" onclick="kOpen(${c.customer_id})">${esc(c.name)}</b> <span class="pill ${c.late ? "bad" : cl}">${c.late ? "Mangler betaling" : st}</span>
+        <div class="small">${esc(c.services || "–")} · ${esc(c.method || "ingen betalingsmetode")}${c.due_day ? ` · fast dato d. ${c.due_day}.` : ""}${c.contact ? " · " + esc(c.contact) : ""}${c.status === "anmodet" ? " · anmodet " + kDay(c.requested_at) : ""}${c.status === "betalt" ? " · betalt " + kDay(c.paid_at) : ""}</div>
+        ${adj || c.note ? `<div class="small">${adj}${adj && c.note ? " · " : ""}${esc(c.note)}</div>` : ""}</div>
+      <div class="amt">${kkr(c.amount)}</div><div class="btns">${b}</div></div>`; }).join("")}</div>`
+    : `<div class="empty">${L.length ? "Ingen i denne visning." : "Intet at vise."}</div>`;
+}
+async function payAct(id, action, extra) {
+  try { KP = await api(`/api/kunder/charges/${id}`, {method: "POST", body: JSON.stringify({action, ...(extra || {})})}); renderPay(); loadHome(); } catch (e) { toast(e.message, true); }
+}
+function payCopy(id) { const c = KP.charges.find(x => x.id === id); if (c) shCopyText(c.message); }
+async function payGen() { try { KP = await api("/api/kunder/charges/generate", {method: "POST", body: JSON.stringify({period: KP.period})}); renderPay(); } catch (e) { toast(e.message, true); } }
+function payEdit(id) {
+  const c = KP.charges.find(x => x.id === id);
+  kForm("Ret opkrævningen – " + c.name, [
+    {k: "amount", label: "Beløb (kr.)", type: "money", hint: `Udregnet beløb: ${kkr(c.base)}${c.adjust.length ? " plus fradrag/tillæg" : ""}. Gælder kun denne opkrævning.`},
+    {k: "note", label: "Note", type: "text"},
+    {k: "recalc", label: "Regn beløbet ud igen fra kundens nuværende priser", type: "check"},
+    {k: "skip", label: "Spring denne opkrævning over (kunden skal ikke betale i denne måned)", type: "check"},
+    ...(c.status === "anmodet" ? [{k: "unrequest", label: "Fortryd Anmodet", type: "check"}] : [])],
+    {amount: c.amount, note: c.note, skip: c.status === "sprunget over"},
+    async v => {
+      if (v.recalc) await api(`/api/kunder/charges/${id}`, {method: "POST", body: JSON.stringify({action: "recalc"})});
+      else await api(`/api/kunder/charges/${id}`, {method: "POST", body: JSON.stringify({action: "edit", amount: v.amount, note: v.note})});
+      if (v.unrequest) await api(`/api/kunder/charges/${id}`, {method: "POST", body: JSON.stringify({action: "unrequest"})});
+      KP = await api(`/api/kunder/charges/${id}`, {method: "POST", body: JSON.stringify({action: v.skip ? "skip" : "unskip"})});
+      renderPay(); loadHome();
+    });
+}
+
+// ---------- kundeliste
+async function loadCust() {
+  try { await kState(); KC = await api("/api/kunder/customers"); } catch (e) { toast(e.message, true); return; }
+  renderCust();
+}
+function renderCust() {
+  const q = $("kq").value.trim().toLowerCase(), setup = c => c.flags.some(f => ["cyklus", "metode", "pris"].includes(f));
+  const G = {aktive: c => c.status === "aktiv" && c.kind === "kunde", opsaet: setup, obs: c => c.flags.some(f => ["plexvaek", "ulinket", "inaktiv"].includes(f)),
+    pause: c => c.status === "pause", stoppet: c => c.status === "stoppet", egne: c => c.kind === "egen", alle: () => true};
+  const N = [["aktive", "Aktive"], ["opsaet", "Mangler opsætning"], ["obs", "Tjek Plex"], ["pause", "Pause"], ["stoppet", "Stoppet"], ["egne", "Egne"], ["alle", "Alle"]];
+  $("kPills").innerHTML = N.map(([k, l]) => `<button class="${KCF === k ? "on" : ""}" onclick="KCF='${k}';renderCust()">${l}<span>${KC.filter(G[k]).length}</span></button>`).join("");
+  const sy = K.sync;
+  $("kSyncInfo").innerHTML = !K.tautulli ? '<span style="color:var(--warn)">Tautulli er ikke sat op i fangarr.env, så Plex-brugere kan ikke hentes.</span>'
+    : sy ? `Senest synket fra Tautulli ${fmt(sy.at)} · ${sy.users} Plex-brugere${sy.created && sy.created.length ? ` · nye kunder: <b>${esc(sy.created.join(", "))}</b>` : ""}${sy.gone && sy.gone.length ? ` · ikke længere i Plex: <b>${esc(sy.gone.join(", "))}</b>` : ""}`
+    : "Der er ikke synket fra Tautulli endnu. Importér først regnearket, og tryk så <b>Synk fra Tautulli</b>. Derefter sker det af sig selv hver nat.";
+  $("kDoubts").innerHTML = (K.doubts || []).length ? `<details class="card"><summary><b>${K.doubts.length} ting fra regnearket, du bør kigge på</b> <span class="small">(tryk for at folde ud)</span></summary>
+    <ul class="kdoubt">${K.doubts.map(d => `<li>${esc(d)}</li>`).join("")}</ul><button class="b sm" style="margin-top:10px" onclick="kDoubtsClear()">Jeg har set dem – fjern listen</button></details>` : "";
+  const L = KC.filter(c => (q ? true : G[KCF](c)) && (!q || [c.name, c.phone, c.email, c.notes, ...c.services.flatMap(s => [s.username, s.email, s.label])].some(v => String(v || "").toLowerCase().includes(q))));
+  $("kList").innerHTML = L.length ? `<div class="kl">${L.map(c => {
+    const sv = [...new Set(c.services.filter(s => s.active).map(s => kSvc(s.service)))].join(", "), acc = c.services.filter(s => s.service === "plex").length;
+    return `<div class="kr click" onclick="kOpen(${c.id})"><div class="who"><b>${esc(c.name)}</b>${c.status !== "aktiv" ? ` <span class="pill">${K_STATUS[c.status]}</span>` : ""}${c.kind === "egen" ? ' <span class="pill">Egen</span>' : ""}${kFlags(c.flags)}
+      <div class="small">${esc(sv || "ingen tjenester")}${acc > 1 ? ` · ${acc} Plex-konti` : ""}${c.iptv_lines ? ` · ${c.iptv_lines} IPTV-${c.iptv_lines === 1 ? "linje" : "linjer"}` : ""}${c.last_seen ? " · " + kAgo(c.last_seen) : ""}</div></div>
+      <div class="meta hs">${esc(c.method || "–")}</div><div class="meta">${c.kind === "egen" ? "" : esc(c.freq ? c.freq_text + " · " + c.cycle_text : "ingen cyklus")}</div>
+      <div class="amt">${c.kind === "egen" ? "–" : kkr(c.per_charge || c.monthly)}</div></div>`; }).join("")}</div>`
+    : `<div class="empty">${KC.length ? "Ingen kunder i denne visning." : "Der er ingen kunder endnu. Start under <b>Import fra regneark</b>, eller tryk <b>Ny kunde</b>."}</div>`;
+}
+async function kDoubtsClear() { try { await api("/api/kunder/doubts/clear", {method: "POST"}); K.doubts = []; renderCust(); } catch (e) { toast(e.message, true); } }
+async function kSync() {
+  const b = $("kSyncBtn"); b.disabled = true; b.textContent = "Henter fra Tautulli …";
+  try { const r = await api("/api/kunder/sync", {method: "POST"});
+    toast(`Synket: ${r.users} Plex-brugere` + (r.created.length ? `, ${r.created.length} nye kunder` : "") + (r.linked.length ? `, ${r.linked.length} koblet til kunder` : "")); await loadCust(); loadHome(); }
+  catch (e) { toast(e.message, true); }
+  b.disabled = false; b.textContent = "Synk fra Tautulli";
+}
+const K_FREQ = [["", "– vælg –"], ["maaned", "Månedlig"], ["kvartal", "Kvartal"], ["halvaar", "Halvårlig"], ["aar", "Årlig"]];
+function kCycleOpts(freq, cur) {
+  const n = {kvartal: 3, halvaar: 6, aar: 12}[freq];
+  if (!n) return freq === "maaned" ? '<option value="">Hver måned</option>' : '<option value="">vælg frekvens først</option>';
+  let o = "";
+  for (let s = 1; s <= n; s++) { const m = []; for (let x = s; x <= 12; x += n) m.push(x); o += `<option value="${s}" ${Number(cur) === s ? "selected" : ""}>${n === 12 ? K_MONTH[s - 1] : m.join("/")}</option>`; }
+  return o;
+}
+function kNew() {
+  kForm("Ny kunde", [{k: "name", label: "Navn", type: "text"}, {k: "method", label: "Betalingsmetode", type: "select", options: [["", "– vælg –"], ["MobilePay", "MobilePay"], ["Revolut", "Revolut"], ["Andet", "Andet"]]},
+    {k: "freq", label: "Hvor tit betaler kunden?", type: "select", options: K_FREQ, hint: "Cyklus (hvilke måneder) og tjenester vælger du på kundekortet bagefter."}],
+    {}, async v => { const c = await api("/api/kunder/customers", {method: "POST", body: JSON.stringify(v)}); await loadCust(); kOpen(c.id); }, "Opret");
+}
+async function kOpen(id) {
+  try { await kNeed(); KCUR = await api("/api/kunder/customers/" + id); } catch (e) { toast(e.message, true); return; }
+  renderCard(); if (!kdlg.open) kdlg.showModal();
+}
+function renderCard() {
+  const c = KCUR, sel = (id, opts, cur) => `<select id="${id}">${opts.map(([v, l]) => `<option value="${v}" ${String(v) === String(cur ?? "") ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+  $("kdTitle").textContent = c.name; $("kdErr").textContent = "";
+  $("kdBody").innerHTML = `${c.flags.length ? `<div style="margin-bottom:12px">${kFlags(c.flags)}</div>` : ""}
+    <div class="grid">
+      <div class="field"><label>Navn</label><input type="text" id="kc_name" value="${esc(c.name)}"></div>
+      <div class="field"><label>Status</label>${sel("kc_status", Object.entries(K_STATUS), c.status)}</div>
+      <div class="field"><label>Type</label>${sel("kc_kind", [["kunde", "Kunde (betaler)"], ["egen", "Egen (familie – opkræves ikke)"]], c.kind)}</div>
+      <div class="field"><label>Betalingsmetode</label>${sel("kc_method", [["", "– vælg –"], ["MobilePay", "MobilePay"], ["Revolut", "Revolut"], ["Andet", "Andet"]], c.method)}</div>
+      <div class="field"><label>Hvor tit betaler kunden?</label><select id="kc_freq" onchange="$('kc_cycle').innerHTML=kCycleOpts(this.value)">${K_FREQ.map(([v, l]) => `<option value="${v}" ${v === (c.freq || "") ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+      <div class="field"><label>Cyklus (måneder, der opkræves)</label><select id="kc_cycle">${kCycleOpts(c.freq, c.cycle)}</select></div>
+      <div class="field"><label>Fast dato i måneden (valgfri)</label><input type="text" inputmode="numeric" id="kc_due_day" value="${c.due_day ?? ""}" placeholder="fx 15"></div>
+      <div class="field"><label>Telefon</label><input type="text" id="kc_phone" value="${esc(c.phone)}"></div>
+      <div class="field"><label>E-mail</label><input type="text" id="kc_email" value="${esc(c.email)}"></div>
+      <div class="field"><label>Kontakt via</label><input type="text" id="kc_contact" value="${esc(c.contact)}" placeholder="FB, TG, SMS …"></div>
+    </div>
+    <div class="field" style="margin-top:12px"><label>Noter</label><textarea id="kc_notes" style="min-height:60px">${esc(c.notes)}</textarea></div>
+
+    <div class="ksec"><h3>Tjenester <span class="small">· ${kkr(c.monthly)} pr. måned${c.freq ? ` · ${kkr(c.per_charge)} pr. opkrævning` : ""}</span></h3><button class="b sm" onclick="kSvcEdit()">Tilføj tjeneste</button></div>
+    ${c.services.length ? c.services.map(s => `<div class="kitem" style="${s.active ? "" : "opacity:.55"}"><div class="who"><b>${esc(kSvc(s.service))}</b>${s.label ? " · " + esc(s.label) : ""}${s.active ? "" : ' <span class="pill">slået fra</span>'}
+        <div class="small">${[s.username && esc(s.username), s.email && s.email !== s.username && esc(s.email), s.service === "plex" ? (s.plex ? (s.plex.active ? kAgo(s.plex.last_seen) : '<span style="color:var(--bad)">findes ikke længere i Plex</span>') : '<span style="color:var(--info)">ikke koblet til en Plex-bruger</span>') : "", s.note && esc(s.note)].filter(Boolean).join(" · ")}</div></div>
+      <div class="amt">${kkr(s.price)}<span class="small"> /md.</span></div>
+      <div class="btns">${s.has_password ? `<button class="b sm" onclick="kShow('service', ${s.id}, this)">Vis kode</button>` : ""}<button class="b sm" onclick="kSvcEdit(${s.id})">Ret</button></div></div>`).join("") : '<div class="small">Ingen tjenester endnu.</div>'}
+
+    <div class="ksec"><h3>Fradrag og tillæg</h3><button class="b sm" onclick="kAdjAdd()">Tilføj</button></div>
+    ${c.adjust.length ? c.adjust.map(a => `<div class="kitem" style="${a.remaining ? "" : "opacity:.55"}"><div class="who"><b>${esc(a.text || (a.amount < 0 ? "Fradrag" : "Tillæg"))}</b>
+        <div class="small">${a.remaining ? `regnes med på ${a.remaining === 1 ? "næste opkrævning" : "de næste " + a.remaining + " opkrævninger"}` : "er brugt"}</div></div>
+      <div class="amt">${a.amount > 0 ? "+" : ""}${kkr(a.amount)}</div><div class="btns"><button class="b sm danger" onclick="kAdjDel(${a.id})">Fjern</button></div></div>`).join("")
+      : '<div class="small">Bruges til fx "træk 49 kr. fra næste", en gratis måned eller halv pris. Skriv minus foran et fradrag.</div>'}
+
+    <div class="ksec"><h3>IPTV-linjer</h3><button class="b sm" onclick="kLineEdit(null, ${c.id})">Tilføj linje</button></div>
+    ${c.iptv.length ? c.iptv.map(l => `<div class="kitem"><div class="who"><b>${esc(l.label || l.username || "Linje")}</b>
+        <div class="small">udløber <span style="${l.expired && l.renew ? "color:var(--bad)" : ""}">${kDay(l.expires)}</span>${l.renew ? "" : " · fornyes ikke"}${l.tivimate ? " · TiViMate: " + esc(l.tivimate) : ""}</div></div>
+      <div class="btns"><button class="b sm" onclick="kShow('iptv', ${l.id}, this)">Vis kode</button><button class="b sm" onclick="kLineEdit(${l.id})">Ret</button></div></div>`).join("") : '<div class="small">Ingen linjer.</div>'}
+
+    <div class="ksec"><h3>Opkrævninger</h3></div>
+    ${c.charges.length ? `<table><tbody>${c.charges.map(h => `<tr><td>${K_MONTH[Number(h.period.slice(5, 7)) - 1]} ${h.period.slice(0, 4)}</td><td class="num">${kkr(h.amount)}</td>
+      <td><span class="pill ${h.late ? "bad" : K_ST[h.status][1]}">${h.late ? "Mangler betaling" : K_ST[h.status][0]}</span></td><td class="small hs">${h.paid_at ? "betalt " + kDay(h.paid_at) : h.requested_at ? "anmodet " + kDay(h.requested_at) : ""}</td></tr>`).join("")}</tbody></table>` : '<div class="small">Ingen opkrævninger endnu.</div>'}`;
+  $("kdFoot").innerHTML = `<button class="b danger" onclick="kDelete()">Slet</button><button class="b" onclick="kMerge()">Flet ind i anden kunde</button><button class="b pri" onclick="kSaveCard()">Gem</button>`;
+}
+function kCardVals() { const o = {}; ["name", "status", "kind", "method", "freq", "cycle", "due_day", "phone", "email", "contact", "notes"].forEach(k => o[k] = $("kc_" + k).value.trim()); return o; }
+async function kSaveCard(quiet) {
+  try { KCUR = await api("/api/kunder/customers/" + KCUR.id, {method: "PUT", body: JSON.stringify(kCardVals())}); if (!quiet) { kdlg.close(); toast("Gemt"); } kAfter(); return true; }
+  catch (e) { $("kdErr").textContent = e.message; return false; }
+}
+function kAfter() { if (TAB === "cust") loadCust(); if (TAB === "pay") loadPay(); if (TAB === "iptv") loadIptv(); loadHome(); }
+async function kDelete() {
+  if (!confirm(`Slet ${KCUR.name}?\n\nKunden, tjenesterne og ubetalte opkrævninger slettes og kan ikke hentes tilbage. IPTV-linjer bevares under "Ingen kunde".\n\nVil du kun stoppe opkrævningen, så sæt Status til Stoppet i stedet.`)) return;
+  try { await api("/api/kunder/customers/" + KCUR.id, {method: "DELETE"}); kdlg.close(); toast("Kunden er slettet"); kAfter(); } catch (e) { $("kdErr").textContent = e.message; }
+}
+function kMerge() {
+  const opts = KC.filter(x => x.id !== KCUR.id).map(x => [x.id, x.name]);
+  if (!opts.length) { toast("Åbn kundelisten først", true); return; }
+  kForm(`Flet ${KCUR.name} ind i en anden kunde`, [{k: "into", label: "Kunden, der betaler", type: "select", options: [["", "– vælg –"], ...opts],
+    hint: `Bruges, når en anden kunde betaler for denne konto. Tjenester, IPTV-linjer og fradrag flyttes over, og "${esc(KCUR.name)}" forsvinder som selvstændig kunde. Det kan ikke fortrydes.`}], {},
+    async v => { if (!v.into) throw new Error("vælg en kunde"); KCUR = await api(`/api/kunder/customers/${KCUR.id}/merge`, {method: "POST", body: JSON.stringify({into: Number(v.into)})}); renderCard(); kAfter(); }, "Flet");
+}
+function kSvcEdit(id) {
+  const s = id ? KCUR.services.find(x => x.id === id) : {service: "plex", price: "", active: true, plex_user_id: ""};
+  const free = (K.plex_free || []).map(p => [p.user_id, `${p.friendly_name} (${p.username})`]);
+  if (s.plex) free.unshift([s.plex_user_id, `${s.plex.friendly_name} (${s.plex.username})`]);
+  const fields = [{k: "service", label: "Tjeneste", type: "select", options: K.services},
+    {k: "label", label: "Navn på kontoen (valgfrit)", type: "text", ph: "fx Casper eller Stue", hint: "Bruges, når kunden betaler for flere konti."},
+    {k: "price", label: "Pris pr. måned (kr.)", type: "money"},
+    {k: "plex_user_id", label: "Plex-bruger i Tautulli (kun Plex)", type: "select", options: [["", "– ingen –"], ...free]},
+    {k: "username", label: "Brugernavn", type: "text"}, {k: "email", label: "E-mail", type: "text"},
+    {k: "password", label: "Kodeord", type: "secret", has: s.has_password, ref: ["service", s.id]},
+    {k: "note", label: "Note", type: "text"}, {k: "active", label: "Aktiv (regnes med i prisen)", type: "check"},
+    ...(id ? [{k: "customer_id", label: "Hører til kunden", type: "select", options: (KC.length ? KC : [KCUR]).map(x => [x.id, x.name]), hint: "Vælg en anden kunde for at flytte tjenesten."},
+      {k: "remove", label: "Slet tjenesten helt", type: "check"}] : [])];
+  kForm(id ? "Ret tjeneste" : "Tilføj tjeneste", fields, {...s, customer_id: KCUR.id}, async v => {
+    if (v.remove) { if (!confirm("Slet tjenesten? Det kan ikke fortrydes.")) throw new Error("ikke slettet"); KCUR = await api("/api/kunder/services/" + id, {method: "DELETE"}); }
+    else { const r = await api("/api/kunder/services", {method: "POST", body: JSON.stringify({...v, id, customer_id: Number(v.customer_id || KCUR.id), plex_user_id: v.service === "plex" ? v.plex_user_id : ""})});
+      KCUR = r.id === KCUR.id ? r : await api("/api/kunder/customers/" + KCUR.id); }
+    K = await kState(); renderCard(); kAfter();
+  });
+}
+function kAdjAdd() {
+  kForm("Fradrag eller tillæg", [{k: "text", label: "Tekst", type: "text", ph: "fx Gratis måned (henvisning)"}, {k: "amount", label: "Beløb (kr.) – minus for fradrag", type: "money", ph: "-120"},
+    {k: "remaining", label: "Hvor mange opkrævninger skal det gælde?", type: "int", hint: "1 = kun den næste opkrævning."}], {remaining: 1},
+    async v => { KCUR = await api("/api/kunder/adjust", {method: "POST", body: JSON.stringify({...v, customer_id: KCUR.id})}); renderCard(); });
+}
+async function kAdjDel(id) { try { KCUR = await api("/api/kunder/adjust/" + id, {method: "DELETE"}); renderCard(); } catch (e) { toast(e.message, true); } }
+
+// ---------- IPTV-linjer
+async function loadIptv() { try { await kNeed(); if (!KC.length) KC = await api("/api/kunder/customers"); KI = await api("/api/kunder/iptv"); } catch (e) { toast(e.message, true); return; } renderIptv(); }
+function renderIptv() {
+  const L = KI.lines, m = l => (l.expires || "").slice(0, 7);
+  const G = {maaned: l => l.renew && m(l) === KI.period, naeste: l => l.renew && m(l) === KI.next, udloebet: l => l.renew && l.expires && m(l) < KI.period, ingen: l => !l.customer_id, alle: () => true};
+  const N = [["maaned", "Fornyes denne måned"], ["naeste", "Næste måned"], ["udloebet", "Allerede udløbet"], ["ingen", "Ingen kunde"], ["alle", "Alle"]];
+  $("iptvPills").innerHTML = N.map(([k, l]) => `<button class="${KIF === k ? "on" : ""}" onclick="KIF='${k}';renderIptv()">${l}<span>${L.filter(G[k]).length}</span></button>`).join("");
+  const S = L.filter(G[KIF]), cost = S.reduce((a, l) => a + (l.cost || 0), 0);
+  $("iptvList").innerHTML = S.length ? `<div class="small" style="margin:0 0 10px">${S.length} ${S.length === 1 ? "linje" : "linjer"} · ${kkr(cost)} i alt</div><div class="kl">${S.map(l => `<div class="kr">
+      <div class="who"><b>${esc(l.label || l.username || "Linje")}</b>${l.renew ? "" : ' <span class="pill">Fornyes ikke</span>'}
+        <div class="small">${l.customer_id ? `<a href="#" onclick="kOpen(${l.customer_id});return false" style="color:inherit">${esc(l.customer)}</a>` : '<span style="color:var(--warn)">ingen kunde</span>'}${l.tivimate ? " · TiViMate: " + esc(l.tivimate) : ""}${l.note ? " · " + esc(l.note) : ""}</div></div>
+      <div class="meta">udløber <b style="color:${l.expired && l.renew ? "var(--bad)" : "var(--text)"}">${kDay(l.expires)}</b></div><div class="amt">${l.cost ? kkr(l.cost) : "–"}</div>
+      <div class="btns"><button class="b sm" onclick="kShow('iptv', ${l.id}, this)">Vis kode</button><button class="b sm pri" onclick="kRenew(${l.id})">Fornyet</button><button class="b sm" onclick="kLineEdit(${l.id})">Ret</button></div></div>`).join("")}</div>`
+    : `<div class="empty">${L.length ? "Ingen linjer i denne visning." : "Der er ingen IPTV-linjer endnu."}</div>`;
+}
+function kLineOf(id) { return (KI && KI.lines.find(x => x.id === id)) || (KCUR && KCUR.iptv.find(x => x.id === id)); }
+async function kLineSaved(r) { KI = r; if (TAB === "iptv") renderIptv(); if (kdlg.open && KCUR) { KCUR = await api("/api/kunder/customers/" + KCUR.id); renderCard(); } loadHome(); }
+function kLineEdit(id, cid) {
+  const l = id ? kLineOf(id) : {customer_id: cid || "", renew: true};
+  kForm(id ? "Ret IPTV-linje" : "Ny IPTV-linje", [
+    {k: "customer_id", label: "Kunde", type: "select", options: [["", "– ingen kunde –"], ...(KC.length ? KC : (KCUR ? [KCUR] : [])).map(x => [x.id, x.name])]},
+    {k: "label", label: "Navn på linjen", type: "text", ph: "fx Stue eller Værelse"},
+    {k: "username", label: "Brugernavn", type: "text"}, {k: "password", label: "Kode", type: "secret", has: l.has_password, ref: ["iptv", l.id]},
+    {k: "expires", label: "Udløber", type: "date"}, {k: "cost", label: "Hvad koster en fornyelse? (kr.)", type: "money"},
+    {k: "tivimate", label: "TiViMate-konto (valgfrit)", type: "text"}, {k: "note", label: "Note", type: "text"},
+    {k: "renew", label: "Skal fornyes, når den udløber", type: "check"},
+    ...(id ? [{k: "remove", label: "Slet linjen helt", type: "check"}] : [])], l,
+    async v => {
+      if (v.remove) { if (!confirm("Slet linjen med brugernavn og kode? Det kan ikke fortrydes.")) throw new Error("ikke slettet"); await kLineSaved(await api("/api/kunder/iptv/" + id, {method: "DELETE"})); }
+      else await kLineSaved(await api("/api/kunder/iptv", {method: "POST", body: JSON.stringify({...v, id})}));
+    });
+}
+function kRenew(id) {
+  const l = kLineOf(id), today = new Date().toISOString().slice(0, 10), d = new Date((l.expires && l.expires > today ? l.expires : today) + "T12:00:00");
+  d.setFullYear(d.getFullYear() + 1);
+  kForm("Fornyet – " + (l.label || l.username || "linje"), [{k: "expires", label: "Ny udløbsdato", type: "date", hint: "Foreslået: 12 måneder frem. Ret datoen, hvis du har købt en anden periode."},
+    {k: "cost", label: "Pris for fornyelsen (kr.)", type: "money"}], {expires: d.toISOString().slice(0, 10), cost: l.cost || ""},
+    async v => { await kLineSaved(await api("/api/kunder/iptv", {method: "POST", body: JSON.stringify({id, ...v})})); toast("Linjen er fornyet"); }, "Gem ny dato");
+}
+
+// ---------- delte logins
+let KL = [];
+async function loadLogins() { try { KL = await api("/api/kunder/logins"); } catch (e) { return; } renderLogins(); }
+function renderLogins() {
+  $("kLogins").innerHTML = KL.length ? `<div class="kl">${KL.map(l => `<div class="kr"><div class="who"><b>${esc(l.service || "Login")}</b>${l.label ? " · " + esc(l.label) : ""}
+      <div class="small">${esc(l.username)}${l.note ? " · " + esc(l.note) : ""}</div></div>
+      <div class="btns">${l.has_password ? `<button class="b sm" onclick="kShow('login', ${l.id}, this)">Vis kode</button>` : ""}<button class="b sm" onclick="kLoginEdit(${l.id})">Ret</button></div></div>`).join("")}</div>`
+    : '<div class="empty">Ingen delte logins endnu.</div>';
+}
+function kLoginEdit(id) {
+  const l = id ? KL.find(x => x.id === id) : {};
+  kForm(id ? "Ret login" : "Nyt login", [{k: "service", label: "Tjeneste", type: "text", ph: "fx Spotify"}, {k: "label", label: "Navn (valgfrit)", type: "text", ph: "fx Familie 1"},
+    {k: "username", label: "Brugernavn / e-mail", type: "text"}, {k: "password", label: "Kodeord", type: "secret", has: l.has_password, ref: ["login", l.id]},
+    {k: "note", label: "Note", type: "text"}, ...(id ? [{k: "remove", label: "Slet dette login", type: "check"}] : [])], l,
+    async v => { if (v.remove) { if (!confirm("Slet dette login? Det kan ikke fortrydes.")) throw new Error("ikke slettet"); KL = await api("/api/kunder/logins/" + id, {method: "DELETE"}); }
+      else KL = await api("/api/kunder/logins", {method: "POST", body: JSON.stringify({...v, id})}); renderLogins(); });
+}
+
+// ---------- import fra regnearket
+async function kImport(apply) {
+  const rd = async id => { const f = $(id).files[0]; return f ? await f.text() : ""; };
+  const body = {abonnementer: await rd("imp_ab"), iptv: await rd("imp_iptv"), cockpit: await rd("imp_cp"), period: $("imp_period").value.trim() || K.period};
+  if (!body.abonnementer) { toast("Vælg først filen med fanen Abonnementer (Optimeret)", true); return; }
+  try {
+    if (!apply) {
+      IMP = await api("/api/kunder/import/preview", {method: "POST", body: JSON.stringify(body)}); $("impGo").disabled = false;
+      $("impOut").innerHTML = `<div class="card"><h2>Det her bliver importeret</h2>
+        <p style="margin:0 0 8px"><b>${IMP.customers}</b> kunder · <b>${IMP.services}</b> tjenester · <b>${IMP.iptv}</b> IPTV-linjer${IMP.cockpit ? ` · <b>${IMP.cockpit}</b> opkrævninger fra cockpittet (${esc(body.period)})` : ""} · ${kkr(IMP.monthly)} pr. måned i alt · ${IMP.passwords} koder gemmes</p>
+        ${IMP.doubts.length ? `<div class="warn"><b>${IMP.doubts.length} ting, du bør kigge på bagefter</b> – de bliver importeret alligevel, og listen gemmes øverst på Kundeliste:<ul class="kdoubt">${IMP.doubts.map(d => `<li>${esc(d)}</li>`).join("")}</ul></div>` : ""}
+        <div style="overflow-x:auto"><table><thead><tr><th>Kunde</th><th>Tjenester</th><th>Cyklus</th><th class="hs">Metode</th><th class="num">Pr. opkrævning</th></tr></thead><tbody>
+        ${IMP.preview.map(p => `<tr><td><b>${esc(p.name)}</b>${p.accounts > 1 ? ` <span class="small">${p.accounts} Plex-konti</span>` : ""}</td><td>${esc(p.services)}${p.iptv ? ` <span class="small">${p.iptv} linje${p.iptv > 1 ? "r" : ""}</span>` : ""}</td>
+          <td>${esc(p.freq)} · ${esc(p.cycle)}</td><td class="hs">${esc(p.method)}</td><td class="num">${kkr(p.per_charge)}</td></tr>`).join("")}</tbody></table></div></div>`;
+      return;
+    }
+    if (!confirm(`Importér ${IMP ? IMP.customers : ""} kunder til Fangarr?\n\nKunder, der allerede findes med samme navn, bliver opdateret med oplysningerne fra regnearket.`)) return;
+    const r = await api("/api/kunder/import/apply", {method: "POST", body: JSON.stringify(body)});
+    $("impOut").innerHTML = `<div class="card"><h2 style="color:var(--ok)">Importen er færdig</h2><p style="margin:0">${r.created} kunder oprettet · ${r.updated} opdateret${r.marked ? ` · ${r.marked} opkrævninger markeret fra cockpittet` : ""}.</p>
+      <p style="margin:10px 0 0">Næste skridt: tryk <b>Synk fra Tautulli</b> øverst, så Plex-brugerne bliver koblet til kunderne.</p></div>`;
+    $("impGo").disabled = true; ["imp_ab", "imp_iptv", "imp_cp"].forEach(i => $(i).value = ""); await kState(); loadHome();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---------- indstillinger for kunder
+const KS = ["remind_days", "remind_repeat_days", "inactive_days", "plex_price", "message_hour", "sync_hour", "template", "fixed_costs"];
+function renderKSet() { if (K) { KS.forEach(k => $("ks_" + k).value = K.settings[k] ?? ""); if (!$("imp_period").value) $("imp_period").value = K.period; } }
+async function kSaveSettings() {
+  const b = {}; KS.forEach(k => b[k] = $("ks_" + k).value);
+  try { K.settings = await api("/api/kunder/settings", {method: "PUT", body: JSON.stringify(b)}); renderKSet(); toast("Gemt"); } catch (e) { toast(e.message, true); }
+}
+
+// ---------- økonomi
+async function loadEco(year) { try { KE = await api("/api/kunder/economy" + (year ? "?year=" + year : (KE ? "?year=" + KE.year : ""))); } catch (e) { toast(e.message, true); return; } renderEco(); }
+function renderEco() {
+  const M = KE.months, sum = k => M.reduce((a, m) => a + m[k], 0), res = sum("result");
+  $("ecoYear").textContent = KE.year;
+  $("ecoKpis").innerHTML = [["Indtægt i året", kkr(sum("income")), "betalt + ventet"], ["IPTV-linjer", kkr(sum("iptv")), "fornyelser i året"], ["Faste udgifter", kkr(sum("fixed")), KE.fixed.length ? KE.fixed.map(f => f.name).join(", ") : "ingen angivet"],
+    ["Resultat", `<span style="color:${res < 0 ? "var(--bad)" : "var(--ok)"}">${kkr(res)}</span>`, `${KE.customers} aktive kunder · ${kkr(KE.monthly_income)} pr. måned`]]
+    .map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${esc(s)}</div></div>`).join("");
+  $("ecoBody").innerHTML = M.map(m => m.nodata ? `<tr><td style="text-transform:capitalize;color:var(--muted)">${m.label}</td><td colspan="5" class="small">ingen opkrævninger gemt i Fangarr</td></tr>` : `<tr style="${m.state === "now" ? "background:var(--panel2)" : ""}"><td style="text-transform:capitalize">${m.label}${m.state === "future" ? ' <span class="small">skøn</span>' : ""}</td>
+    <td class="num">${m.has_charges ? kkr(m.charged) : m.state === "past" ? "–" : `<span style="color:var(--muted)">${kkr(m.forecast)}</span>`}</td>
+    <td class="num">${m.has_charges ? kkr(m.paid) : "–"}</td><td class="num hs">${m.iptv ? kkr(m.iptv) : "–"}</td><td class="num hs">${m.fixed ? kkr(m.fixed) : "–"}</td>
+    <td class="num"><b style="color:${m.result < 0 ? "var(--bad)" : "inherit"}">${kkr(m.result)}</b></td></tr>`).join("") +
+    `<tr><td><b>I alt</b></td><td class="num"><b>${kkr(M.reduce((a, m) => a + (m.has_charges ? m.charged : m.state === "past" ? 0 : m.forecast), 0))}</b></td><td class="num"><b>${kkr(sum("paid"))}</b></td>
+     <td class="num hs"><b>${kkr(sum("iptv"))}</b></td><td class="num hs"><b>${kkr(sum("fixed"))}</b></td><td class="num"><b>${kkr(res)}</b></td></tr>`;
+  $("ecoNote").innerHTML = "IPTV-udgiften er prisen på de linjer, der udløber i måneden. Faste udgifter retter du under Kunder › Indstillinger.";
+}
 
 async function init() {
   await load();

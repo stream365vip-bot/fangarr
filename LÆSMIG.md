@@ -91,6 +91,19 @@ Det, der gemmes på disken, er kun dine egne afgørelser og sager. Historikken o
 - **Oversættelser, Indstillinger og Opsætning** er delt i underfaner. *Test en titel*, *Prøv en regel* og *Filtre i autobrr* ligger under Opsætning.
 - **Versionsnummer** nederst i menuen. Ligger der en nyere version på GitHub, står det der og på Overblik (tjekkes hver 3. time).
 
+## Kunder og betalinger (1.16.0)
+Fire nye sider under **Kunder** i menuen. Koden ligger i `app/kunder.py`, data i de nye tabeller `k_*` i `data/fangarr.db`.
+
+- **Opkrævning:** månedens liste laves af sig selv ud fra kundernes cyklus (månedlig, kvartal 1/4/7/10 · 2/5/8/11 · 3/6/9/12, halvårlig, årlig). Beløb = kundens tjenester pr. måned × antal måneder + fradrag/tillæg. Knapper: Kopiér besked, Anmodet, Betalt, Ret (beløb, note, spring over, regn om).
+- **Kunder:** kundeliste med søgning, kundekort (betaling, tjenester med pris, fradrag og tillæg, IPTV-linjer, opkrævninger), Delte logins, Import fra regneark og Indstillinger. Én kunde kan betale for flere konti. "Flet ind i anden kunde" flytter en konto over til den, der betaler.
+- **IPTV-linjer:** alle linjer med udløbsdato, pris og knappen Fornyet.
+- **Økonomi:** betalt/ventet indtægt pr. måned mod IPTV-fornyelser og faste udgifter.
+- **Synk fra Tautulli:** henter Plex-brugerne (`get_users` + `get_users_table`) med knappen og hver nat (kl. 3 som standard – først efter første manuelle synk). Brugere kobles til en kunde via brugernavn, e-mail eller navn (Tautullis "friendly name"). En ukendt Plex-bruger bliver oprettet som kunde uden cyklus og står under "Mangler opsætning". Kræver `TAUTULLI_URL`/`TAUTULLI_APIKEY` (samme som Kontodeling).
+- **Beskeder på Telegram (Stream365 Drift):** den 1. i måneden (antal kunder og beløb, antal IPTV-linjer der skal fornyes), og når nogen har stået som Anmodet i mere end 7 dage (derefter højst én samlet påmindelse om ugen, og "alle har betalt"). Fangarr skriver aldrig til kunderne og spærrer ingen.
+- **Kodeord og IPTV-koder** gemmes i databasen, fordi de skal kunne slås op samme sted. De sendes kun til browseren, når der trykkes **Vis** (`/api/kunder/secret/...`), og står aldrig i lister, log, Telegram, CSV-eksporten eller Fangarrs JSON-eksport. Fangarr skal derfor blive bag Authelia, og `data/` må aldrig i git.
+- **Import fra regneark:** tre CSV-filer (fanerne Abonnementer, IPTV og Måneds-Cockpit) vælges i browseren. "Vis, hvad der sker" gemmer intet. Importen kan køres igen – kunder med samme navn opdateres. Fra IPTV-fanen læses kun linjerne ned til rækken TOTAL.
+- Kundedata er **ikke** med i Fangarrs eksport/import af regler. De ligger i `data/fangarr.db`, som kommer med i serverens backup af `/opt`. Kundelisten uden koder kan hentes som CSV under Kunder › Indstillinger.
+
 ## Filer
 - `app/main.py` – server (FastAPI) · `app/static/index.html` – interface · `app/VERSION`
 - `fangarr.env.eksempel` – skabelon til `fangarr.env` (API-nøgler). `chmod 600`. **Kommer aldrig i git.**
