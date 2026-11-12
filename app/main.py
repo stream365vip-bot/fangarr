@@ -23,6 +23,8 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import kunder
+
 DATA_DIR = os.environ.get("DATA_DIR", "/config")
 DB_PATH = os.path.join(DATA_DIR, "fangarr.db")
 DISK_PATH = os.environ.get("DISK_PATH", "/data")
@@ -1292,6 +1294,7 @@ def background_loop():
                 last_ss_check = time.time()
                 check_seerr_straks()
             refresh_premieres_bg()
+            kunder.tick()
         except Exception as e:  # baggrundsjobbet må aldrig stoppe appen
             log.warning("Baggrundsjob fejlede: %s", e)
         time.sleep(LOOP_SECONDS)
@@ -1395,11 +1398,13 @@ def filter_fields(media, opts):
 # ---------------------------------------------------------------- web
 
 app = FastAPI(title="Fangarr", docs_url=None, redoc_url=None)
+app.include_router(kunder.router)   # Kunder og betalinger (1.16.0) – se app/kunder.py
 
 
 @app.on_event("startup")
 def startup():
     init_db()
+    kunder.init()
     threading.Thread(target=background_loop, daemon=True).start()
     log.info("Fangarr startet. Instanser: %s", ", ".join(INSTANCES) or "ingen")
 
@@ -2913,6 +2918,10 @@ def tautulli(cmd, **params):
     return resp.get("data")
 
 
+kunder.setup(db=db, telegram=telegram, tautulli=tautulli, tautulli_enabled=tautulli_enabled, now=now,
+             kv_get=kv_get, kv_set=kv_set, log=log)
+
+
 def device_kind(platform, product, player):
     """'tv', 'mobil' eller 'ukendt'. Telefoner, tablets og computere er 'mobil' (kontoreglerne)."""
     p, pr, pl = (platform or "").lower().strip(), (product or "").lower(), (player or "").lower()
@@ -4110,6 +4119,14 @@ def _translator_brief():
     return out
 
 
+def _kunder_brief():
+    try:
+        return kunder.brief()
+    except Exception as e:
+        log.warning("Kunder-overblik fejlede: %s", e)
+        return {"enabled": False}
+
+
 @app.get("/api/overview")
 def overview():
     """Forsiden: det, der kræver handling, dagens tal og det seneste, der er sendt til Sonarr/Radarr."""
@@ -4135,7 +4152,7 @@ def overview():
         "today": {"series": added_today("series"), "movie": added_today("movie")},
         "waiting": waiting, "suggestions": sugg, "errors_24h": errors, "rescued_24h": rescued,
         "translator": tr, "sharing": kv_get("sharing_summary") if tautulli_enabled() else None,
-        "premieres_new": prem_new, "recent": recent,
+        "premieres_new": prem_new, "recent": recent, "kunder": _kunder_brief(),
     }
 
 
