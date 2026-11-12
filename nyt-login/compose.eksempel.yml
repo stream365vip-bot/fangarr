@@ -1,0 +1,47 @@
+---
+# Opsætning til /opt/nyt/docker-compose.yml på feeder (lavet ud fra Fangarrs, men UDEN Authelia – kunderne skal kunne nå login-siden).
+# Kopiér: cp /opt/fangarr/nyt-login/compose.eksempel.yml /opt/nyt/docker-compose.yml
+services:
+  nyt:
+    container_name: "nyt"
+    environment:
+      TZ: "Europe/Copenhagen"
+      PUBLIC_URL: "https://nyt.stream365.vip"
+      PLEX_URL: "https://plex.stream365.vip"
+      SESSION_DAYS: "90"
+    hostname: "nyt"
+    build: /opt/fangarr/nyt-login
+    image: "nyt:local"
+    labels:
+      autoheal: "true"
+      autoheal.stop.timeout: "10"
+      com.github.saltbox.saltbox_controller: "true"
+      com.github.saltbox.saltbox_managed: "true"
+      traefik.enable: "true"
+      traefik.http.routers.nyt-http.entrypoints: "web"
+      traefik.http.routers.nyt-http.middlewares: "globalHeaders@file,redirect-to-https@docker,robotHeaders@file"
+      traefik.http.routers.nyt-http.priority: "20"
+      traefik.http.routers.nyt-http.rule: "Host(`nyt.stream365.vip`)"
+      traefik.http.routers.nyt-http.service: "nyt-http"
+      traefik.http.routers.nyt.entrypoints: "websecure"
+      traefik.http.routers.nyt.middlewares: "globalHeaders@file,secureHeaders@file,robotHeaders@file"
+      traefik.http.routers.nyt.priority: "20"
+      traefik.http.routers.nyt.rule: "Host(`nyt.stream365.vip`)"
+      traefik.http.routers.nyt.service: "nyt"
+      traefik.http.routers.nyt.tls.certresolver: "cfdns"
+      traefik.http.routers.nyt.tls.domains[0].main: "stream365.vip"
+      traefik.http.routers.nyt.tls.domains[0].sans: "*.stream365.vip"
+      traefik.http.routers.nyt.tls.options: "securetls@file"
+      traefik.http.services.nyt-http.loadbalancer.server.port: "8080"
+      traefik.http.services.nyt.loadbalancer.server.port: "8080"
+    networks:
+      - "saltbox"
+    restart: "unless-stopped"
+    volumes:
+      - "/opt/nyt/data:/config"
+      - "/opt/nyt/site:/site:ro"
+      - "/etc/localtime:/etc/localtime:ro"
+
+networks:
+  saltbox:
+    external: true
