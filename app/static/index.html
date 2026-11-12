@@ -2,159 +2,308 @@
 <html lang="da">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B0C0E">
+<link rel="preload" href="/static/fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin>
 <title>Fangarr</title>
 <style>
+  @font-face { font-family: "Outfit"; src: url("/static/fonts/outfit.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+  @font-face { font-family: "DM Sans"; src: url("/static/fonts/dm-sans.woff2") format("woff2"); font-weight: 100 1000; font-display: swap; }
   :root {
-    --bg: #15171c; --panel: #1e2128; --panel2: #262a33; --line: #343945;
-    --text: #e8eaef; --muted: #9aa1ae; --accent: #e8913a; --accent-ink: #1a1206;
-    --ok: #4cb782; --warn: #e2b340; --bad: #e0605a; --info: #6aa5e8;
+    --bg: #0B0C0E; --panel: #121418; --panel2: #1A1D23; --line: #262A32; --line2: #1D2026;
+    --text: #ECEEF1; --muted: #9BA3AE; --accent: #58D9AE; --accent-ink: #06231A; --accent-bg: #17302A; --accent-line: #1F4A3B;
+    --ok: #58D9AE; --warn: #E8B84A; --bad: #F27D77; --info: #8AB8F2;
+    --warn-bg: #3A2F12; --warn-line: #5A4A1E; --bad-bg: #3A1C1B; --bad-line: #5A2A28; --info-line: #2A4566;
+    --head: "Outfit", system-ui, sans-serif; --side: 244px;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   body { margin: 0; background: var(--bg); color: var(--text);
-         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
-           padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
-  header h1 { font-size: 19px; margin: 0; letter-spacing: .2px; }
-  header h1 span { color: var(--accent); }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-  .chip { padding: 4px 10px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+         font: 15px/1.5 "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--accent); }
+  button { font: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  ::selection { background: var(--accent-bg); }
+
+  /* ---------- ramme: venstremenu + indhold */
+  .app { display: flex; min-height: 100vh; }
+  #side { width: var(--side); flex: none; background: var(--panel); border-right: 1px solid var(--line);
+          position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 18px 12px 14px; display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 2px 10px 16px; }
+  .brand i { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center;
+             font: 600 17px var(--head); font-style: normal; }
+  .brand b { font: 600 19px var(--head); letter-spacing: .2px; }
+  #side .grp { padding: 16px 12px 6px; font-size: 11.5px; letter-spacing: .9px; text-transform: uppercase; color: var(--muted); }
+  #side button.nv { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 0 12px; border: 0; border-radius: 9px;
+                    background: transparent; color: #D5D9DF; text-align: left; font-size: 14.5px; font-weight: 500; cursor: pointer; }
+  #side button.nv:hover { background: var(--panel2); }
+  #side button.nv.on { background: var(--accent-bg); color: var(--accent); }
+  #side button.nv svg, .bbar svg { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  #side button.nv span.t { flex: 1; }
+  .bdg { min-width: 22px; padding: 1px 7px; border-radius: 999px; font-size: 12.5px; font-weight: 600; text-align: center;
+         background: var(--warn-bg); color: var(--warn); }
+  .bdg.bad { background: var(--bad-bg); color: var(--bad); }
+  .bdg:empty { display: none; }
+  .sidefoot { margin-top: auto; padding: 16px 12px 2px; font-size: 12.5px; color: var(--muted); }
+  .sidefoot .upd { display: block; margin-top: 4px; color: var(--warn); }
+  .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .top { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 14px 28px; border-bottom: 1px solid var(--line);
+         background: rgba(11,12,14,.92); backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 5; }
+  .top .menu { display: none; }
+  .search { flex: 1 1 240px; max-width: 420px; position: relative; }
+  .search input[type=search] { padding-left: 38px; background: var(--panel); }
+  .search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); width: 17px; height: 17px; fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linecap: round; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+  .chip { padding: 5px 11px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; color: var(--muted); white-space: nowrap; }
   .chip b { color: var(--text); font-weight: 600; }
-  .chip.dry { background: #3a2f12; border-color: #6b5420; color: var(--warn); }
-  .chip.live { background: #13321f; border-color: #255c3a; color: var(--ok); }
-  nav { display: flex; gap: 4px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
-  nav button { background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted);
-               padding: 12px 14px; font: inherit; cursor: pointer; white-space: nowrap; }
-  nav button.on { color: var(--text); border-bottom-color: var(--accent); }
-  main { max-width: 1050px; margin: 0 auto; padding: 22px 16px 60px; }
+  .chip.dry { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn); }
+  .chip.live { background: #0F231C; border-color: var(--accent-line); color: var(--ok); }
+  main { width: 100%; max-width: 1120px; margin: 0 auto; padding: 26px 28px 80px; }
   section { display: none; } section.on { display: block; }
-  h2 { font-size: 17px; margin: 0 0 12px; }
-  p.hint { color: var(--muted); margin: 4px 0 16px; font-size: 14px; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
-  .rule { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start; }
-  .rule.off { opacity: .55; }
-  .rule h3 { margin: 0 0 6px; font-size: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .tag { font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--panel2); color: var(--muted); border: 1px solid var(--line); }
-  .tag.s { color: var(--info); } .tag.m { color: var(--accent); }
-  .facts { color: var(--muted); font-size: 13.5px; }
-  .facts b { color: var(--text); font-weight: 500; }
+  .bbar { display: none; }
+
+  /* ---------- overskrifter og tekst */
+  h2 { font: 600 18px var(--head); margin: 0 0 12px; }
+  section > h2:first-child, section > .row:first-child h2, section > .ph h2 { font-size: 28px; line-height: 1.2; margin-bottom: 6px; }
+  p.hint { color: var(--muted); margin: 4px 0 16px; font-size: 14.5px; max-width: 760px; }
+  p.hint b, .small b { color: var(--text); font-weight: 600; }
+  .small { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  code { background: var(--panel2); padding: 1px 5px; border-radius: 5px; font-size: 12.5px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+
+  /* ---------- kort, knapper, felter */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin-bottom: 12px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
   .btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-  button.b { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
-             padding: 7px 12px; font: inherit; font-size: 14px; cursor: pointer; }
-  button.b:hover { border-color: #4a5160; }
-  a.b { display: inline-block; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; font-size: 14px; }
+  button.b, a.b { display: inline-flex; align-items: center; justify-content: center; min-height: 38px; background: var(--panel2); color: var(--text);
+                  border: 1px solid var(--line); border-radius: 9px; padding: 0 14px; font-size: 14px; cursor: pointer; text-decoration: none; white-space: nowrap; }
+  button.b:hover, a.b:hover { border-color: #3A404B; }
   button.b.pri { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button.b.pri:hover { background: #6FE2BC; }
   button.b.danger { color: var(--bad); }
-  button.b:disabled { opacity: .5; cursor: default; }
+  button.b:disabled { opacity: .45; cursor: default; }
+  button.b.sm { min-height: 30px; padding: 0 10px; font-size: 13px; }
   label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
-  input[type=text], input[type=number], select, textarea {
-    width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
-    padding: 8px 10px; font: inherit; }
-  input:focus, select:focus { outline: 2px solid #8a5a26; border-color: var(--accent); }
+  input[type=text], input[type=number], input[type=date], input[type=search], select, textarea {
+    width: 100%; min-height: 38px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 9px;
+    padding: 7px 11px; font: inherit; font-size: 14.5px; }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-line); border-color: var(--accent); }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
   .field { margin-bottom: 4px; }
-  .small { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .check { display: flex; gap: 9px; align-items: center; color: var(--text); font-size: 14.5px; }
+  .check input, input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
   .pick { display: flex; flex-wrap: wrap; gap: 6px; }
-  .pick label { margin: 0; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+  .pick label { margin: 0; display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px;
                 border: 1px solid var(--line); background: var(--panel2); color: var(--text); cursor: pointer; font-size: 13.5px; }
   .pick input { display: none; }
-  .pick label.on { background: #3b2a14; border-color: var(--accent); color: #ffd7ae; }
-  .pick.no label.on { background: #3a1716; border-color: var(--bad); color: #ffc1bd; }
-  fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 0 0 14px; }
+  .pick label.on { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+  .pick.no label.on { background: var(--bad-bg); border-color: var(--bad); color: var(--bad); }
+  fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 0 0 14px; }
   legend { padding: 0 6px; color: var(--text); font-weight: 600; font-size: 14px; }
-  .check { display: flex; gap: 8px; align-items: center; color: var(--text); font-size: 14.5px; }
-  .check input { width: 18px; height: 18px; accent-color: var(--accent); }
   dialog { width: min(860px, 96vw); max-height: 92vh; background: var(--panel); color: var(--text);
-           border: 1px solid var(--line); border-radius: 12px; padding: 0; }
-  dialog::backdrop { background: rgba(0,0,0,.6); }
+           border: 1px solid var(--line); border-radius: 16px; padding: 0; }
+  dialog::backdrop { background: rgba(0,0,0,.65); }
   .dlg-head, .dlg-foot { padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .dlg-head b { font: 600 18px var(--head); }
   .dlg-foot { border-top: 1px solid var(--line); border-bottom: 0; position: sticky; bottom: 0; background: var(--panel); }
   .dlg-body { padding: 18px; overflow-y: auto; max-height: calc(92vh - 130px); }
-  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-  th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background: var(--panel); }
-  .d { font-weight: 600; white-space: nowrap; }
+  .warn { background: var(--warn-bg); border: 1px solid var(--warn-line); color: #F3D48A; border-radius: 12px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; }
+  #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line);
+           padding: 10px 16px; border-radius: 12px; display: none; z-index: 30; max-width: 90vw; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+  .empty { text-align: center; color: var(--muted); padding: 34px 12px; }
+  pre { background: var(--bg); border: 1px solid var(--line); border-radius: 9px; padding: 12px; overflow-x: auto; font-size: 13px; }
+
+  /* ---------- tabeller */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line2); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 12.5px; border-bottom-color: var(--line); white-space: nowrap; }
+  tr:last-child > td { border-bottom: 0; }
+  td .small { overflow-wrap: anywhere; }
+  th.sort { cursor: pointer; user-select: none; } th.sort:hover { color: var(--text); }
+  th.sort.on { color: var(--accent); }
+  .num { text-align: right; white-space: nowrap; }
+  .d, .st, .lv { font-weight: 600; white-space: nowrap; }
   .d-tilføjet { color: var(--ok); } .d-ville { color: var(--warn); } .d-fejl { color: var(--bad); }
   .d-afvist, .d-findes { color: var(--muted); } .d-loft, .d-plads { color: var(--warn); }
-  .result { border-left: 4px solid var(--line); }
-  .result.good { border-left-color: var(--ok); } .result.meh { border-left-color: var(--warn); } .result.bad { border-left-color: var(--bad); }
-  ul.checks { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13.5px; }
-  pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; font-size: 13px; }
-  .warn { background: #3a2f12; border: 1px solid #6b5420; color: #f3d48a; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px; }
-  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line);
-           padding: 10px 16px; border-radius: 10px; display: none; z-index: 20; max-width: 90vw; }
-  .empty { text-align: center; color: var(--muted); padding: 30px 10px; }
-  .bar { height: 6px; background: var(--panel2); border-radius: 4px; overflow: hidden; margin-top: 8px; }
-  .bar i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .3s; }
-  .num { text-align: right; white-space: nowrap; }
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 12px; }
-  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-  .kpi .v { font-size: 22px; font-weight: 650; margin-top: 2px; }
-  .kpi .l { font-size: 12.5px; color: var(--muted); }
-  .money { height: 12px; background: var(--panel2); border-radius: 6px; overflow: hidden; position: relative; margin: 8px 0 4px; }
-  .money i { position: absolute; top: 0; bottom: 0; left: 0; background: var(--ok); }
-  .money i.fc { background: rgba(76,183,130,.35); }
-  .money.over i { background: var(--bad); } .money.over i.fc { background: rgba(224,96,90,.35); }
-  .st { font-weight: 600; white-space: nowrap; }
   .st-faerdig { color: var(--ok); } .st-fejlet, .st-mangler_engelsk { color: var(--bad); }
   .st-forsoeg_igen, .st-venter_paa_dansk { color: var(--warn); } .st-ikke_muligt { color: var(--muted); }
+  .lv-rød { color: var(--bad); } .lv-gul { color: var(--warn); } .lv-grøn { color: var(--ok); }
+
+  /* ---------- mærker og piller */
+  .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 6px; background: var(--panel2); color: var(--muted); border: 1px solid var(--line); }
+  .tag.s { color: var(--info); } .tag.m { color: var(--warn); }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-size: 12.5px; white-space: nowrap; font-weight: 500; }
+  .pill.ok { color: var(--ok); border-color: var(--accent-line); } .pill.warn { color: var(--warn); border-color: var(--warn-line); }
+  .pill.bad { color: var(--bad); border-color: var(--bad-line); } .pill.info { color: var(--info); border-color: var(--info-line); }
+  .dotc { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); margin-right: 7px; }
+  .dotc.r { background: var(--bad); } .dotc.y { background: var(--warn); } .dotc.g { background: var(--ok); } .dotc.b { background: var(--info); }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .pills button { min-height: 38px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: #D5D9DF;
+                  font-size: 14px; font-weight: 500; cursor: pointer; }
+  .pills button.on { background: var(--accent-bg); border-color: var(--accent-line); color: var(--accent); }
+  .pills button span { opacity: .75; margin-left: 4px; }
+
+  /* ---------- underfaner */
+  .subs { display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--line); margin: 14px 0 18px; }
+  .subs button { min-height: 44px; padding: 0 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted);
+                 font-size: 14.5px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+  .subs button:hover { color: var(--text); }
+  .subs button.on { color: var(--text); border-bottom-color: var(--accent); }
+  [data-p] { display: none; } [data-p].on { display: block; }
+  [data-p] > h2:first-child, [data-p] > .row:first-child h2 { margin-top: 0 !important; }
+
+  /* ---------- regler */
+  .rule { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start; }
+  .rule.off { opacity: .55; }
+  .rule h3 { margin: 0 0 6px; font-size: 15.5px; font-weight: 600; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .facts { color: var(--muted); font-size: 13.5px; }
+  .facts b { color: var(--text); font-weight: 500; }
+  .result { border-left: 0; } .result h2 { font-size: 18px !important; }
+  .result.good h2 { color: var(--ok); } .result.meh h2 { color: var(--warn); } .result.bad, .result.bad h2 { color: var(--bad); }
+  ul.checks { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13.5px; }
+
+  /* ---------- forside */
+  .todo { padding: 0; overflow: hidden; }
+  .todo .th { padding: 16px 20px 12px; display: flex; align-items: baseline; gap: 10px; }
+  .todo .th h2 { margin: 0; }
+  .todo button.ti { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 12px 20px; border: 0; border-top: 1px solid var(--line2);
+                    background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+  .todo button.ti:hover { background: var(--panel2); }
+  .todo .n { width: 40px; height: 40px; flex: none; border-radius: 10px; display: grid; place-items: center; font: 600 18px var(--head);
+             background: var(--warn-bg); color: var(--warn); }
+  .todo .n.bad { background: var(--bad-bg); color: var(--bad); }
+  .todo .tx { flex: 1; min-width: 0; } .todo .tx b { display: block; font-weight: 600; } .todo .tx span { display: block; color: var(--muted); font-size: 13.5px; }
+  .todo .go { color: var(--accent); font-size: 14px; font-weight: 500; white-space: nowrap; }
+  .todo .none { padding: 18px 20px 20px; border-top: 1px solid var(--line2); color: var(--muted); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 14px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; }
+  .kpi .v { font: 600 26px var(--head); margin-top: 2px; }
+  .kpi .l { font-size: 13px; color: var(--muted); }
+  .kpi .s { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .conn { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--line); font-size: 13.5px; }
+  .conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); } .conn.bad i { background: var(--bad); }
+  .conn.bad { border-color: var(--bad-line); } .conn span { color: var(--muted); } .conn.bad span { color: var(--bad); }
+  .tp { padding: 0; overflow-x: auto; }
+  .tph { padding: 16px 20px 8px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+  .tph h2 { margin: 0; } .tph p { margin: 2px 0 0; color: var(--muted); font-size: 13.5px; }
+
+  /* ---------- diagrammer */
+  .bar { height: 6px; background: var(--panel2); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+  .bar i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+  .money { height: 12px; background: var(--panel2); border-radius: 6px; overflow: hidden; position: relative; margin: 8px 0 4px; }
+  .money i { position: absolute; top: 0; bottom: 0; left: 0; background: var(--ok); }
+  .money i.fc { background: rgba(88,217,174,.35); }
+  .money.over i { background: var(--bad); } .money.over i.fc { background: rgba(242,125,119,.35); }
   .cols { display: flex; align-items: flex-end; gap: 3px; height: 120px; padding-top: 6px; }
   .cols div { flex: 1; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 1px; position: relative; }
-  .cols div:hover { background: #f1a95e; }
+  .cols div:hover { background: #8BE7C8; }
   .axis { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); margin-top: 4px; }
   .stack { display: flex; height: 14px; border-radius: 6px; overflow: hidden; background: var(--panel2); margin: 6px 0; }
   .stack i { display: block; height: 100%; }
   .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
-  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-  .lv { font-weight: 600; white-space: nowrap; }
-  .lv-rød { color: var(--bad); } .lv-gul { color: var(--warn); } .lv-grøn { color: var(--ok); }
+
+  /* ---------- kontodeling */
   tr.shu { cursor: pointer; } tr.shu:hover td { background: var(--panel2); }
-  tr.shd > td { background: var(--bg); padding: 12px; }
+  tr.shd > td { background: var(--bg); padding: 14px; }
   .shd h4 { margin: 12px 0 6px; font-size: 13.5px; color: var(--muted); font-weight: 600; }
   .shd h4:first-child { margin-top: 0; }
-  .shc { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; background: var(--panel); }
+  .shc { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; background: var(--panel); }
   .shc .tag { font-size: 11.5px; padding: 1px 6px; }
-  @media (max-width: 620px) { .hs { display: none; } #share th, #share td { padding: 8px 6px; } }
   .shc.old { opacity: .7; }
   .tag.st-kunde { color: var(--ok); } .tag.st-godkendt, .tag.st-set-hos-kunden { color: var(--info); }
-  .tag.st-uafklaret { color: var(--warn); } .tag.st-tidligere { color: #e8913a; } .tag.st-aldrig, .tag.st-ikke { color: var(--bad); }
-  .shbox { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: var(--panel); }
-  .shbox summary, .shhelp summary { cursor: pointer; } .shbox ol { margin: 8px 0; padding-left: 20px; } .shbox code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  .tag.st-uafklaret { color: var(--warn); } .tag.st-tidligere { color: #E8A06A; } .tag.st-aldrig, .tag.st-ikke { color: var(--bad); }
+  .shbox { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--panel); }
+  .shbox summary, .shhelp summary { cursor: pointer; } .shbox ol { margin: 8px 0; padding-left: 20px; }
   .shhelp h4 { margin: 14px 0 4px; font-size: 14px; } .shhelp ul { margin: 0; padding-left: 20px; color: var(--muted); font-size: 13.5px; } .shhelp li { margin: 3px 0; } .shhelp b { color: var(--text); }
-  button.b.sm { padding: 4px 10px; font-size: 13px; }
-  h3.shg { font-size: 15.5px; margin: 20px 0 4px; }
-  .shp { border-left: 4px solid var(--line); } .shp.st-b-kunde { border-left-color: var(--ok); } .shp.st-b-aldrig, .shp.st-b-ikke { border-left-color: var(--bad); }
-  .shp.st-b-uafklaret { border-left-color: var(--warn); } .shp.st-b-tidligere { border-left-color: #e8913a; } .shp.st-b-godkendt { border-left-color: var(--info); }
-  .shrule { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-top: 8px; background: var(--bg); }
+  h3.shg { font: 600 16px var(--head); margin: 22px 0 4px; display: flex; align-items: center; }
+  .shp { border: 1px solid var(--line); } .shp.st-b-kunde { border-color: var(--accent-line); } .shp.st-b-aldrig, .shp.st-b-ikke { border-color: var(--bad-line); }
+  .shp.st-b-uafklaret { border-color: var(--warn-line); } .shp.st-b-tidligere { border-color: #5A3F24; } .shp.st-b-godkendt { border-color: var(--info-line); }
+  .shrule { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 8px; background: var(--bg); }
   .shrule.main { border-color: var(--accent); } .shrule ol { margin: 8px 0; padding-left: 20px; } .shrule li { margin: 3px 0; }
   .shrule code, .shbox code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; word-break: break-all; }
   .shsim { margin: 6px 0; font-size: 13.5px; } .shsim.ok b { color: var(--ok); } .shsim.bad b:last-of-type { color: var(--bad); }
-  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-  .shf { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
-  .shf .field { margin: 0; } .shf input[type=number] { width: 90px; } .shf input[type=date] {
-    background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font: inherit; }
-  @media (max-width: 620px) { .rule { grid-template-columns: 1fr; } .btns { justify-content: flex-start; } }
+  .shf { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .shf .field { margin: 0; } .shf input[type=number] { width: 90px; }
+
+  /* ---------- telefon og smal skærm */
+  @media (max-width: 880px) {
+    #side { position: fixed; left: 0; top: 0; bottom: 0; z-index: 40; transform: translateX(-102%); transition: transform .18s ease; width: min(84vw, 300px); height: auto; }
+    body.nav-open #side { transform: none; box-shadow: 0 0 0 100vmax rgba(0,0,0,.6); }
+    .top { padding: 10px 14px; }
+    .top .menu { display: inline-flex; width: 42px; min-height: 42px; padding: 0; }
+    .top .menu svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+    .chips { margin-left: 0; width: 100%; flex-wrap: nowrap; overflow-x: auto; }
+    main { padding: 18px 14px 110px; }
+    section > h2:first-child, section > .row:first-child h2, section > .ph h2 { font-size: 23px; }
+    th, td { padding: 10px 10px; }
+    .hs { display: none; }
+    .rule { grid-template-columns: 1fr; } .btns { justify-content: flex-start; }
+    .bbar { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+            background: var(--panel); border-top: 1px solid var(--line); padding: 4px 4px calc(6px + env(safe-area-inset-bottom)); }
+    .bbar button { position: relative; min-height: 54px; border: 0; background: transparent; color: var(--muted); font-size: 11.5px; font-weight: 500;
+                   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer; }
+    .bbar button.on { color: var(--accent); }
+    .bbar svg { width: 21px; height: 21px; }
+    .bbar .bdg { position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; padding: 0 5px; font-size: 11.5px; }
+    #toast { bottom: 84px; }
+    .todo .go span { display: none; } .todo button.ti { padding: 12px 16px; gap: 12px; } .todo .th { padding: 14px 16px 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
-<header>
-  <h1>Fang<span>arr</span></h1>
-  <div class="chips" id="status"></div>
-</header>
-<nav>
-  <button data-tab="rules" class="on">Regler</button>
-  <button data-tab="test">Test en titel</button>
-  <button data-tab="wait">Venteliste</button>
-  <button data-tab="prem">Premierer</button>
-  <button data-tab="stats">Statistik</button>
-  <button data-tab="share">Kontodeling</button>
-  <button data-tab="tr">Oversættelser</button>
-  <button data-tab="log">Log</button>
-  <button data-tab="autobrr">autobrr</button>
-  <button data-tab="settings">Indstillinger</button>
-</nav>
+<div class="app">
+  <aside id="side" aria-label="Hovedmenu">
+    <div class="brand"><i>F</i><b>Fangarr</b></div>
+    <button class="nv" data-tab="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="t">Overblik</span></button>
+    <div class="grp">Indhold</div>
+    <button class="nv" data-tab="wait"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg><span class="t">Venteliste</span><span class="bdg" data-bdg="wait"></span></button>
+    <button class="nv" data-tab="log"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg><span class="t">Log</span></button>
+    <button class="nv" data-tab="rules"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M16 4v4M10 10v4M18 16v4"/></svg><span class="t">Regler</span></button>
+    <button class="nv" data-tab="prem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v14H5zM5 10h14M9 4v4M15 4v4"/></svg><span class="t">Premierer</span><span class="bdg" data-bdg="prem"></span></button>
+    <button class="nv" data-tab="tr"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg><span class="t">Oversættelser</span><span class="bdg" data-bdg="tr"></span></button>
+    <div class="grp">Kunder</div>
+    <button class="nv" data-tab="share"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a3 3 0 0 0 0-6M21 20a6 6 0 0 0-3-5"/></svg><span class="t">Kontodeling</span><span class="bdg" data-bdg="share"></span></button>
+    <div class="grp">Indsigt</div>
+    <button class="nv" data-tab="stats"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10M12 20V4M19 20v-7"/></svg><span class="t">Statistik</span></button>
+    <div class="grp">System</div>
+    <button class="nv" data-tab="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg><span class="t">Indstillinger</span></button>
+    <button class="nv" data-tab="setup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 6l4 4-9 9H5v-4z"/></svg><span class="t">Opsætning</span></button>
+    <div class="sidefoot" id="verBox"></div>
+  </aside>
+  <div class="content">
+    <div class="top"><button class="b menu" data-menu aria-label="Åbn menuen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <div class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-4-4"/></svg><input type="search" id="q" placeholder="Søg efter en titel …" aria-label="Søg efter en titel" autocomplete="off"></div>
+      <div class="chips" id="status"></div></div>
 <main>
-  <section id="rules" class="on">
+  <section id="home" class="on">
+    <h2>Overblik</h2>
+    <p class="hint">Det, du skal gøre noget ved, og hvad Fangarr har lavet i dag. Siden opdateres hvert minut.</p>
+    <div id="homeWarn"></div>
+    <div class="card todo" id="homeTodo"><div class="th"><h2>Kræver din handling</h2></div><div class="none">Henter …</div></div>
+    <div class="kpis" id="homeKpis"></div>
+    <div class="card tp">
+      <div class="tph"><div><h2>Senest sendt til Sonarr og Radarr</h2>
+        <p>Det seneste, Fangarr har tilføjet. <b>Hentet?</b> viser, om titlen er kommet hjem. Tryk på titlen for at åbne den i Sonarr eller Radarr.</p></div>
+        <button class="b" onclick="go('log')">Se hele loggen</button></div>
+      <table><thead><tr><th>Tilføjet</th><th>Titel</th><th>Sendt til</th><th>Regel</th><th>Hentet?</th></tr></thead>
+        <tbody id="homeRecent"><tr><td colspan="5" class="empty">Henter …</td></tr></tbody></table>
+    </div>
+    <div class="card" id="homeConnCard">
+      <div class="row" style="justify-content:space-between"><div><h2 style="margin:0">Forbindelser</h2>
+        <div class="small">Svarer de apps, Fangarr taler med? Kun dem, der er sat op i fangarr.env, vises.</div></div>
+        <button class="b sm" onclick="loadConn(1)">Tjek igen</button></div>
+      <div class="row" id="homeConn" style="margin:0"><span class="small">Tjekker …</span></div>
+    </div>
+  </section>
+
+  <section id="search">
+    <h2>Søgning</h2>
+    <p class="hint" id="searchInfo"></p>
+    <div id="searchOut"></div>
+  </section>
+  <section id="rules">
     <div class="row" style="justify-content:space-between">
       <div>
         <h2>Regler</h2>
@@ -165,36 +314,7 @@
     <div id="ruleList"></div>
   </section>
 
-  <section id="test">
-    <h2>Test en titel</h2>
-    <p class="hint">Se hvad der ville ske med en udgivelse – uden at noget bliver tilføjet eller logget.</p>
-    <div class="card">
-      <div class="grid">
-        <div class="field"><label>Type</label>
-          <select id="t_media"><option value="series">Serie</option><option value="movie">Film</option></select></div>
-        <div class="field"><label>Titel</label><input type="text" id="t_title" placeholder="f.eks. Borgen"></div>
-        <div class="field"><label>År (kan være tomt)</label><input type="text" inputmode="numeric" id="t_year" placeholder="f.eks. 2022"></div>
-      </div>
-      <div class="field" style="margin-top:12px"><label>Udgivelsesnavn</label>
-        <input type="text" id="t_release" placeholder="f.eks. Borgen.S04E01.NORDiC.1080p.WEB.h264-GRP"></div>
-      <div class="row" style="margin:14px 0 0"><button class="b pri" id="testBtn" onclick="runTest()">Test</button></div>
-    </div>
-    <div id="testResult"></div>
 
-    <h2 style="margin-top:28px">Prøv en regel på historikken</h2>
-    <p class="hint">Kør en regel på de udgivelser, autobrr har set de seneste dage, og se hvad den ville have fanget. Intet bliver tilføjet.
-      autobrr gemmer kun udgivelser, der har passet et af dine filtre, så historikken viser det, dine filtre har ladet igennem.</p>
-    <div class="card">
-      <div class="grid">
-        <div class="field"><label>Regel</label><select id="sim_rule"></select></div>
-        <div class="field"><label>Antal dage tilbage (1–30)</label><input type="text" inputmode="numeric" id="sim_days" value="7"></div>
-      </div>
-      <div class="row" style="margin:14px 0 0"><button class="b pri" id="simBtn" onclick="runSim()">Prøv reglen</button>
-        <select id="simFilter" onchange="renderSim()" style="width:auto"><option value="">Alle resultater</option><option value="hit">Kun dem den ville fange</option><option value="miss">Kun afviste</option></select></div>
-      <div id="simProg"></div>
-    </div>
-    <div id="simResult"></div>
-  </section>
 
   <section id="prem">
     <div class="row" style="justify-content:space-between">
@@ -233,16 +353,17 @@
     <div id="statProg"></div>
     <div id="statRules"></div>
     <div class="row" style="margin-top:8px"><select id="statFilter" onchange="renderStats()" style="width:auto">
-      <option value="">Alle titler</option><option value="stale">Ingen har set dem efter 30 dage</option><option value="unwatched">Aldrig set</option></select></div>
+      <option value="">Alle titler</option><option value="stale">Ingen har set dem efter 30 dage</option><option value="unwatched">Aldrig set</option></select>
+      <span class="small" style="margin:0">Tryk på en kolonne for at sortere.</span></div>
     <div class="card" style="padding:0; overflow-x:auto"><table>
-      <thead><tr><th>Titel</th><th>Regel</th><th>Tilføjet</th><th class="num">GB</th><th class="num">Afspilninger</th><th class="num">Seere</th><th class="num">Sidste 30 dage</th></tr></thead>
+      <thead><tr><th class="sort" data-k="title" onclick="statSort('title')">Titel<i style="font-style:normal"></i></th><th class="sort" data-k="rule" onclick="statSort('rule')">Regel<i style="font-style:normal"></i></th><th class="sort" data-k="added" onclick="statSort('added')">Tilføjet<i style="font-style:normal"></i></th><th class="sort num" data-k="gb" onclick="statSort('gb')">GB<i style="font-style:normal"></i></th><th class="sort num" data-k="plays" onclick="statSort('plays')">Afspilninger<i style="font-style:normal"></i></th><th class="sort num" data-k="users" onclick="statSort('users')">Seere<i style="font-style:normal"></i></th><th class="sort num" data-k="plays_30" onclick="statSort('plays_30')">Sidste 30 dage<i style="font-style:normal"></i></th></tr></thead>
       <tbody id="statBody"></tbody></table></div>
   </section>
 
   <section id="share">
     <h2>Kontodeling</h2>
     <p class="hint">Finder <b>tv, der aldrig har stået hos kunden</b>, og viser den bedste måde at blokere dem på i Tracearr. Telefoner, tablets og computere tæller ikke som tv. Intet kører af sig selv, og Fangarr blokerer ikke selv.</p>
-    <details class="card shhelp"><summary><b>Sådan læser du fanen</b> <span class="small">(tryk for at folde ud)</span></summary>
+    <details class="card shhelp"><summary><b>Sådan læser du siden</b> <span class="small">(tryk for at folde ud)</span></summary>
       <h4>Hvad er fanen til?</h4>
       <ul>
         <li>At finde <b>tv, der aldrig har stået hos kunden</b>, og vise <b>den bedste måde at blokere dem på</b> i Tracearr – uden at ramme kundens egne tv.</li>
@@ -250,11 +371,11 @@
       </ul>
       <h4>De fem grupper</h4>
       <ul>
-        <li>🔴 <b>Kan blokeres:</b> fremmede tv bruges samtidig med kundens. Åbn brugeren, lav reglen, og sæt sagen til "blokeres".</li>
-        <li>🟡 <b>Afgør selv:</b> Fangarr kan ikke se, hvilket sted der er kundens (fx konto brugt to steder fra første dag). Tryk <i>Dette er kundens</i> på det rigtige sted – så flytter brugeren gruppe og får en blokering.</li>
-        <li>⚙️ <b>I gang:</b> brugere med en sag. Kør analysen igen efter et par dage: stopper reglen de fremmede tv, falder antal aftener.</li>
-        <li>⚪ <b>Fremmede tv uden samtidig brug:</b> tilladt efter kontoreglerne (ét tv ad gangen på forskellige adresser). Vises kun med "Vis alle grupper".</li>
-        <li>🟢 <b>Ingen fremmede tv.</b></li>
+        <li><span class="dotc r"></span><b>Kan blokeres:</b> fremmede tv bruges samtidig med kundens. Åbn brugeren, lav reglen, og sæt sagen til "blokeres".</li>
+        <li><span class="dotc y"></span><b>Afgør selv:</b> Fangarr kan ikke se, hvilket sted der er kundens (fx konto brugt to steder fra første dag). Tryk <i>Dette er kundens</i> på det rigtige sted – så flytter brugeren gruppe og får en blokering.</li>
+        <li><span class="dotc b"></span><b>I gang:</b> brugere med en sag. Kør analysen igen efter et par dage: stopper reglen de fremmede tv, falder antal aftener.</li>
+        <li><span class="dotc "></span><b>Fremmede tv uden samtidig brug:</b> tilladt efter kontoreglerne (ét tv ad gangen på forskellige adresser). Vises kun med "Vis alle grupper".</li>
+        <li><span class="dotc g"></span><b>Ingen fremmede tv.</b></li>
       </ul>
       <h4>Bedste blokering</h4>
       <ul>
@@ -280,7 +401,7 @@
       <h4>Felterne øverst</h4>
       <ul>
         <li><b>Periode:</b> hvilke afspilninger der ledes efter samtidig brug i. <b>Mindst (minutter):</b> hvor længe to tv skal køre samtidig, før det tæller. <b>Skæringsdato:</b> deler perioden i Før og Efter, fx datoen du lavede en regel – så ser du, om den virker.</li>
-        <li><b>Hent historikken forfra:</b> Fangarr husker Tautullis historik, til den genstartes, og henter ellers kun det nye.</li>
+        <li><b>Hent historikken forfra:</b> Fangarr gemmer Tautullis historik på disken og henter ellers kun det nye. Den huskes også efter en genstart eller opdatering.</li>
       </ul>
     </details>
     <div id="shNote"></div>
@@ -300,7 +421,7 @@
       <span class="small" id="shHist"></span></div></div>
     <div id="shProg"></div>
     <div id="shSum"></div>
-    <div id="shGroups"><div class="card empty">Vælg periode og tryk Analysér. Første gang efter en genstart hentes hele Tautullis historik – det kan tage et par minutter.</div></div>
+    <div id="shGroups"><div class="card empty">Vælg periode og tryk Analysér. Allerførste gang hentes hele Tautullis historik – det kan tage et par minutter. Derefter er den gemt.</div></div>
     <div id="shKinds"></div>
   </section>
 
@@ -313,9 +434,13 @@
       <button class="b" onclick="loadTr(true)">Opdatér</button>
     </div>
     <div id="trWarn"></div>
+    <div class="subs" role="tablist"><button data-sub="status">Status</button><button data-sub="problemer">Problemer<span id="trProbN"></span></button><button data-sub="skjult">Skjult for kunderne</button><button data-sub="paavej">På vej</button><button data-sub="titel">Oversæt en titel</button><button data-sub="faerdige">Færdige</button><button data-sub="stat">Statistik</button><button data-sub="indst">Indstillinger</button></div>
+    <div data-p="status">
     <div class="kpis" id="trKpis"></div>
     <div class="card" id="trMoney"></div>
-    <h2 style="margin-top:22px">Skjult for kunderne</h2>
+    </div>
+    <div data-p="skjult">
+    <h2>Skjult for kunderne</h2>
     <p class="hint">Nye film og afsnit, som endnu ikke er vist i Plex, fordi de mangler dansk tale eller dansk tekst. De vises af sig selv, når teksten er klar – og senest efter sikkerhedsnettet. Plex viser en hel mappe ad gangen, så et afsnit, der venter, holder resten af sæsonmappen tilbage.</p>
     <div id="trRevealInfo"></div>
     <div class="card" style="padding:0; overflow-x:auto"><table>
@@ -324,12 +449,16 @@
     <div class="card" style="padding:0; overflow-x:auto; margin-top:10px"><table>
       <thead><tr><th>Vist i Plex (7 dage)</th><th>Hvordan</th><th>Vist</th></tr></thead>
       <tbody id="trShown"></tbody></table></div>
-    <h2 style="margin-top:22px">På vej</h2>
+    </div>
+    <div data-p="paavej">
+    <h2>På vej</h2>
     <p class="hint">Udgivelser, som Sonarr/Radarr har fundet, men holder tilbage på grund af ventetiden (6 timer), i håb om en NORDiC-udgave. NORDiC hentes med det samme.</p>
     <div class="card" style="padding:0; overflow-x:auto"><table>
       <thead><tr><th>Titel</th><th>Udgivelse</th><th class="num">Point</th><th>Hentes</th></tr></thead>
       <tbody id="trWay"></tbody></table></div>
-    <div class="row" style="justify-content:space-between; margin-top:22px">
+    </div>
+    <div data-p="problemer">
+    <div class="row" style="justify-content:space-between">
       <h2 style="margin:0">Problemer</h2>
       <label class="small" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="trShowAudio" onchange="renderTr()" style="width:auto"> Vis titler med dansk tale</label>
     </div>
@@ -337,16 +466,22 @@
     <div class="card" style="padding:0; overflow-x:auto"><table>
       <thead><tr><th>Titel</th><th>Status</th><th>Grund</th><th>Senest</th><th class="num">Forsøg</th><th></th></tr></thead>
       <tbody id="trProblems"></tbody></table></div>
-    <h2 style="margin-top:22px">Oversæt en titel</h2>
+    </div>
+    <div data-p="titel">
+    <h2>Oversæt en titel</h2>
     <p class="hint">Søg en serie eller film frem fra Sonarr/Radarr. Vælg sæsoner og se prisen, før du oversætter. Oversætteren søger stadig efter en dansk tekst først. <b>Ingen ventetid fremover</b> sætter mærket <code>straks</code>, så nye afsnit hentes uden de 6 timer (fjernes aldrig automatisk).</p>
     <div class="row" style="margin:0 0 10px"><input type="text" id="trQ" placeholder="f.eks. Gold Rush" onkeydown="if(event.key==='Enter')trSearch()" style="flex:1;min-width:0"><button class="b" onclick="trSearch()">Søg</button></div>
     <div id="trResults"></div>
     <div id="trPick"></div>
-    <h2 style="margin-top:22px">Færdige oversættelser (30 dage)</h2>
+    </div>
+    <div data-p="faerdige">
+    <h2>Færdige oversættelser (30 dage)</h2>
     <div class="card" style="padding:0; overflow-x:auto"><table>
       <thead><tr><th>Titel</th><th>Færdig</th><th class="num">Pris</th><th class="num">Flag før → efter</th><th class="num">Rettet</th><th>Synk</th><th>Plex</th></tr></thead>
       <tbody id="trDone"></tbody></table></div>
-    <div class="row" style="justify-content:space-between; margin-top:22px">
+    </div>
+    <div data-p="stat">
+    <div class="row" style="justify-content:space-between">
       <h2 style="margin:0">Statistik</h2>
       <div class="row" style="margin:0">
         <select id="trDays" onchange="loadTrStats(0)" style="width:auto"><option value="7">7 dage</option><option value="14" selected>14 dage</option><option value="30">30 dage</option></select>
@@ -354,14 +489,18 @@
       </div>
     </div>
     <div id="trStats"><div class="card empty">Henter …</div></div>
-    <h2 style="margin-top:22px">Indstillinger</h2>
+    </div>
+    <div data-p="indst">
+    <h2>Indstillinger</h2>
     <p class="hint">Kun visning. Oversætterens indstillinger ændres i <code>/opt/oversaetter/.env</code>, ventetiden i Sonarr/Radarr › Settings › Profiles.</p>
     <div class="grid" id="trConfig"></div>
+    </div>
   </section>
 
   <section id="log">
     <div class="row" style="justify-content:space-between">
-      <h2 style="margin:0">Log</h2>
+      <div><h2 style="margin:0 0 6px">Log</h2>
+        <p class="hint" style="margin:0">Alt, hvad Fangarr har besluttet. Siden åbner på <b>Tilføjet</b>, altså det, der er sendt til Sonarr og Radarr. <b>Hentet?</b> viser, om titlen er kommet hjem.</p></div>
       <div class="row" style="margin:0">
         <select id="logFilter" onchange="renderLog()" style="width:auto">
           <option value="">Alle beslutninger</option>
@@ -378,9 +517,10 @@
         <button class="b" onclick="loadLog()">Opdatér</button>
       </div>
     </div>
-    <div class="chips" id="logSummary" style="margin-bottom:12px"></div>
+    <div class="pills" id="logPills"></div>
+    <div class="chips" id="logSummary" style="margin:0 0 12px"></div>
     <div class="card" style="padding:0; overflow-x:auto"><table>
-      <thead><tr><th>Tid</th><th>Type</th><th>Titel</th><th>Beslutning</th><th>Regel</th><th>Detaljer</th></tr></thead>
+      <thead><tr><th>Tid</th><th>Titel</th><th>Beslutning</th><th>Hentet?</th><th>Regel</th><th>Detaljer</th></tr></thead>
       <tbody id="logBody"></tbody></table></div>
   </section>
 
@@ -389,7 +529,8 @@
       <div>
         <h2>Venteliste</h2>
         <p class="hint" style="margin:0">Udgivelser, hvor TheTVDB/TMDb endnu ikke har titlen eller de oplysninger, reglen kræver. Fangarr prøver igen automatisk.
-          Står der et <b>muligt match</b> (fx dansk titel, men engelsk navn hos TheTVDB), så tryk <b>Godkend</b> ved det rigtige.</p>
+          Står der et <b>muligt match</b> (fx dansk titel, men engelsk navn hos TheTVDB), så tryk <b>Godkend</b> ved det rigtige.
+          <b>Fjern</b> tager titlen af listen nu (den kan komme igen ved næste udgivelse). <b>Fjern og husk</b> holder den væk fremover.</p>
       </div>
       <button class="b" onclick="loadWait()">Opdatér</button>
     </div>
@@ -398,16 +539,56 @@
       <tbody id="waitBody"></tbody></table></div>
   </section>
 
-  <section id="autobrr">
-    <h2>Filtre i autobrr</h2>
+  <section id="setup">
+    <h2>Opsætning</h2>
+    <p class="hint">Værktøjer, du kun bruger, når noget skal sættes op eller undersøges.</p>
+    <div class="subs" role="tablist"><button data-sub="test">Test en titel</button><button data-sub="sim">Prøv en regel</button><button data-sub="autobrr">Filtre i autobrr</button></div>
+    <div data-p="test">
+    <h2 style="font-size:18px">Test en titel</h2>
+    <p class="hint">Se hvad der ville ske med en udgivelse – uden at noget bliver tilføjet eller logget.</p>
+    <div class="card">
+      <div class="grid">
+        <div class="field"><label>Type</label>
+          <select id="t_media"><option value="series">Serie</option><option value="movie">Film</option></select></div>
+        <div class="field"><label>Titel</label><input type="text" id="t_title" placeholder="f.eks. Borgen"></div>
+        <div class="field"><label>År (kan være tomt)</label><input type="text" inputmode="numeric" id="t_year" placeholder="f.eks. 2022"></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label>Udgivelsesnavn</label>
+        <input type="text" id="t_release" placeholder="f.eks. Borgen.S04E01.NORDiC.1080p.WEB.h264-GRP"></div>
+      <div class="row" style="margin:14px 0 0"><button class="b pri" id="testBtn" onclick="runTest()">Test</button></div>
+    </div>
+    <div id="testResult"></div>
+
+    </div>
+    <div data-p="sim">
+    <h2>Prøv en regel på historikken</h2>
+    <p class="hint">Kør en regel på de udgivelser, autobrr har set de seneste dage, og se hvad den ville have fanget. Intet bliver tilføjet.
+      autobrr gemmer kun udgivelser, der har passet et af dine filtre, så historikken viser det, dine filtre har ladet igennem.</p>
+    <div class="card">
+      <div class="grid">
+        <div class="field"><label>Regel</label><select id="sim_rule"></select></div>
+        <div class="field"><label>Antal dage tilbage (1–30)</label><input type="text" inputmode="numeric" id="sim_days" value="7"></div>
+      </div>
+      <div class="row" style="margin:14px 0 0"><button class="b pri" id="simBtn" onclick="runSim()">Prøv reglen</button>
+        <select id="simFilter" onchange="renderSim()" style="width:auto"><option value="">Alle resultater</option><option value="hit">Kun dem den ville fange</option><option value="miss">Kun afviste</option></select></div>
+      <div id="simProg"></div>
+    </div>
+    <div id="simResult"></div>
+    </div>
+    <div data-p="autobrr">
+    <h2 style="font-size:18px">Filtre i autobrr</h2>
     <p class="hint">Fangarr laver filtrene til autobrr ud fra dine regler. Ord som NORDiC og DANiSH hentes fra reglernes "skal indeholde".</p>
     <div id="abStatus"></div>
     <div id="abCards"></div>
+    </div>
   </section>
 
   <section id="settings">
     <h2>Indstillinger</h2>
-    <div class="card">
+    <p class="hint">Fangarrs egne indstillinger. Husk at trykke <b>Gem indstillinger</b>, når du har ændret noget.</p>
+    <div class="subs" role="tablist"><button data-sub="gen">Generelt</button><button data-sub="vente">Venteliste og Sonarr</button><button data-sub="eksport">Eksport og import</button><button data-sub="kob">Koblinger og fjernede titler</button></div>
+    <div class="card" data-p="gen vente eksport">
+      <div data-p="gen">
       <div id="dryWarn"></div>
       <label class="check"><input type="checkbox" id="s_dry_run"> Prøvetilstand (logger kun, hvad der ville blive tilføjet)</label>
       <div class="grid" style="margin-top:16px">
@@ -416,7 +597,9 @@
         <div class="field"><label>Tilføj intet når disken er fyldt over (%)</label><input type="text" inputmode="numeric" id="s_max_disk_pct"></div>
         <div class="field"><label>Dagligt resumé til Telegram kl. (0–23, -1 = fra)</label><input type="text" inputmode="numeric" id="s_summary_hour"></div>
       </div>
-      <h2 style="margin-top:22px">Venteliste</h2>
+      </div>
+      <div data-p="vente">
+      <h2>Venteliste</h2>
       <div class="grid">
         <div class="field"><label>Prøv igen hver (timer)</label><input type="text" inputmode="numeric" id="s_wait_hours"></div>
         <div class="field"><label>Giv op efter (dage)</label><input type="text" inputmode="numeric" id="s_wait_days"></div>
@@ -431,17 +614,20 @@
       <h2 style="margin-top:22px">Seerr</h2>
       <label class="check"><input type="checkbox" id="s_seerr_check"> Spring titler over, som er afvist eller venter på godkendelse i Seerr</label>
       <div class="small" id="seerrInfo"></div>
-      <h2 style="margin-top:22px">Natlig eksport</h2>
+      </div>
+      <div data-p="eksport">
+      <h2>Natlig eksport</h2>
       <div class="grid">
         <div class="field"><label>Gem eksportfil kl. (0–23, -1 = fra)</label><input type="text" inputmode="numeric" id="s_backup_hour"></div>
         <div class="field"><label>Behold antal filer</label><input type="text" inputmode="numeric" id="s_backup_keep"></div>
       </div>
       <div class="small">Filerne lægges i /opt/fangarr/data/backup på feeder, så de kommer med i Saltbox' natlige backup af /opt, når den er sat op.</div>
-      <div class="row" style="margin-top:16px"><button class="b pri" onclick="saveSettings()">Gem indstillinger</button></div>
+      </div>
+      <div class="row" style="margin:16px 0 0"><button class="b pri" onclick="saveSettings()">Gem indstillinger</button></div>
     </div>
-    <div class="card">
+    <div class="card" data-p="eksport">
       <h2>Eksport og import</h2>
-      <p class="hint">Eksporten indeholder regler, indstillinger, autobrr-valg, ventelisten og godkendte koblinger – ingen API-nøgler. Import <b>erstatter</b> dine regler og indstillinger, så eksportér først, hvis du vil kunne gå tilbage.</p>
+      <p class="hint">Eksporten indeholder regler, indstillinger, autobrr-valg, ventelisten, godkendte koblinger og fjernede titler – ingen API-nøgler. Import <b>erstatter</b> dine regler og indstillinger, så eksportér først, hvis du vil kunne gå tilbage.</p>
       <div class="row">
         <a class="b" href="/api/export" download style="text-decoration:none">Hent eksportfil</a>
         <button class="b" onclick="$('impFile').click()">Importér fil…</button>
@@ -450,15 +636,30 @@
       </div>
       <div id="backupList" class="small"></div>
     </div>
-    <div class="card">
+    <div class="card" data-p="kob">
       <h2>Godkendte koblinger</h2>
       <p class="hint">Når du godkender et forslag på ventelisten, husker Fangarr koblingen (fx "Simon Siger" = "Simon Says (2026)"), så næste udgivelse med samme titel matches automatisk.</p>
       <div style="overflow-x:auto"><table><thead><tr><th>Udgivelsens titel</th><th>Kobles til</th><th>Type</th><th>Godkendt</th><th></th></tr></thead>
         <tbody id="aliasBody"></tbody></table></div>
     </div>
+    <div class="card" data-p="kob">
+      <h2>Fjernede titler</h2>
+      <p class="hint">Titler, du har fjernet fra ventelisten med <b>Fjern og husk</b>. De kommer ikke på ventelisten igen, når der kommer en ny udgivelse. Tryk <b>Glem</b> for at give titlen en ny chance. Findes titlen senere på TheTVDB/TMDb og passer til en regel, bliver den stadig tilføjet.</p>
+      <div style="overflow-x:auto"><table><thead><tr><th>Titel</th><th>Type</th><th>Fjernet</th><th></th></tr></thead>
+        <tbody id="ignBody"></tbody></table></div>
+    </div>
     <div class="small" id="version" style="text-align:right"></div>
     </section>
 </main>
+  </div>
+</div>
+<nav class="bbar" aria-label="Bundmenu">
+  <button data-tab="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>Overblik</button>
+  <button data-tab="wait"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>Venteliste<span class="bdg" data-bdg="wait"></span></button>
+  <button data-tab="log"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>Log</button>
+  <button data-tab="share"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a3 3 0 0 0 0-6M21 20a6 6 0 0 0-3-5"/></svg>Kunder<span class="bdg" data-bdg="share"></span></button>
+  <button data-menu><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>Mere</button>
+</nav>
 
 <dialog id="dlg">
   <form method="dialog" onsubmit="return false">
@@ -564,32 +765,10 @@ async function api(path, opts = {}) {
   return data;
 }
 
-document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
-  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
-  document.querySelectorAll("main section").forEach(s => s.classList.toggle("on", s.id === b.dataset.tab));
-  if (b.dataset.tab === "log") loadLog();
-  if (b.dataset.tab === "wait") loadWait();
-  if (b.dataset.tab === "autobrr") loadAutobrr();
-  if (b.dataset.tab === "prem") loadPrem(0);
-  if (b.dataset.tab === "stats") loadStats();
-  if (b.dataset.tab === "share") loadShare();
-  clearInterval(window._trTimer);
-  if (b.dataset.tab === "tr") { loadTr(); loadTrStats(0); window._trTimer = setInterval(() => loadTr(), 60000); }
-  if (b.dataset.tab === "settings") { loadBackups(); loadAliases(); }
-  if (b.dataset.tab === "test") fillRuleSelect("sim_rule", null);
-});
 
 async function load() {
   try { S = await api("/api/state"); } catch (e) { toast(e.message, true); return; }
   renderStatus(); renderRules(); renderSettings();
-}
-function renderStatus() {
-  const s = S.settings;
-  $("status").innerHTML =
-    (s.dry_run ? '<span class="chip dry">Prøvetilstand</span>' : '<span class="chip live">Tilføjer for alvor</span>') +
-    `<span class="chip">Disk <b>${S.disk_pct ?? "?"} %</b> / grænse ${s.max_disk_pct} %</span>` +
-    `<span class="chip">I dag: <b>${S.today.series}</b>/${s.max_series_per_day} serier · <b>${S.today.movie}</b>/${s.max_movies_per_day} film</span>` +
-    `<span class="chip">Venteliste: <b>${S.waiting}</b></span>`;
 }
 function list(a) { return (a && a.length) ? a.join(", ") : null; }
 function renderRules() {
@@ -742,31 +921,10 @@ async function runTest() {
   } catch (e) { $("testResult").innerHTML = `<div class="card result bad">${esc(e.message)}</div>`; }
 }
 
-async function loadLog() {
-  try {
-    const [rows, sum] = await Promise.all([api("/api/log?limit=500"), api("/api/log/summary")]);
-    logRows = rows; renderLog();
-    const order = ["tilføjet", "ville tilføje", "venteliste", "findes allerede", "afvist", "loft nået", "for lidt plads", "udløbet", "fejl"];
-    const keys = [...order.filter(k => sum[k]), ...Object.keys(sum).filter(k => !order.includes(k))];
-    $("logSummary").innerHTML = '<span class="chip">Sidste døgn:</span>' +
-      (keys.length ? keys.map(k => `<span class="chip">${esc(k)} <b>${sum[k]}</b></span>`).join("") : '<span class="chip">intet</span>');
-  } catch (e) { toast(e.message, true); }
-}
 function dcls(d) {
   if (d === "tilføjet") return "d-tilføjet"; if (d === "ville tilføje") return "d-ville"; if (d === "fejl") return "d-fejl";
   if (d === "venteliste") return "d-ville"; if (d === "udløbet") return "d-loft";
   if (d === "loft nået") return "d-loft"; if (d === "for lidt plads") return "d-plads"; if (d === "findes allerede") return "d-findes"; return "d-afvist";
-}
-function renderLog() {
-  const f = $("logFilter").value;
-  const rows = logRows.filter(r => !f || r.decision === f);
-  $("logBody").innerHTML = rows.length ? rows.map(r => `<tr>
-    <td style="white-space:nowrap">${esc(r.ts.replace("T", " ").slice(0, 16))}</td>
-    <td>${r.media === "movie" ? "Film" : "Serie"}</td>
-    <td><b>${esc(r.title)}</b>${r.year ? " (" + r.year + ")" : ""}<div class="small">${esc(r.release)}</div></td>
-    <td class="d ${dcls(r.decision)}">${esc(r.decision)}</td>
-    <td>${esc(r.rule)}</td><td>${esc(r.detail)}${r.info ? `<div class="small" style="margin-top:4px">Fundet: ${esc(r.info)}</div>` : ""}</td></tr>`).join("")
-    : '<tr><td colspan="6" class="empty">Intet i loggen endnu.</td></tr>';
 }
 
 function renderSettings() {
@@ -806,7 +964,7 @@ function renderWait(rows) {
         <button class="b pri" style="flex:none" onclick="approveWait(${w.id}, '${esc(String(sg.id))}', this)">Godkend</button>
         <span><b>${esc(sg.title)}</b>${/\(\d{4}\)$/.test(sg.title) ? "" : ` (${sg.year || "?"})`} · ${esc(LANG_DA[sg.language] || sg.language || "sprog ukendt")} · ${esc(sg.network || "kanal ukendt")}
         · ${esc((sg.genres || []).map(g => GENRE_DA[g] || g).join(", ") || "ingen genrer")}${sg.exists ? ' · <b>findes allerede</b>' : ""}${sg.note ? `<span class="small"> (${esc(sg.note)})</span>` : ""}</span></div>`).join("") + "</div>" : ""}</td>
-    <td><div class="btns"><button class="b" onclick="retryWait(${w.id})">Prøv nu</button><button class="b danger" onclick="delWait(${w.id})">Fjern</button></div></td></tr>`).join("")
+    <td><div class="btns"><button class="b" onclick="retryWait(${w.id})">Prøv nu</button><button class="b danger" onclick="delWait(${w.id})">Fjern</button>${w.status === "venter" ? `<button class="b danger" onclick="delWait(${w.id}, 1)" title="Fjern titlen, og lad den ikke komme på ventelisten igen">Fjern og husk</button>` : ""}</div></td></tr>`).join("")
     : '<tr><td colspan="6" class="empty">Ventelisten er tom.</td></tr>';
 }
 async function approveWait(id, sid, btn) {
@@ -819,9 +977,6 @@ async function approveWait(id, sid, btn) {
 }
 async function retryWait(id) {
   try { renderWait(await api(`/api/waitlist/${id}/retry`, {method: "POST"})); toast("Prøvet igen"); load(); } catch (e) { toast(e.message, true); }
-}
-async function delWait(id) {
-  try { renderWait(await api(`/api/waitlist/${id}`, {method: "DELETE"})); toast("Fjernet fra ventelisten"); load(); } catch (e) { toast(e.message, true); }
 }
 
 async function loadAutobrr() {
@@ -930,7 +1085,7 @@ let PREM = [];
 async function loadPrem(refresh) {
   fillRuleSelect("prem_rule", "series");
   $("premBody").innerHTML = `<tr><td colspan="5" class="empty">Henter fra Seerr…</td></tr>`;
-  try { const d = await api(`/api/premieres?refresh=${refresh ? 1 : 0}&lang=${encodeURIComponent($("prem_lang").value)}&days=${$("prem_days").value}`); PREM = d.items; $("premInfo").textContent = d.fetched ? "Hentet " + d.fetched.replace("T", " ") : ""; renderPrem(); }
+  try { const d = await api(`/api/premieres?refresh=${refresh ? 1 : 0}&lang=${encodeURIComponent($("prem_lang").value)}&days=${$("prem_days").value}`); PREM = d.items; premSeen(); $("premInfo").textContent = d.fetched ? "Hentet " + d.fetched.replace("T", " ") : ""; renderPrem(); }
   catch (e) { $("premBody").innerHTML = `<tr><td colspan="5" class="empty">${esc(e.message)}</td></tr>`; }
 }
 function renderPrem() {
@@ -946,7 +1101,7 @@ function renderPrem() {
     <td><div class="btns">${p.exists ? "" : `
       <button class="b" ${p.tvdb ? "" : 'disabled title="Ikke på TheTVDB endnu – brug Følg"'} onclick="premAdd(${PREM.indexOf(p)})">Tilføj nu</button>
       <button class="b" ${p.following ? "disabled" : ""} onclick="premFollow(${PREM.indexOf(p)})">Følg</button>`}</div></td></tr>`).join("")
-    : '<tr><td colspan="5" class="empty">Ingen premierer fundet.</td></tr>';
+    : '<tr><td colspan="5" class="empty"><b style="color:var(--text)">Ingen nye premierer i perioden.</b><br>Du behøver ikke kigge her: når der kommer en ny dansk serie, står der et tal ved Premierer i menuen, og den vises på Overblik.</td></tr>';
 }
 async function premAdd(i) {
   const p = PREM[i];
@@ -981,7 +1136,7 @@ function renderStats() {
       <td class="num">${g.plays}</td><td class="num">${(g.plays_per_gb * 100).toFixed(1).replace(".", ",")}</td>
       <td class="num">${g.unwatched}</td><td class="num">${g.stale}</td></tr>`).join("") + "</tbody></table></div>" : "");
   const f = $("statFilter").value;
-  const rows = R.items.filter(i => !f || (f === "stale" ? i.stale : (i.watch && i.watch.plays === 0)));
+  const rows = statSorted(R.items.filter(i => !f || (f === "stale" ? i.stale : (i.watch && i.watch.plays === 0))));
   $("statBody").innerHTML = rows.length ? rows.map(i => { const w = i.watch; return `<tr>
     <td><b>${esc(i.title)}</b>${i.year ? " (" + i.year + ")" : ""} <span class="small">${i.media === "movie" ? "Film" : "Serie"}</span>${i.stale ? ' <span class="tag" style="color:var(--warn)">kandidat til oprydning</span>' : ""}</td>
     <td>${esc(i.rule)}</td><td style="white-space:nowrap">${esc(i.added)}</td><td class="num">${i.gb.toLocaleString("da-DK")}</td>
@@ -997,11 +1152,11 @@ const SH_ST = {kunde: "Kundens", tidligere: "Tidligere hos kunden", aldrig: "Ald
 const SH_CASE = ["", "blokeres", "blokeret", "undtagelse aftalt", "afsluttet"];
 const SH_MSG = "Enheden er blokeret pga. kontodeling. Kontakt kontoejeren for at få din egen konto.";
 const SH_BUCKET = [
-  ["bloker", "🔴 Kan blokeres", "Tv, der aldrig har stået hos kunden, bruges samtidig med kundens tv. Åbn brugeren for at se den bedste blokering.", true],
-  ["afgoer", "🟡 Afgør selv", "Fangarr kan ikke se, hvilket sted der er kundens. Åbn brugeren og vælg kundens sted – så får du en blokering.", true],
-  ["igang", "⚙️ I gang", "Brugere, du har sat en sag på (blokeres, blokeret eller undtagelse aftalt). Her kan du følge, om blokeringen virker.", true],
-  ["skift", "⚪ Fremmede tv uden samtidig brug", "Tv, der aldrig har stået hos kunden, men ikke kører samtidig med kundens. Efter kontoreglerne er det tilladt (ét tv ad gangen på forskellige adresser).", false],
-  ["intet", "🟢 Ingen fremmede tv", "Brugere uden tv andre steder end hos kunden i perioden.", false]];
+  ["bloker", '<span class="dotc r"></span>Kan blokeres', "Tv, der aldrig har stået hos kunden, bruges samtidig med kundens tv. Åbn brugeren for at se den bedste blokering.", true],
+  ["afgoer", '<span class="dotc y"></span>Afgør selv', "Fangarr kan ikke se, hvilket sted der er kundens. Åbn brugeren og vælg kundens sted – så får du en blokering.", true],
+  ["igang", '<span class="dotc b"></span>I gang', "Brugere, du har sat en sag på (blokeres, blokeret eller undtagelse aftalt). Her kan du følge, om blokeringen virker.", true],
+  ["skift", '<span class="dotc "></span>Fremmede tv uden samtidig brug', "Tv, der aldrig har stået hos kunden, men ikke kører samtidig med kundens. Efter kontoreglerne er det tilladt (ét tv ad gangen på forskellige adresser).", false],
+  ["intet", '<span class="dotc g"></span>Ingen fremmede tv', "Brugere uden tv andre steder end hos kunden i perioden.", false]];
 function shPeriod() { const own = $("shDays").value === "0"; $("shFromBox").style.display = $("shToBox").style.display = own ? "" : "none"; }
 async function loadShare() {
   $("shNote").innerHTML = S.features.tautulli ? "" : '<div class="warn">Tautulli er ikke forbundet. Tilføj TAUTULLI_URL og TAUTULLI_APIKEY i fangarr.env (se LÆSMIG).</div>';
@@ -1191,7 +1346,7 @@ function renderTr() {
     <td class="st st-${esc(i.status)}">${TR_ST[i.status] || esc(i.status)}</td><td>${esc(i.reason || "")}</td><td style="white-space:nowrap">${lt(i.updated_at)}</td>
     <td class="num">${i.attempts ?? ""}</td>
     <td style="white-space:nowrap">${i.status === "ikke_muligt" ? "" : `<button class="b" onclick="trItem('${esc(i.key)}','retry')">Prøv igen</button> <button class="b danger" onclick="trItem('${esc(i.key)}','skip')">Opgiv</button>`}</td></tr>`).join("")
-    : '<tr><td colspan="6" class="empty">Ingen problemer 🎉</td></tr>')
+    : '<tr><td colspan="6" class="empty">Ingen problemer.</td></tr>')
     + (hidden ? `<tr><td colspan="6" class="small" style="text-align:center">${hidden} med dansk tale er skjult (ikke et problem)</td></tr>` : "");
   const Dall = (TR.done || {}).items || [], D = trAll ? Dall : Dall.slice(0, 25);
   $("trDone").innerHTML = D.length ? D.map(i => `<tr><td><b>${esc(i.title)}</b><div class="small">${esc(i.source || "")}${i.en_hi ? " · fra HI-tekst" : ""}</div></td>
@@ -1322,7 +1477,7 @@ async function loadTrStats(refresh) {
   const max = Math.max(0.01, ...list.map(([, v]) => v.usd));
   const chart = `<div class="cols">${list.map(([day, v]) => `<div title="${day}: ${v.n} oversat, ${kr(v.usd, k)}" style="height:${v.usd / max * 100}%"></div>`).join("")}</div>
     <div class="axis"><span>${list[0][0].slice(5)}</span><span>i dag</span></div>`;
-  const C = ["var(--info)", "var(--ok)", "var(--accent)"], names = ["Dansk tale", "NORDiC / danske tekster", "Skal oversættes"];
+  const C = ["var(--info)", "var(--ok)", "var(--warn)"], names = ["Dansk tale", "NORDiC / danske tekster", "Skal oversættes"];
   const split = ["series", "movie"].filter(m => d.imports[m]).map(m => { const c = d.imports[m].counts, tot = c.dansk_tale + c.nordic + c.oversaet || 1;
     const parts = [c.dansk_tale, c.nordic, c.oversaet];
     return `<div style="margin-bottom:10px"><b>${m === "series" ? "Afsnit" : "Film"}</b> <span class="small">(${tot} importeret)</span>
@@ -1365,7 +1520,230 @@ async function importFile(inp) {
         toast(`Importeret: ${r.rules} regler, ${r.settings} indstillinger, ${r.waitlist} på ventelisten`); load(); }
   catch (e) { toast(e.message, true); }
 }
-load();
+
+// ====================================================================== 1.15: menu, forside, søgning
+const ICON = {
+  home: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z", wait: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+  log: "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01", share: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a3 3 0 0 0 0-6M21 20a6 6 0 0 0-3-5"};
+const SUBDEF = {tr: "status", settings: "gen", setup: "test"};
+const TAB_IDS = ["home", "wait", "log", "rules", "prem", "tr", "share", "stats", "settings", "setup", "search"];
+let TAB = "home", SUB = {...SUBDEF}, OV = null, CONN = null, VER = null, ADDED = null, logFirst = true;
+
+function showSub(tab) {
+  const sec = $(tab), cur = SUB[tab];
+  sec.querySelectorAll(".subs button").forEach(b => b.classList.toggle("on", b.dataset.sub === cur));
+  sec.querySelectorAll("[data-p]").forEach(p => p.classList.toggle("on", p.dataset.p.split(" ").includes(cur)));
+}
+function go(tab, sub) {
+  if (!TAB_IDS.includes(tab)) tab = "home";
+  TAB = tab;
+  if (SUBDEF[tab]) { if (sub && $(tab).querySelector(`.subs button[data-sub="${sub}"]`)) SUB[tab] = sub; showSub(tab); }
+  document.body.classList.remove("nav-open");
+  document.querySelectorAll("[data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  document.querySelectorAll("main > section").forEach(s => s.classList.toggle("on", s.id === tab));
+  if (tab !== "search") history.replaceState(null, "", "#" + tab + (SUBDEF[tab] ? "/" + SUB[tab] : ""));
+  clearInterval(window._trTimer);
+  if (!S) return;
+  if (tab === "home") { loadHome(); loadConn(0); }
+  if (tab === "log") loadLog();
+  if (tab === "wait") loadWait();
+  if (tab === "prem") loadPrem(0);
+  if (tab === "stats") loadStats();
+  if (tab === "share") loadShare();
+  if (tab === "tr") { loadTr(); loadTrStats(0); window._trTimer = setInterval(() => loadTr(), 60000); }
+  if (tab === "settings") { loadBackups(); loadAliases(); loadIgnored(); }
+  if (tab === "setup") { fillRuleSelect("sim_rule", null); if (SUB.setup === "autobrr") loadAutobrr(); }
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => go(b.dataset.tab));
+document.querySelectorAll(".subs button").forEach(b => b.onclick = () => go(b.closest("section").id, b.dataset.sub));
+document.querySelectorAll("[data-menu]").forEach(b => b.onclick = e => { e.stopPropagation(); document.body.classList.toggle("nav-open"); });
+document.addEventListener("click", e => { if (document.body.classList.contains("nav-open") && !e.target.closest("#side")) document.body.classList.remove("nav-open"); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") document.body.classList.remove("nav-open"); });
+
+function renderStatus() {
+  const s = S.settings;
+  $("status").innerHTML =
+    (s.dry_run ? '<span class="chip dry">Prøvetilstand</span>' : '<span class="chip live">Tilføjer for alvor</span>') +
+    `<span class="chip">Disk <b>${S.disk_pct ?? "?"} %</b> · grænse ${s.max_disk_pct} %</span>` +
+    `<span class="chip">I dag <b>${S.today.series}</b> serier · <b>${S.today.movie}</b> film</span>`;
+}
+
+// ---------- links til Sonarr/Radarr og "kom den hjem?"
+function arrBase(name) {
+  const i = ((S && S.instances) || []).find(x => x.name === name);
+  if (i && i.link) return i.link;
+  const h = location.hostname.split(".");
+  if (h.length < 3 || /^\d+$/.test(h[h.length - 1])) return "";
+  h[0] = name; return location.protocol + "//" + h.join(".");
+}
+const HOME_ST = {hentet: "ok", delvist: "warn", henter: "info", venter: "info", mangler: "bad", fjernet: "", ukendt: ""};
+function homePill(a) { return a ? `<span class="pill ${HOME_ST[a.state] || ""}" title="${esc(a.text)}">${esc(a.text)}</span>` : ""; }
+function arrLink(a, label) {
+  const base = a && a.path ? arrBase(a.instance) : "";
+  return base ? `<a href="${esc(base + a.path)}" target="_blank" rel="noopener" style="color:inherit">${label}</a>` : label;
+}
+const addedKey = (media, title) => media + "|" + String(title || "").toLowerCase();
+function addedFor(r) { return ADDED ? ADDED[addedKey(r.media, r.title)] : null; }
+async function loadAdded() {
+  try { const rows = await api("/api/added?limit=500"); ADDED = {}; rows.slice().reverse().forEach(a => ADDED[addedKey(a.media, a.title)] = a); }
+  catch (e) { ADDED = ADDED || {}; }
+}
+
+// ---------- forside
+function setBadge(id, n, bad) { document.querySelectorAll(`[data-bdg="${id}"]`).forEach(el => { el.textContent = n ? String(n) : ""; el.classList.toggle("bad", !!bad); }); }
+async function loadHome() {
+  try { OV = await api("/api/overview"); } catch (e) { return; }
+  const t = OV.translator || {}, sh = (OV.sharing || {}).buckets || {};
+  setBadge("wait", OV.suggestions, false); setBadge("tr", t.problems, true); setBadge("share", sh.bloker, true); setBadge("prem", OV.premieres_new, false);
+  if ($("trProbN")) $("trProbN").textContent = t.problems ? ` (${t.problems})` : "";
+  S.disk_pct = OV.disk_pct; S.today = OV.today; renderStatus();
+  renderHome();
+}
+function renderHome() {
+  if (!OV) return;
+  const t = OV.translator || {}, shS = OV.sharing, sh = (shS || {}).buckets || {}, todo = [];
+  const add = (n, bad, title, text, action, fn) => todo.push({n, bad, title, text, action, fn});
+  const down = ((CONN || {}).items || []).filter(c => !c.ok);
+  if (down.length) add(down.length, true, down.length === 1 ? `${esc(down[0].name)} svarer ikke` : "Apps svarer ikke", down.length === 1 ? `Fangarr får ikke svar fra appen (${down[0].detail}). Se Forbindelser nederst på siden.` : down.map(c => `${c.name}: ${c.detail}`).join(" · "), "Se forbindelser", "document.getElementById('homeConnCard').scrollIntoView({behavior:'smooth'})");
+  if (OV.errors_24h) add(OV.errors_24h, true, "Fejl det seneste døgn", "Fangarr kunne ikke slå en titel op eller tilføje den. Se detaljerne i loggen.", "Se fejlene", "logPick('fejl');go('log')");
+  if (OV.suggestions) add(OV.suggestions, false, OV.suggestions === 1 ? "Forslag venter på godkendelse" : "Forslag venter på godkendelse", "Titler på ventelisten med et muligt match. Tryk Godkend ved det rigtige.", "Åbn ventelisten", "go('wait')");
+  if (t.problems) add(t.problems, true, t.problems === 1 ? "Oversættelse er gået galt" : "Oversættelser er gået galt", "Prøv igen, eller opgiv dem, så de vises uden dansk tekst.", "Se problemer", "go('tr','problemer')");
+  if (sh.bloker) add(sh.bloker, true, sh.bloker === 1 ? "Bruger kan blokeres" : "Brugere kan blokeres", `Fremmede tv er brugt samtidig med kundens egne. Seneste analyse ${fmt(shS.at)}.`, "Åbn kontodeling", "go('share')");
+  if (sh.afgoer) add(sh.afgoer, false, "Brugere skal du selv afgøre", "Fangarr kan ikke se, hvilket sted der er kundens. Vælg kundens sted.", "Åbn kontodeling", "go('share')");
+  if (OV.premieres_new) add(OV.premieres_new, false, OV.premieres_new === 1 ? "Ny premiere" : "Nye premierer", "Kommende danske serier, du ikke har set på listen endnu.", "Se premierer", "go('prem')");
+  if (VER && VER.update) add("↑", false, `Version ${esc(VER.latest)} er klar`, "Kør ./opdater.sh i /opt/fangarr på feeder. Fangarr er væk i få sekunder, og streaming påvirkes ikke.", "", "");
+  $("homeWarn").innerHTML = OV.dry_run ? '<div class="warn">Prøvetilstand er slået til. Fangarr logger kun, hvad den ville tilføje. Slå den fra under Indstillinger.</div>' : "";
+  $("homeTodo").innerHTML = `<div class="th"><h2>Kræver din handling</h2><span class="small" style="margin:0">${todo.length ? todo.length + (todo.length === 1 ? " ting" : " ting") : ""}</span></div>` +
+    (todo.length ? todo.map(x => `<button class="ti" ${x.fn ? `onclick="${x.fn}"` : "disabled"}><span class="n ${x.bad ? "bad" : ""}">${x.n}</span>
+      <span class="tx"><b>${x.title}</b><span>${esc(x.text)}</span></span>${x.action ? `<span class="go"><span>${x.action} </span>→</span>` : ""}</button>`).join("")
+      : '<div class="none">Intet kræver din handling lige nu.</div>');
+  const tot = OV.today.series + OV.today.movie, near = OV.disk_pct != null && OV.disk_pct >= OV.max_disk_pct - 1;
+  const k = [
+    ["Tilføjet i dag", tot, `${OV.today.series} serier · ${OV.today.movie} film`],
+    ["Diskplads", `<span style="${near ? "color:var(--warn)" : ""}">${OV.disk_pct ?? "?"} %</span>`, `Fangarr stopper ved ${OV.max_disk_pct} %`],
+    ["På ventelisten", OV.waiting, OV.suggestions ? `${OV.suggestions} med forslag` : "ingen med forslag"]];
+  if (t.enabled && t.ok === false) k.push(["Oversætteren", '<span style="color:var(--bad)">svarer ikke</span>', "se Forbindelser"]);
+  if (t.hidden != null) k.push(["Skjult for kunderne", t.hidden, "venter på dansk tekst"]);
+  if (t.month_kr != null) k.push(["Oversat denne måned", `${t.month_kr.toLocaleString("da-DK")} kr.`, `prognose ${(t.forecast_kr ?? 0).toLocaleString("da-DK")} kr.${t.budget_kr ? " af " + t.budget_kr.toLocaleString("da-DK") + " kr." : ""}`]);
+  if (OV.rescued_24h) k.push(["Hentet for sonarr2", OV.rescued_24h, "afsnit det seneste døgn"]);
+  $("homeKpis").innerHTML = k.map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${esc(s)}</div></div>`).join("");
+  const R = OV.recent || [];
+  $("homeRecent").innerHTML = R.length ? R.map(a => `<tr><td style="white-space:nowrap;color:var(--muted)">${fmt(a.ts)}</td>
+    <td><b>${arrLink(a, esc(a.title))}</b> <span class="small">${a.media === "movie" ? "Film" : "Serie"}</span></td>
+    <td>${esc(a.instance)}</td><td style="color:var(--muted)">${esc(a.rule)}</td><td>${homePill(a)}</td></tr>`).join("")
+    : '<tr><td colspan="5" class="empty">Fangarr har ikke tilføjet noget endnu.</td></tr>';
+}
+async function loadConn(refresh) {
+  if (refresh) $("homeConn").innerHTML = '<span class="small">Tjekker …</span>';
+  try { CONN = await api("/api/connections?refresh=" + (refresh ? 1 : 0)); } catch (e) { return; }
+  $("homeConn").innerHTML = CONN.items.length ? CONN.items.map(c => `<span class="conn ${c.ok ? "" : "bad"}"><i></i>${esc(c.name)} <span>${c.ok ? "i orden" : esc(c.detail)}</span></span>`).join("")
+    : '<span class="small">Ingen apps er sat op i fangarr.env.</span>';
+  renderHome();
+}
+async function loadVersion() {
+  try { VER = await api("/api/version"); } catch (e) { return; }
+  $("verBox").innerHTML = `Fangarr ${esc(VER.version)}` + (VER.update ? `<span class="upd">Version ${esc(VER.latest)} er klar. Kør ./opdater.sh på feeder.</span>` : (VER.latest ? '<span style="display:block">nyeste version</span>' : ""));
+  renderHome();
+}
+
+// ---------- log med "kom den hjem?"
+const LOG_PILLS = [["tilføjet", "Tilføjet"], ["", "Alle"], ["findes allerede", "Findes allerede"], ["afvist", "Afvist"], ["venteliste", "Venteliste"], ["fejl", "Fejl"]];
+function logPick(v) { logFirst = false; $("logFilter").value = v; renderLog(); }
+async function loadLog() {
+  try {
+    const [rows, sum] = await Promise.all([api("/api/log?limit=500"), api("/api/log/summary")]);
+    logRows = rows;
+    if (logFirst) { logFirst = false; $("logFilter").value = S.settings.dry_run ? "ville tilføje" : "tilføjet"; }
+    renderLog();
+    const order = ["tilføjet", "ville tilføje", "venteliste", "findes allerede", "afvist", "loft nået", "for lidt plads", "udløbet", "fejl"];
+    const keys = [...order.filter(k => sum[k]), ...Object.keys(sum).filter(k => !order.includes(k))];
+    $("logSummary").innerHTML = '<span class="chip">Sidste døgn:</span>' +
+      (keys.length ? keys.map(k => `<span class="chip">${esc(k)} <b>${sum[k]}</b></span>`).join("") : '<span class="chip">intet</span>');
+    await loadAdded(); renderLog();
+  } catch (e) { toast(e.message, true); }
+}
+function renderLog() {
+  const f = $("logFilter").value;
+  $("logPills").innerHTML = LOG_PILLS.map(([v, l]) => `<button class="${f === v ? "on" : ""}" onclick="logPick('${v}')">${l}<span>${v ? logRows.filter(r => r.decision === v).length : logRows.length}</span></button>`).join("");
+  const rows = logRows.filter(r => !f || r.decision === f);
+  $("logBody").innerHTML = rows.length ? rows.map(r => { const a = r.decision === "tilføjet" ? addedFor(r) : null; return `<tr>
+    <td style="white-space:nowrap;color:var(--muted)">${esc(r.ts.replace("T", " ").slice(0, 16))}</td>
+    <td><b>${arrLink(a, esc(r.title))}</b>${r.year ? " (" + r.year + ")" : ""} <span class="small">${r.media === "movie" ? "Film" : "Serie"}</span><div class="small">${esc(r.release)}</div></td>
+    <td class="d ${dcls(r.decision)}">${esc(r.decision)}</td>
+    <td>${homePill(a)}</td>
+    <td>${esc(r.rule)}</td><td>${esc(r.detail)}${r.info ? `<div class="small" style="margin-top:4px">Fundet: ${esc(r.info)}</div>` : ""}</td></tr>`; }).join("")
+    : `<tr><td colspan="6" class="empty">${f ? "Intet i loggen med den beslutning." : "Intet i loggen endnu."}</td></tr>`;
+}
+
+// ---------- søg efter en titel
+let qTimer = null;
+$("q").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(runSearch, 350); });
+$("q").addEventListener("keydown", e => { if (e.key === "Enter") { clearTimeout(qTimer); runSearch(); } });
+async function runSearch() {
+  const q = $("q").value.trim();
+  if (q.length < 2) { if (TAB === "search") go("home"); return; }
+  if (TAB !== "search") go("search");
+  $("searchInfo").textContent = `Søger efter “${q}” …`;
+  let d; try { d = await api("/api/search?q=" + encodeURIComponent(q)); } catch (e) { $("searchInfo").textContent = e.message; return; }
+  if ($("q").value.trim() !== q) return;
+  const n = d.added.length + d.waitlist.length + d.log.length + d.translations.length + d.aliases.length + d.ignored.length;
+  $("searchInfo").textContent = n ? `Alt, hvad Fangarr har gjort med titler, der indeholder “${q}”.` : `Fangarr har intet om “${q}”. Søgningen kigger i loggen, ventelisten, tilføjelser, oversættelser, koblinger og fjernede titler.`;
+  const box = (title, n, body) => n ? `<div class="card tp"><div class="tph"><h2>${title} <span class="small">${n}</span></h2></div>${body}</div>` : "";
+  $("searchOut").innerHTML =
+    box("Tilføjet til Sonarr og Radarr", d.added.length, `<table><thead><tr><th>Tilføjet</th><th>Titel</th><th>Sendt til</th><th>Regel</th><th>Hentet?</th></tr></thead><tbody>` +
+      d.added.map(a => `<tr><td style="white-space:nowrap;color:var(--muted)">${fmt(a.ts)}</td><td><b>${arrLink(a, esc(a.title))}</b></td><td>${esc(a.instance)}</td><td>${esc(a.rule)}</td><td>${homePill(a)}</td></tr>`).join("") + "</tbody></table>") +
+    box("På ventelisten", d.waitlist.length, `<table><thead><tr><th>Titel</th><th>Status</th><th>Forsøg</th><th>Seneste grund</th></tr></thead><tbody>` +
+      d.waitlist.map(w => `<tr><td><b>${esc(w.title)}</b><div class="small">${esc(w.release)}</div></td><td class="d ${WAIT_CLS[w.status] || ""}">${esc(w.status)}</td><td>${w.attempts}</td><td>${esc(w.reason)}</td></tr>`).join("") + "</tbody></table>") +
+    box("Oversættelser", d.translations.length, `<table><thead><tr><th>Titel</th><th>Status</th><th>Grund</th><th>Senest</th></tr></thead><tbody>` +
+      d.translations.map(i => `<tr><td><b>${esc(i.title)}</b></td><td class="st st-${esc(i.status)}">${(typeof TR_ST !== "undefined" && TR_ST[i.status]) || esc(i.status)}</td><td>${esc(i.reason)}</td><td style="white-space:nowrap">${lt(i.updated_at)}</td></tr>`).join("") + "</tbody></table>") +
+    box("Loggen", d.log.length, `<table><thead><tr><th>Tid</th><th>Titel</th><th>Beslutning</th><th>Regel</th><th>Detaljer</th></tr></thead><tbody>` +
+      d.log.map(r => `<tr><td style="white-space:nowrap;color:var(--muted)">${esc(r.ts.replace("T", " ").slice(0, 16))}</td><td><b>${esc(r.title)}</b>${r.year ? " (" + r.year + ")" : ""}<div class="small">${esc(r.release)}</div></td>
+        <td class="d ${dcls(r.decision)}">${esc(r.decision)}</td><td>${esc(r.rule)}</td><td>${esc(r.detail)}</td></tr>`).join("") + "</tbody></table>") +
+    box("Godkendte koblinger", d.aliases.length, `<table><tbody>` + d.aliases.map(a => `<tr><td><b>${esc(a.release_title)}</b></td><td>kobles til ${esc(a.title)}</td></tr>`).join("") + "</tbody></table>") +
+    box("Fjernede titler (huskes)", d.ignored.length, `<table><tbody>` + d.ignored.map(a => `<tr><td><b>${esc(a.title)}</b></td><td>fjernet ${fmt(a.created)} – kommer ikke på ventelisten igen</td></tr>`).join("") + "</tbody></table>");
+}
+
+// ---------- fjernede titler (Fjern og husk)
+async function delWait(id, remember) {
+  if (remember && !confirm("Fjern titlen og husk den? Så kommer den ikke på ventelisten igen, når der kommer en ny udgivelse. Du kan fortryde under Indstillinger › Koblinger og fjernede titler.")) return;
+  try { renderWait(await api(`/api/waitlist/${id}${remember ? "?remember=1" : ""}`, {method: "DELETE"})); toast(remember ? "Fjernet og husket" : "Fjernet fra ventelisten"); load(); } catch (e) { toast(e.message, true); }
+}
+async function loadIgnored() { try { renderIgnored(await api("/api/ignored")); } catch (e) {} }
+function renderIgnored(rows) {
+  $("ignBody").innerHTML = rows.length ? rows.map(a => `<tr><td><b>${esc(a.title)}</b></td><td>${a.media === "movie" ? "Film" : "Serie"}</td><td>${fmt(a.created)}</td>
+    <td><div class="btns"><button class="b danger" onclick="delIgnored(${a.id})">Glem</button></div></td></tr>`).join("")
+    : '<tr><td colspan="4" class="empty">Ingen fjernede titler. Brug “Fjern og husk” på ventelisten.</td></tr>';
+}
+async function delIgnored(id) { try { renderIgnored(await api(`/api/ignored/${id}`, {method: "DELETE"})); toast("Glemt – titlen kan komme på ventelisten igen"); } catch (e) { toast(e.message, true); } }
+
+// ---------- statistik: sortering
+let ST_SORT = {k: "", dir: -1};
+const ST_VAL = {title: i => String(i.title || "").toLowerCase(), rule: i => String(i.rule || "").toLowerCase(), added: i => i.added || "", gb: i => i.gb,
+  plays: i => i.watch ? i.watch.plays : -1, users: i => i.watch ? i.watch.users : -1, plays_30: i => i.watch ? i.watch.plays_30 : -1};
+function statSort(k) { ST_SORT = {k, dir: ST_SORT.k === k ? -ST_SORT.dir : (["title", "rule"].includes(k) ? 1 : -1)}; if (ST) renderStats(); }
+function statSorted(rows) {
+  document.querySelectorAll("#stats th.sort").forEach(th => { const on = th.dataset.k === ST_SORT.k; th.classList.toggle("on", on); th.setAttribute("aria-sort", on ? (ST_SORT.dir > 0 ? "ascending" : "descending") : "none");
+    th.querySelector("i").textContent = on ? (ST_SORT.dir > 0 ? " ↑" : " ↓") : ""; });
+  if (!ST_SORT.k) return rows;
+  const v = ST_VAL[ST_SORT.k];
+  return rows.slice().sort((a, b) => { const x = v(a), y = v(b); return (x < y ? -1 : x > y ? 1 : 0) * ST_SORT.dir; });
+}
+
+// ---------- premierer: markér som set
+function premSeen() { const ids = (PREM || []).map(p => p.tmdb).filter(Boolean); if (ids.length) api("/api/premieres/seen", {method: "POST", body: JSON.stringify({ids})}).then(() => setBadge("prem", 0)).catch(() => {}); }
+
+async function init() {
+  await load();
+  if (!S) return;
+  const [tab, sub] = location.hash.replace("#", "").split("/");
+  go(tab || "home", sub);
+  loadVersion();
+  if (TAB !== "home") { loadHome(); loadConn(0); }
+  setInterval(() => { if (!document.hidden) { loadHome(); if (TAB === "home") loadConn(0); } }, 60000);
+  setInterval(loadVersion, 3 * 3600 * 1000);
+}
+init();
 </script>
 </body>
 </html>

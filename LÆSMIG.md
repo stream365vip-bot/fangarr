@@ -74,6 +74,23 @@ Fanen svarer på ét spørgsmål pr. bruger: **hvilke tv har aldrig stået hos k
 
 Det, der gemmes på disken, er kun dine egne afgørelser og sager. Historikken og resultatet ligger i hukommelsen.
 
+## Nyt layout, forside og søgning (1.15.0)
+
+**Udseende:** mørkt tema i Stream365-stilen (næsten sort, mintgrøn, skrifterne Outfit og DM Sans – de ligger i `app/static/fonts`, så siden henter intet udefra). Menuen står i venstre side, delt i grupper. På telefon er der en bundmenu (Overblik, Venteliste, Log, Kunder, Mere).
+
+**Menuen:** Overblik · *Indhold:* Venteliste, Log, Regler, Premierer, Oversættelser · *Kunder:* Kontodeling · *Indsigt:* Statistik · *System:* Indstillinger, Opsætning. Et tal i menuen betyder, at noget venter: forslag på ventelisten, problemer med oversættelser, brugere der kan blokeres og nye premierer.
+
+- **Overblik (ny forside):** "Kræver din handling" viser kun det, du skal gøre noget ved, og et tryk fører til det rigtige sted. Under det står dagens tal, det seneste, der er sendt til Sonarr/Radarr, og **Forbindelser** (svarer sonarr2, radarr, autobrr, Seerr, Tautulli, Tracearr, Oversætteren og Plex? – kun dem, der er sat op i `fangarr.env`). Siden opdateres hvert minut.
+- **Hentet?** (Overblik, Log og Søgning): om en titel, Fangarr har tilføjet, er kommet hjem – *hentet*, *x af y udsendte afsnit hentet*, *henter*, *holdes tilbage (ventetid)*, *ikke udgivet endnu*, *ikke hentet endnu* eller *findes ikke længere*. Status hentes højst hvert 5. minut. Titlen er et link til Sonarr/Radarr. Adressen gættes ud fra Fangarrs egen (fangarr.domæne → sonarr2.domæne); passer det ikke, så sæt fx `SONARR2_LINK=https://…` i `fangarr.env`.
+- **Log:** åbner på *Tilføjet*. Knapperne øverst skifter mellem beslutningerne.
+- **Søg efter en titel** (feltet øverst): alt, Fangarr har gjort med en titel – tilføjelser, venteliste, log, oversættelser, koblinger og fjernede titler.
+- **Fjern og husk** (Venteliste): fjerner titlen og husker den, så den ikke kommer på ventelisten igen ved næste udgivelse. *Fjern* virker som før. Fortryd under Indstillinger › Koblinger og fjernede titler › *Glem*. En husket titel bliver stadig tilføjet, hvis den senere findes på TheTVDB/TMDb og passer til en regel. Fjernede titler er med i eksporten.
+- **Kontodeling husker historikken:** Tautullis historik gemmes i `data/kontodeling-historik.json.gz` og læses efter en genstart eller opdatering, så kun nye afspilninger hentes. Filen indeholder kundernes IP-adresser og enhedsnavne – den ligger kun i `data/` (ikke i git) og kommer med i Saltbox-backuppen af `/opt`. *Hent historikken forfra* erstatter filen.
+- **Premierer:** kommende danske serier (3 uger) hentes i baggrunden hver 6. time. Tallet i menuen er dem, du ikke har set på siden endnu, og som hverken findes eller følges.
+- **Statistik:** tryk på en kolonne for at sortere.
+- **Oversættelser, Indstillinger og Opsætning** er delt i underfaner. *Test en titel*, *Prøv en regel* og *Filtre i autobrr* ligger under Opsætning.
+- **Versionsnummer** nederst i menuen. Ligger der en nyere version på GitHub, står det der og på Overblik (tjekkes hver 3. time).
+
 ## Filer
 - `app/main.py` – server (FastAPI) · `app/static/index.html` – interface · `app/VERSION`
 - `fangarr.env.eksempel` – skabelon til `fangarr.env` (API-nøgler). `chmod 600`. **Kommer aldrig i git.**

@@ -21,6 +21,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 DATA_DIR = os.environ.get("DATA_DIR", "/config")
 DB_PATH = os.path.join(DATA_DIR, "fangarr.db")
@@ -102,6 +103,9 @@ def init_db():
             con.execute("ALTER TABLE waitlist ADD COLUMN suggestions TEXT DEFAULT '[]'")
         con.execute("CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)")  # intern tilstand
         con.execute("CREATE TABLE IF NOT EXISTS reveal_notified (id TEXT PRIMARY KEY, ts TEXT)")
+        # titler, du har fjernet fra ventelisten med "Fjern og husk" – de kommer ikke på ventelisten igen
+        con.execute("CREATE TABLE IF NOT EXISTS ignored (id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, media TEXT,"
+                    " key TEXT, title TEXT, UNIQUE(media, key))")
         cols = [r[1] for r in con.execute("PRAGMA table_info(added)").fetchall()]
         for c in ("ext_id", "rule"):
             if c not in cols:
@@ -177,9 +181,10 @@ def load_instances():
         key = re.sub(r"[^A-Z0-9]", "_", n.upper())
         url = os.environ.get(f"{key}_URL")
         api = os.environ.get(f"{key}_APIKEY")
+        link = (os.environ.get(f"{key}_LINK") or "").rstrip("/")   # valgfri: adressen, du selv åbner appen på
         typ = os.environ.get(f"{key}_TYPE") or ("radarr" if n.lower().startswith("radarr") else "sonarr")
         if url and api:
-            inst[n] = {"name": n, "type": typ, "url": url.rstrip("/"), "apikey": api}
+            inst[n] = {"name": n, "type": typ, "url": url.rstrip("/"), "apikey": api, "link": link}
         else:
             log.warning("Instans %s mangler %s_URL eller %s_APIKEY", n, key, key)
     return inst
@@ -961,6 +966,9 @@ def _process(p, test=False, from_waitlist=False, rules_override=None):
         if from_waitlist:
             res.update(decision="venter stadig", detail=reason, rule=wait_rule)
             return res
+        if not only and rules_override is None and is_ignored(media, title):
+            return done("afvist", "du har fjernet titlen fra ventelisten (Fjern og husk) – den kommer ikke på igen. "
+                                  "Glem den under Indstillinger › Koblinger og fjernede titler", wait_rule)
         add_to_waitlist(media, title, release, p, wait_rule, reason, suggestions=res["suggestions"])
         return done("venteliste", "venter på TheTVDB/TMDb: " + reason, wait_rule)
     return done("afvist", "; ".join(res["checks"]) or "ingen regel passede")
@@ -1103,6 +1111,25 @@ def seerr_status(media, cand):
 
 
 # ---------------------------------------------------------------- venteliste
+
+def is_ignored(media, title):
+    """Har du fjernet titlen fra ventelisten med "Fjern og husk"?"""
+    con = db()
+    row = con.execute("SELECT 1 FROM ignored WHERE media=? AND key=?", (media, loose(title))).fetchone()
+    con.close()
+    return bool(row)
+
+
+def ignore_title(media, title):
+    key = loose(title)
+    if not key:
+        return
+    con = db()
+    with con:
+        con.execute("INSERT OR IGNORE INTO ignored (created, media, key, title) VALUES (?,?,?,?)",
+                    (iso(now()), media, key, title))
+    con.close()
+
 
 def add_to_waitlist(media, title, release, payload, rule, reason, created=None, suggestions=None):
     sj = json.dumps(suggestions or [])
@@ -1264,6 +1291,7 @@ def background_loop():
             if time.time() - last_ss_check >= 120:
                 last_ss_check = time.time()
                 check_seerr_straks()
+            refresh_premieres_bg()
         except Exception as e:  # baggrundsjobbet må aldrig stoppe appen
             log.warning("Baggrundsjob fejlede: %s", e)
         time.sleep(LOOP_SECONDS)
@@ -1378,7 +1406,11 @@ def startup():
 
 @app.get("/")
 def index():
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    # no-cache: browseren spørger hver gang, så en opdatering af Fangarr ses med det samme
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"), headers={"Cache-Control": "no-cache"})
+
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")   # skrifterne (Outfit, DM Sans) ligger i Fangarr selv
 
 
 @app.get("/health")
@@ -1408,7 +1440,7 @@ def state():
     return {
         "settings": get_settings(),
         "rules": get_rules(),
-        "instances": [{"name": i["name"], "type": i["type"]} for i in INSTANCES.values()],
+        "instances": [{"name": i["name"], "type": i["type"], "link": i.get("link") or ""} for i in INSTANCES.values()],
         "disk_pct": disk_pct(),
         "today": {"series": added_today("series"), "movie": added_today("movie")},
         "waiting": venter,
@@ -1638,12 +1670,35 @@ def aliases_delete(aid: int):
 
 
 @app.delete("/api/waitlist/{wid}")
-def waitlist_delete(wid: int):
+def waitlist_delete(wid: int, remember: int = 0):
+    """Fjern en titel fra ventelisten. remember=1: husk den, så den ikke kommer på ventelisten igen."""
     con = db()
+    row = con.execute("SELECT media, title, release, rule FROM waitlist WHERE id=?", (wid,)).fetchone()
     with con:
         con.execute("DELETE FROM waitlist WHERE id=?", (wid,))
     con.close()
+    if row and remember:
+        ignore_title(row["media"], row["title"])
+        write_log(row["media"], row["release"], row["title"], 0, "afvist", row["rule"],
+                  "fjernet fra ventelisten og husket – kommer ikke på igen", bool(get_settings()["dry_run"]))
     return get_waitlist()
+
+
+@app.get("/api/ignored")
+def ignored_list():
+    con = db()
+    rows = [dict(r) for r in con.execute("SELECT * FROM ignored ORDER BY id DESC").fetchall()]
+    con.close()
+    return rows
+
+
+@app.delete("/api/ignored/{iid}")
+def ignored_delete(iid: int):
+    con = db()
+    with con:
+        con.execute("DELETE FROM ignored WHERE id=?", (iid,))
+    con.close()
+    return ignored_list()
 
 
 @app.get("/api/autobrr")
@@ -1852,11 +1907,13 @@ def export_data():
     settings = {r["key"]: json.loads(r["value"]) for r in con.execute("SELECT key, value FROM settings").fetchall()}
     waiting = [dict(r) for r in con.execute("SELECT * FROM waitlist WHERE status='venter'").fetchall()]
     aliases = [{k: r[k] for k in ("media", "release_title", "ext_id", "title")} for r in con.execute("SELECT * FROM aliases").fetchall()]
+    ignored = [{k: r[k] for k in ("media", "title")} for r in con.execute("SELECT * FROM ignored").fetchall()]
     con.close()
     rules = get_rules()
     for r in rules:
         r.pop("id", None)
-    return {"fangarr_export": 1, "created": iso(now()), "settings": settings, "rules": rules, "waitlist": waiting, "aliases": aliases}
+    return {"fangarr_export": 1, "created": iso(now()), "settings": settings, "rules": rules, "waitlist": waiting,
+            "aliases": aliases, "ignored": ignored}
 
 
 def import_data(d):
@@ -1883,6 +1940,9 @@ def import_data(d):
     for a in d.get("aliases") or []:
         if a.get("media") and a.get("release_title") and a.get("ext_id"):
             save_alias(a["media"], a["release_title"], a["ext_id"], a.get("title") or "")
+    for g in d.get("ignored") or []:
+        if g.get("media") in ("series", "movie") and g.get("title"):
+            ignore_title(g["media"], str(g["title"]))
     return {"rules": len(rules), "settings": len(d.get("settings") or {}), "waitlist": added_w,
             "aliases": len(d.get("aliases") or [])}
 
@@ -2874,6 +2934,7 @@ def public_ip(ip):
 
 
 import bisect
+import gzip
 import sys
 
 SHARING_PARTED_DAYS = 14     # to enheder er gået hver til sit, når begge er brugt (3+ dage) senere end så mange dage efter sidste fælles dag
@@ -2928,10 +2989,55 @@ def _sharing_session(r, now_ts):
             "title": str(r.get("full_title") or r.get("title") or "")[:80]}
 
 
+SH_FILE = os.path.join(DATA_DIR, "kontodeling-historik.json.gz")
+SH_COLS = ("uid", "user", "name", "a", "b", "d", "ip", "pub", "mid", "player", "platform", "product", "kind", "title")
+SH_INTERN = ("uid", "user", "name", "ip", "mid", "player", "platform", "product")
+
+
+def _sharing_save():
+    """Gem den hentede historik på disken, så den ikke skal hentes forfra efter en genstart eller opdatering."""
+    try:
+        tmp = SH_FILE + ".tmp"
+        with gzip.open(tmp, "wt", encoding="utf-8") as f:
+            json.dump({"v": 1, "cols": SH_COLS, "fetched": _sh_hist["fetched"],
+                       "rows": [[r[c] for c in SH_COLS] for r in _sh_hist["rows"]]}, f, ensure_ascii=False)
+        os.replace(tmp, SH_FILE)
+    except (OSError, KeyError) as e:
+        log.warning("Kontodeling: historikken kunne ikke gemmes: %s", e)
+
+
+def _sharing_load():
+    """Læs den gemte historik. Fejler det (ingen fil, gammel eller ødelagt fil), hentes alt bare forfra."""
+    try:
+        with gzip.open(SH_FILE, "rt", encoding="utf-8") as f:
+            d = json.load(f)
+        if d.get("v") != 1 or tuple(d.get("cols") or ()) != SH_COLS:
+            return False
+        rows = []
+        for vals in d["rows"]:
+            r = dict(zip(SH_COLS, vals))
+            for c in SH_INTERN:
+                r[c] = sys.intern(str(r[c]))
+            rows.append(r)
+        rows.sort(key=lambda s: s["a"])
+        _sh_hist.update(rows=rows, fetched=str(d.get("fetched") or ""),
+                        oldest=iso(datetime.datetime.fromtimestamp(rows[0]["a"])) if rows else "")
+        log.info("Kontodeling: %s afspilninger læst fra den gemte historik", len(rows))
+        return bool(rows)
+    except FileNotFoundError:
+        return False
+    except Exception as e:
+        log.warning("Kontodeling: den gemte historik kunne ikke læses (%s) – henter forfra", e.__class__.__name__)
+        return False
+
+
 def sharing_history(job, full=False):
-    """Hele historikken fra Tautulli (én række pr. afspilning). Første gang hentes alt; derefter kun det nye,
-    og resten huskes i hukommelsen, til Fangarr genstartes."""
+    """Hele historikken fra Tautulli (én række pr. afspilning). Første gang hentes alt; derefter kun det nye.
+    Historikken gemmes på disken (kontodeling-historik.json.gz), så den også huskes efter en genstart."""
     with _sh_lock:
+        if not full and not _sh_hist["rows"]:
+            job["note"] = "læser den gemte historik"
+            _sharing_load()
         now_ts, rows = int(time.time()), _sh_hist["rows"]
         if full or not rows:
             base, cutoff, after = [], 0, None
@@ -2959,6 +3065,8 @@ def sharing_history(job, full=False):
         rows = base + new
         rows.sort(key=lambda s: s["a"])
         _sh_hist.update(rows=rows, fetched=iso(now()), oldest=iso(datetime.datetime.fromtimestamp(rows[0]["a"])) if rows else "")
+        job["note"] = "gemmer historikken"
+        _sharing_save()
         job["note"] = ""
         return rows, pos >= SHARING_MAX_ROWS
 
@@ -3654,6 +3762,7 @@ def run_sharing(job, start, end, min_minutes, red_days, cut, full):
         job["note"] = " · ".join(note)
         job["status"] = "færdig"
         _sharing["result"] = {**job}
+        kv_set("sharing_summary", {"at": iso(now()), "from": iso(start), "to": iso(end), "buckets": job["results"]["buckets"]})
     except Exception as e:
         log.exception("Kontodeling: analysen fejlede") if not isinstance(e, RuntimeError) else None
         job["status"] = "fejl"
@@ -3742,3 +3851,327 @@ async def sharing_user_put(req: Request):
             if u["user_id"] == uid:
                 u["case"] = {"status": status, "note": str(b.get("note") or "")[:1000], "updated": iso(now())}
     return {"ok": True}
+
+
+# ================================================================ 1.15: forside, forbindelser, version, status og søgning
+
+GITHUB_VERSION_URL = os.environ.get("VERSION_URL") or "https://raw.githubusercontent.com/stream365vip-bot/fangarr/main/app/VERSION"
+_cache = {}
+_cache_lock = threading.Lock()
+
+
+def cached(key, ttl, fn):
+    """Gem svaret fra fn() i ttl sekunder, så forsiden ikke spørger de andre apps ved hver visning."""
+    with _cache_lock:
+        hit = _cache.get(key)
+        if hit and time.time() - hit[0] < ttl:
+            return hit[1]
+    val = fn()
+    with _cache_lock:
+        _cache[key] = (time.time(), val)
+    return val
+
+
+# ---------------------------------------------------------------- version
+
+def _ver_tuple(v):
+    return tuple(to_int(x) for x in re.findall(r"\d+", str(v))[:3])
+
+
+def _latest_version():
+    try:
+        r = httpx.get(GITHUB_VERSION_URL, timeout=10, follow_redirects=True)
+        if r.status_code == 200 and re.fullmatch(r"\d+(\.\d+){1,2}", r.text.strip()):
+            return r.text.strip()
+    except httpx.HTTPError:
+        pass
+    return ""
+
+
+@app.get("/api/version")
+def version_info():
+    """Den version, der kører, og den nyeste på GitHub (spørges højst hver 3. time)."""
+    latest = cached("version", 3 * 3600, _latest_version)
+    return {"version": VERSION, "latest": latest,
+            "update": bool(latest) and _ver_tuple(latest) > _ver_tuple(VERSION)}
+
+
+# ---------------------------------------------------------------- forbindelser
+
+def _probe(name, fn):
+    t = time.time()
+    try:
+        fn()
+        return {"name": name, "ok": True, "detail": "", "ms": int((time.time() - t) * 1000)}
+    except httpx.HTTPStatusError as e:
+        code = e.response.status_code
+        why = "afviste nøglen" if code in (401, 403) else f"svarede med fejl {code}"
+        return {"name": name, "ok": False, "detail": why, "ms": int((time.time() - t) * 1000)}
+    except httpx.HTTPError as e:
+        return {"name": name, "ok": False, "detail": "svarer ikke" if isinstance(e, (httpx.ConnectError, httpx.TimeoutException)) else e.__class__.__name__, "ms": 0}
+    except Exception as e:  # fx RuntimeError fra tautulli()/ov_get() – teksten indeholder aldrig nøgler
+        return {"name": name, "ok": False, "detail": str(e)[:120] or e.__class__.__name__, "ms": 0}
+
+
+def _get_ok(url, headers=None, params=None, ok=(200,)):
+    r = httpx.get(url, headers=headers, params=params, timeout=8, follow_redirects=False)
+    if r.status_code not in ok:
+        raise httpx.HTTPStatusError("status", request=r.request, response=r)
+
+
+def _connections():
+    checks = []
+    for inst in INSTANCES.values():
+        checks.append((inst["name"], lambda i=inst: _get_ok(i["url"] + "/api/v3/system/status", {"X-Api-Key": i["apikey"]})))
+    if AUTOBRR_URL and AUTOBRR_APIKEY:
+        checks.append(("autobrr", lambda: _get_ok(AUTOBRR_URL + "/api/filters", {"X-API-Token": AUTOBRR_APIKEY})))
+    if SEERR_URL and SEERR_APIKEY:
+        checks.append(("Seerr", lambda: _get_ok(SEERR_URL + "/api/v1/settings/about", {"X-Api-Key": SEERR_APIKEY})))
+    if tautulli_enabled():
+        checks.append(("Tautulli", lambda: _get_ok(TAUTULLI_URL + "/api/v2", params={"apikey": TAUTULLI_APIKEY, "cmd": "get_server_friendly_name"})))
+    if TRACEARR_URL and TRACEARR_APIKEY:
+        # samme adresse som Statistik bruger: 200 eller 404 (titlen kendes ikke) betyder, at Tracearr svarer og nøglen virker
+        checks.append(("Tracearr", lambda: _get_ok(f"{TRACEARR_URL}/api/v2/public/media/movie:tmdb:1/stats",
+                                                    {"Authorization": f"Bearer {TRACEARR_APIKEY}"}, ok=(200, 404))))
+    if ov_enabled():
+        checks.append(("Oversætteren", lambda: ov_get("/api/health")))
+    if PLEX_URL and PLEX_TOKEN:
+        checks.append(("Plex", lambda: _get_ok(PLEX_URL + "/identity", {"X-Plex-Token": PLEX_TOKEN})))
+    if not checks:
+        return []
+    with ThreadPoolExecutor(max_workers=len(checks)) as ex:
+        return list(ex.map(lambda c: _probe(*c), checks))
+
+
+@app.get("/api/connections")
+def connections(refresh: int = 0):
+    """Svarer de apps, Fangarr taler med? Kun dem, der er sat op i fangarr.env, vises. Gemmes i 60 sekunder."""
+    if refresh:
+        with _cache_lock:
+            _cache.pop("connections", None)
+    items = cached("connections", 60, _connections)
+    return {"checked": iso(now()), "items": items}
+
+
+# ---------------------------------------------------------------- "kom den hjem?" – status i Sonarr/Radarr
+
+def _arr_snapshot(inst):
+    """Titler og kø i én Sonarr/Radarr (uden Telegram-alarm ved fejl – forsiden må ikke larme)."""
+    media = "movie" if inst["type"] == "radarr" else "series"
+    h = {"X-Api-Key": inst["apikey"]}
+    r = httpx.get(inst["url"] + "/api/v3" + ("/movie" if media == "movie" else "/series"), headers=h, timeout=30)
+    r.raise_for_status()
+    items = {to_int(x.get("id")): x for x in r.json() or []}
+    queue = {}
+    try:
+        q = httpx.get(inst["url"] + "/api/v3/queue", headers=h, timeout=20,
+                      params={"pageSize": 500, "includeUnknownMovieItems": "false", "includeUnknownSeriesItems": "false"})
+        q.raise_for_status()
+        for rec in (q.json() or {}).get("records") or []:
+            queue[to_int(rec.get("movieId") if media == "movie" else rec.get("seriesId"))] = str(rec.get("status") or "").lower()
+    except (httpx.HTTPError, ValueError):
+        pass
+    return {"items": items, "queue": queue}
+
+
+def arr_state(inst, media, arr_id, snap):
+    """Er titlen hentet? state: hentet · delvist · henter · venter · mangler · fjernet."""
+    it = snap["items"].get(to_int(arr_id))
+    if not it:
+        return {"state": "fjernet", "text": f"findes ikke længere i {inst['name']}", "path": ""}
+    qs = snap["queue"].get(to_int(arr_id))
+    if media == "movie":
+        path = f"/movie/{it.get('tmdbId')}"
+        if it.get("hasFile"):
+            return {"state": "hentet", "text": "hentet", "path": path}
+        if qs:
+            return {"state": "venter" if qs == "delay" else "henter",
+                    "text": "holdes tilbage (ventetid)" if qs == "delay" else "er ved at blive hentet", "path": path}
+        if not it.get("isAvailable", True):
+            return {"state": "venter", "text": "ikke udgivet endnu", "path": path}
+        return {"state": "mangler", "text": "ikke hentet endnu", "path": path}
+    path = f"/series/{it.get('titleSlug')}"
+    st = it.get("statistics") or {}
+    have, want = to_int(st.get("episodeFileCount")), to_int(st.get("episodeCount"))
+    if want and have >= want:
+        return {"state": "hentet", "text": f"alle {want} udsendte afsnit hentet", "path": path}
+    if qs:
+        return {"state": "venter" if qs == "delay" else "henter",
+                "text": (f"{have} af {want} afsnit · " if have else "") + ("holdes tilbage (ventetid)" if qs == "delay" else "henter"), "path": path}
+    if have:
+        return {"state": "delvist", "text": f"{have} af {want} udsendte afsnit hentet", "path": path}
+    if not want:
+        return {"state": "venter", "text": "ingen afsnit udsendt endnu", "path": path}
+    return {"state": "mangler", "text": f"0 af {want} udsendte afsnit hentet", "path": path}
+
+
+def added_status(limit=300):
+    """Det, Fangarr har lagt i Sonarr/Radarr (nyeste først), med status for om det er kommet hjem."""
+    con = db()
+    rows = [dict(r) for r in con.execute("SELECT * FROM added ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
+    con.close()
+    snaps = {}
+    for name in {r["instance"] for r in rows}:
+        inst = INSTANCES.get(name)
+        if not inst:
+            continue
+        try:
+            snaps[name] = cached(("snap", name), 300, lambda i=inst: _arr_snapshot(i))
+        except (httpx.HTTPError, ValueError):
+            snaps[name] = None
+    out = []
+    for r in rows:
+        inst, snap = INSTANCES.get(r["instance"]), snaps.get(r["instance"])
+        if not inst or not snap:
+            s = {"state": "ukendt", "text": f"{r['instance']} svarer ikke", "path": ""}
+        else:
+            s = arr_state(inst, r["media"], r["arr_id"], snap)
+        out.append({"ts": r["ts"], "media": r["media"], "instance": r["instance"], "title": r["title"],
+                    "rule": r["rule"] or "", **s})
+    return out
+
+
+@app.get("/api/added")
+def added_get(limit: int = 300):
+    return added_status(min(max(limit, 1), 1000))
+
+
+# ---------------------------------------------------------------- premierer: tal i menuen
+
+_prem_bg = {"ts": 0.0, "items": None}
+
+
+def refresh_premieres_bg():
+    """Kaldes af baggrundsjobbet hver 6. time: hent de kommende danske premierer, så menuen kan vise et tal."""
+    if not SEERR_URL or not SEERR_APIKEY or time.time() - _prem_bg["ts"] < 6 * 3600:
+        return
+    _prem_bg["ts"] = time.time()
+    try:
+        _prem_bg["items"] = fetch_premieres(21, "da")
+    except Exception as e:
+        log.warning("Premierer kunne ikke hentes til menuen: %s", e.__class__.__name__)
+
+
+def premieres_new():
+    """Kommende danske serier (3 uger), som hverken findes, følges eller er set af dig på siden Premierer."""
+    if not _prem_bg["items"]:
+        return 0
+    try:
+        items = premiere_status([dict(x) for x in _prem_bg["items"]])
+    except Exception:
+        return 0
+    seen = set(kv_get("premieres_seen", []) or [])
+    return sum(1 for i in items if not i["exists"] and not i["following"] and i.get("tmdb") not in seen)
+
+
+@app.post("/api/premieres/seen")
+async def premieres_seen(req: Request):
+    """Siden Premierer er åbnet: de viste titler tæller ikke længere som nye i menuen."""
+    try:
+        b = await req.json()
+    except ValueError:
+        b = {}
+    ids = [to_int(x) for x in (b.get("ids") or []) if to_int(x)]
+    seen = set(kv_get("premieres_seen", []) or []) | set(ids)
+    kv_set("premieres_seen", sorted(seen)[-2000:])
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- forside
+
+def _translator_brief():
+    """Kort status fra Oversætteren til forsiden. Hver del fejler for sig."""
+    out = {"enabled": True, "ok": True, "problems": None, "hidden": None, "month_kr": None, "forecast_kr": None,
+           "budget_kr": None, "queue": None}
+    kurs = 6.7
+    try:
+        st = ov_get("/api/status")
+        kurs = float(st.get("usd_to_dkk") or kurs)
+    except Exception:
+        out["ok"] = False
+        return out
+    try:
+        items = ov_get("/api/items", {"status": ",".join(TR_PROBLEMS), "limit": 200}).get("items") or []
+        out["problems"] = sum(1 for i in items if i.get("status") != "ikke_muligt")
+    except Exception:
+        pass
+    try:
+        rv = ov_get("/api/reveal", {"days": 1})
+        out["hidden"] = len(rv.get("waiting") or []) if rv.get("enabled") else None
+    except Exception:
+        pass
+    try:
+        f = forecast(ov_get("/api/spend", {"days": 10}))
+        out["month_kr"] = round(f["month_usd"] * kurs)
+        out["forecast_kr"] = round(f["forecast_usd"] * kurs)
+        out["budget_kr"] = round(float(f["budget_usd"] or 0) * kurs) or None
+    except Exception:
+        pass
+    return out
+
+
+@app.get("/api/overview")
+def overview():
+    """Forsiden: det, der kræver handling, dagens tal og det seneste, der er sendt til Sonarr/Radarr."""
+    s = get_settings()
+    day = iso(now() - datetime.timedelta(days=1))
+    con = db()
+    waiting = con.execute("SELECT COUNT(*) FROM waitlist WHERE status='venter'").fetchone()[0]
+    sugg = con.execute("SELECT COUNT(*) FROM waitlist WHERE status='venter' AND suggestions NOT IN ('', '[]')").fetchone()[0]
+    errors = con.execute("SELECT COUNT(*) FROM log WHERE ts>=? AND decision='fejl'", (day,)).fetchone()[0]
+    rescued = con.execute("SELECT COUNT(*) FROM log WHERE ts>=? AND decision='hentet for sonarr2'", (day,)).fetchone()[0]
+    con.close()
+    tr = cached("translator_brief", 60, _translator_brief) if ov_enabled() else {"enabled": False}
+    try:
+        recent = added_status(8)
+    except Exception:
+        recent = []
+    try:
+        prem_new = premieres_new()
+    except Exception:
+        prem_new = 0
+    return {
+        "dry_run": bool(s["dry_run"]), "disk_pct": disk_pct(), "max_disk_pct": s["max_disk_pct"],
+        "today": {"series": added_today("series"), "movie": added_today("movie")},
+        "waiting": waiting, "suggestions": sugg, "errors_24h": errors, "rescued_24h": rescued,
+        "translator": tr, "sharing": kv_get("sharing_summary") if tautulli_enabled() else None,
+        "premieres_new": prem_new, "recent": recent,
+    }
+
+
+# ---------------------------------------------------------------- søg efter en titel
+
+@app.get("/api/search")
+def search(q: str = ""):
+    """Alt, Fangarr har gjort med en titel: log, venteliste, tilføjelser, koblinger, fjernede titler og oversættelser."""
+    q = (q or "").strip()
+    if len(q) < 2:
+        return {"q": q, "log": [], "waitlist": [], "added": [], "aliases": [], "ignored": [], "translations": []}
+    like = "%" + q.replace("%", "").replace("_", " ") + "%"
+    key = loose(q)
+    con = db()
+    logs = [dict(r) for r in con.execute(
+        "SELECT * FROM log WHERE title LIKE ? OR release LIKE ? ORDER BY id DESC LIMIT 60", (like, like)).fetchall()]
+    wait = [dict(r) for r in con.execute(
+        "SELECT id, created, media, title, release, attempts, next_try, status, reason, rule FROM waitlist"
+        " WHERE title LIKE ? OR release LIKE ? ORDER BY id DESC LIMIT 20", (like, like)).fetchall()]
+    aliases = [dict(r) for r in con.execute(
+        "SELECT * FROM aliases WHERE release_title LIKE ? OR title LIKE ? ORDER BY id DESC LIMIT 20", (like, like)).fetchall()]
+    ignored = [dict(r) for r in con.execute("SELECT * FROM ignored WHERE title LIKE ? ORDER BY id DESC LIMIT 20", (like,)).fetchall()]
+    con.close()
+    try:
+        added = [a for a in added_status(1000) if q.lower() in (a["title"] or "").lower() or (key and key in loose(a["title"]))][:20]
+    except Exception:
+        added = []
+    trans = []
+    if ov_enabled():
+        for params in ({"status": "faerdig", "days": 30, "limit": 300}, {"status": ",".join(TR_PROBLEMS), "limit": 200}):
+            try:
+                for i in ov_get("/api/items", params).get("items") or []:
+                    if q.lower() in str(i.get("title") or "").lower():
+                        trans.append({"title": i.get("title"), "status": i.get("status"), "reason": i.get("reason") or "",
+                                      "updated_at": i.get("updated_at"), "cost_usd": i.get("cost_usd")})
+            except Exception:
+                pass
+    return {"q": q, "log": logs, "waitlist": wait, "added": added, "aliases": aliases, "ignored": ignored,
+            "translations": trans[:30]}
