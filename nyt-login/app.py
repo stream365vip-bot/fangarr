@@ -7,13 +7,18 @@ Sådan virker det (samme metode som login i Seerr):
 Brugerens kodeord ses aldrig, og brugerens Plex-nøgle gemmes ikke – den bruges kun til det ene opslag.
 """
 
+import base64
+import datetime
 import hashlib
 import hmac
+import html
+import json
 import logging
 import mimetypes
 import os
 import re
 import secrets
+import threading
 import time
 import urllib.parse
 import uuid
@@ -33,6 +38,9 @@ MACHINE_ID = (os.environ.get("PLEX_MACHINE_ID") or "").strip()
 PRODUCT = os.environ.get("PRODUCT_NAME") or "Stream365"
 SESSION_DAYS = int(os.environ.get("SESSION_DAYS") or "90")
 CONTACT = os.environ.get("CONTACT_TEXT") or "Skriv til Stream365, hvis du mener, det er en fejl."
+OLD_HOSTS = {h.strip().lower() for h in (os.environ.get("OLD_HOSTS") or "").split(",") if h.strip()}   # gamle adresser, der sendes videre
+RULES_FILE = os.path.join(SITE_DIR, "_regler.json")      # regler + spørgsmål ved første login (ligger sammen med siden)
+ACCEPT_FILE = os.path.join(DATA_DIR, "accepteret.json")  # hvem har accepteret reglerne, og hvornår
 COOKIE, PIN_COOKIE = "s365_nyt", "s365_pin"
 SECURE = PUBLIC_URL.startswith("https://")
 
@@ -111,8 +119,78 @@ def read_cookie(raw):
     return None
 
 
+def session(req: Request):
+    """Den indloggede bruger som (plex-id, brugernavn) – eller None."""
+    val = read_cookie(req.cookies.get(COOKIE))
+    if val is None:
+        return None
+    uid, _, name = val.partition(":")
+    try:
+        name = base64.urlsafe_b64decode(name.encode()).decode() if name else ""
+    except Exception:
+        name = ""
+    return uid, name
+
+
 def logged_in(req: Request):
-    return read_cookie(req.cookies.get(COOKIE)) is not None
+    return session(req) is not None
+
+
+# ---------------------------------------------------------------- regler ved første login
+_rules = {"mtime": 0.0, "data": None}
+_accept_lock = threading.Lock()
+
+
+def rules():
+    """Reglerne og spørgsmålene fra _regler.json. Findes filen ikke (eller er den forkert), spørges der ikke."""
+    try:
+        m = os.path.getmtime(RULES_FILE)
+    except OSError:
+        return None
+    if m != _rules["mtime"]:
+        _rules["mtime"] = m
+        try:
+            with open(RULES_FILE, encoding="utf-8") as f:
+                d = json.load(f)
+            qs = d.get("questions") or []
+            ok = bool(d.get("rules")) and all(isinstance(q.get("options"), list) and 0 <= int(q.get("correct", -1)) < len(q["options"]) for q in qs)
+            _rules["data"] = d if ok else None
+            if not ok:
+                log.warning("_regler.json er ikke gyldig – reglerne vises ikke")
+        except Exception as e:
+            _rules["data"] = None
+            log.warning("_regler.json kunne ikke læses (%s) – reglerne vises ikke", e.__class__.__name__)
+    return _rules["data"]
+
+
+def _accepted_all():
+    try:
+        with open(ACCEPT_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def has_accepted(uid):
+    r = rules()
+    if not r:
+        return True
+    with _accept_lock:
+        a = _accepted_all().get(str(uid))
+    return bool(a) and int(a.get("version") or 0) >= int(r.get("version") or 1)
+
+
+def save_accept(uid, name):
+    r = rules() or {}
+    with _accept_lock:
+        d = _accepted_all()
+        d[str(uid)] = {"user": name, "version": int(r.get("version") or 1),
+                       "at": datetime.datetime.now().isoformat(timespec="seconds")}
+        tmp = ACCEPT_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, ACCEPT_FILE)
+    log.info("Reglerne (version %s) er accepteret af Plex-kontoen %s", r.get("version") or 1, name or uid)
 
 
 def safe_next(path):
@@ -135,10 +213,48 @@ a.btn,button.btn{display:flex;align-items:center;justify-content:center;width:10
 font:inherit;font-weight:700;cursor:pointer;text-decoration:none}
 a.btn:hover,button.btn:hover{background:#6FE2BC}a.btn:focus-visible,button.btn:focus-visible{outline:2px solid #ECEEF1;outline-offset:3px}
 .small{font-size:13.5px;margin:18px 0 0}.err{color:#F27D77}
+main.wide{max-width:640px;text-align:left;padding:28px 24px}main.wide .logo{margin:0 0 16px}
+.eyebrow{font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;color:#58D9AE;font-weight:700;margin:0 0 6px}
+ol.r{list-style:none;margin:0 0 22px;padding:0;border:1px solid #262A32;border-radius:14px;overflow:hidden}
+ol.r li{display:grid;grid-template-columns:36px minmax(0,1fr);gap:12px;padding:14px 16px;border-bottom:1px solid #262A32}
+ol.r li:last-child{border-bottom:0}ol.r b{display:block;color:#ECEEF1}ol.r span.t{color:#C9CFCD;font-size:15px}
+ol.r i{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;border:1.5px solid #58D9AE;color:#58D9AE;font:700 14px/1 system-ui;font-style:normal}
+h2{font-size:19px;margin:0 0 4px}fieldset{border:1px solid #262A32;border-radius:14px;margin:0 0 12px;padding:14px 16px}
+fieldset.bad{border-color:#F27D77}legend{font-weight:700;padding:0 6px}
+label.o{display:flex;gap:10px;align-items:flex-start;padding:9px 4px;min-height:44px;cursor:pointer;color:#D5D9DF}
+label.o input{width:20px;height:20px;margin-top:2px;accent-color:#58D9AE;flex:none}
+.note{background:#3A1C1B;border:1px solid #5A2A28;color:#FFC1BD;border-radius:12px;padding:12px 14px;margin:0 0 14px}
 </style></head><body><main>
 <div class="logo" aria-hidden="true">365</div>
 __BODY__
 </main></body></html>"""
+
+
+def rules_page(req_path, name="", wrong=None, chosen=None):
+    """Reglerne som det første, brugeren møder – og tre spørgsmål, der skal besvares rigtigt."""
+    r, e = rules(), html.escape
+    wrong, chosen = wrong or set(), chosen or {}
+    items = "".join(f'<li><i>{n}</i><div><b>{e(str(x.get("title") or ""))}</b><span class="t">{e(str(x.get("text") or ""))}</span></div></li>'
+                    for n, x in enumerate(r["rules"], 1))
+    qs = ""
+    for i, q in enumerate(r.get("questions") or []):
+        opts = "".join(f'<label class="o"><input type="radio" name="q{i}" value="{j}" required{" checked" if chosen.get(i) == j and i not in wrong else ""}> <span>{e(str(o))}</span></label>'
+                       for j, o in enumerate(q["options"]))
+        qs += f'<fieldset class="{"bad" if i in wrong else ""}"><legend>{i + 1}. {e(str(q.get("q") or ""))}</legend>{opts}</fieldset>'
+    note = ('<p class="note" role="alert">Et eller flere svar passer ikke med reglerne. Læs dem igen, og ret de spørgsmål, der er markeret med rødt.</p>'
+            if wrong else "")
+    q = urllib.parse.quote(safe_next(req_path), safe="/")
+    body = f"""<p class="eyebrow">Før du går i gang</p>
+<h1>{e(str(r.get("title") or "Reglerne for din konto"))}</h1>
+<p>{e(str(r.get("intro") or ""))}</p>
+<ol class="r">{items}</ol>
+<h2>{e(str(r.get("quiz_title") or "Tre hurtige spørgsmål"))}</h2>
+<p>{e(str(r.get("quiz_intro") or "Svar rigtigt på alle tre for at bekræfte, at du har læst og accepterer reglerne."))}</p>
+{note}<form method="post" action="/regler?next={q}">{qs}
+<button class="btn" type="submit">{e(str(r.get("button") or "Jeg accepterer reglerne"))}</button></form>
+<p class="small">Du ser kun denne side første gang, du logger ind.</p>"""
+    return HTMLResponse(PAGE.replace('<main>', '<main class="wide">').replace("__BODY__", body), status_code=200,
+                        headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"})
 
 
 def page(body, status=200):
@@ -155,9 +271,43 @@ def login_page(next_path="/", note=""):
 <p class="small">Du logger ind hos Plex. Stream365 ser ikke dit kodeord. Du bliver husket på denne enhed i {SESSION_DAYS} dage.</p>""")
 
 
+@app.middleware("http")
+async def old_hosts(req: Request, call_next):
+    """Gamle adresser (fx nyt.stream365.vip) sendes videre til den nye."""
+    host = (req.headers.get("host") or "").split(":")[0].lower()
+    if host in OLD_HOSTS and req.url.path != "/health":
+        return RedirectResponse(PUBLIC_URL + safe_next(req.url.path), status_code=301)
+    return await call_next(req)
+
+
 @app.get("/health")
 def health():
-    return {"ok": True, "site": os.path.isfile(os.path.join(SITE_DIR, "index.html")), "server_id": bool(machine_id())}
+    return {"ok": True, "site": os.path.isfile(os.path.join(SITE_DIR, "index.html")), "server_id": bool(machine_id()),
+            "rules": bool(rules())}
+
+
+@app.post("/regler")
+async def rules_accept(req: Request, next: str = "/"):
+    """Svarene på de tre spørgsmål. Alle skal være rigtige, før reglerne regnes som accepteret."""
+    s = session(req)
+    if not s:
+        return RedirectResponse("/login", status_code=303)
+    r = rules()
+    if not r:
+        return RedirectResponse(safe_next(next), status_code=303)
+    form = urllib.parse.parse_qs((await req.body()).decode("utf-8", "replace"))
+    wrong, chosen = set(), {}
+    for i, q in enumerate(r.get("questions") or []):
+        try:
+            chosen[i] = int((form.get(f"q{i}") or [""])[0])
+        except ValueError:
+            chosen[i] = -1
+        if chosen[i] != int(q["correct"]):
+            wrong.add(i)
+    if wrong:
+        return rules_page(next, s[1], wrong, chosen)
+    save_accept(s[0], s[1])
+    return RedirectResponse(safe_next(next), status_code=303)
 
 
 @app.get("/login")
@@ -224,9 +374,12 @@ def auth_done(req: Request):
 <a class="btn" href="/login">Prøv med en anden konto</a>""", 403)
         resp.delete_cookie(PIN_COOKIE)
         return resp
+    if not uid:
+        return login_page(next_path, "Plex svarer ikke lige nu. Prøv igen om lidt.")
     log.info("Adgang givet til Plex-kontoen %s", user or "?")
     resp = RedirectResponse(safe_next(next_path), status_code=303)
-    resp.set_cookie(COOKIE, make_cookie(uid or "bruger", SESSION_DAYS * 86400), max_age=SESSION_DAYS * 86400,
+    val = uid + ":" + base64.urlsafe_b64encode(user.encode()).decode()
+    resp.set_cookie(COOKIE, make_cookie(val, SESSION_DAYS * 86400), max_age=SESSION_DAYS * 86400,
                     httponly=True, secure=SECURE, samesite="lax")
     resp.delete_cookie(PIN_COOKIE)
     return resp
@@ -251,7 +404,13 @@ def site(path: str, req: Request):
         if path == "" or path.endswith((".html", "/")) or "." not in os.path.basename(path):
             return RedirectResponse("/login?next=" + urllib.parse.quote(safe_next("/" + path), safe="/"), status_code=303)
         return JSONResponse({"detail": "log ind først"}, status_code=401)
+    s = session(req)
+    wants_page = path == "" or path.endswith((".html", "/")) or "." not in os.path.basename(path)
+    if not has_accepted(s[0]):
+        return rules_page("/" + path, s[1]) if wants_page else JSONResponse({"detail": "acceptér reglerne først"}, status_code=401)
     full = os.path.realpath(os.path.join(SITE_DIR, path))
+    if any(part.startswith(("_", ".")) for part in path.split("/") if part):
+        full = ""    # filer, der begynder med _ eller . (fx _regler.json), vises aldrig
     if full != SITE_DIR and not full.startswith(SITE_DIR + os.sep):
         return page("<h1>Siden findes ikke</h1><p>Adressen er forkert.</p><a class=\"btn\" href=\"/\">Til forsiden</a>", 404)
     if os.path.isdir(full):
