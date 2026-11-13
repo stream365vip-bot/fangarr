@@ -229,6 +229,8 @@
   /* ---------- kunder og betalinger */
   .kl { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-bottom: 12px; }
   .kr { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; padding: 12px 18px; border-top: 1px solid var(--line2); }
+  .kgrp { padding: 14px 18px 8px; border-top: 1px solid var(--line); background: var(--bg); font: 600 14px var(--head); display: flex; justify-content: space-between; gap: 12px; }
+  .kgrp:first-child { border-top: 0; } .kgrp span { color: var(--muted); font: 400 13px "DM Sans", system-ui, sans-serif; } .kgrp.now { color: var(--accent); }
   .kr:first-child { border-top: 0; }
   .kr.click { cursor: pointer; } .kr.click:hover { background: var(--panel2); }
   .kr .who { flex: 1 1 220px; min-width: 0; } .kr .who b { font-weight: 600; } .kr .who .small { margin-top: 1px; }
@@ -453,13 +455,14 @@
 
   <section id="pay">
     <h2>Opkrævning</h2>
-    <p class="hint">Månedens liste laves af sig selv ud fra kundernes cyklus. Tryk <b>Kopiér besked</b>, send den selv i Messenger eller Telegram, og tryk <b>Anmodet</b>. Tryk <b>Betalt</b>, når pengene er kommet. Fangarr skriver aldrig til kunderne.</p>
+    <p class="hint">Månedens liste laves af sig selv ud fra kundernes cyklus. Tryk <b>Kopiér besked</b>, send den selv i Messenger eller Telegram, og tryk <b>Anmodet</b>. Tryk <b>Betalt</b>, når pengene er kommet. Fangarr skriver aldrig til kunderne. <b>Betalingsdatoen</b> er kundens faste dato i måneden (sættes på kundekortet) – kunder uden fast dato regnes som den 1. Sortér efter dato, eller tryk <b>I dag</b> for at se dem, der skal opkræves i dag. Du får også besked i Telegram om morgenen på dagen.</p>
     <div class="row" style="justify-content:space-between">
       <div class="kmonth"><button class="b" onclick="loadPay(KP.prev)" aria-label="Forrige måned">←</button><b id="payMonth">…</b><button class="b" onclick="loadPay(KP.next)" aria-label="Næste måned">→</button>
         <button class="b sm" id="payNow" onclick="loadPay(KP.current)">Denne måned</button></div>
     </div>
     <div class="card" id="payHead"></div>
     <div class="pills" id="payPills"></div>
+    <div class="row" id="paySort" style="margin:-4px 0 12px"></div>
     <div id="payList"><div class="empty">Henter …</div></div>
   </section>
 
@@ -1863,6 +1866,8 @@ function statSorted(rows) {
 function premSeen() { const ids = (PREM || []).map(p => p.tmdb).filter(Boolean); if (ids.length) api("/api/premieres/seen", {method: "POST", body: JSON.stringify({ids})}).then(() => setBadge("prem", 0)).catch(() => {}); }
 
 // ====================================================================== 1.16: kunder og betalinger
+let KPS = "navn"; try { KPS = localStorage.getItem("fangarr_pay_sort") === "dato" ? "dato" : "navn"; } catch (e) {}
+function paySort(v) { KPS = v; try { localStorage.setItem("fangarr_pay_sort", v); } catch (e) {} renderPay(); }
 let K = null, KC = [], KP = null, KPF = "alle", KCF = "aktive", KI = null, KIF = "maaned", KE = null, KCUR = null, IMP = null;
 const kdlg = $("kdlg"), edlg = $("edlg");
 const kkr = v => Number(v || 0).toLocaleString("da-DK") + " kr.";
@@ -1927,11 +1932,18 @@ function renderPay() {
       <div class="money"><i style="width:${pct}%"></i></div>
       <div class="small">${n("betalt")} af ${live.length} har betalt${n("ny") ? ` · ${n("ny")} er ikke anmodet endnu` : ""}${late ? ` · <span style="color:var(--bad)">${late} har ventet mere end ${K.settings.remind_days} dage</span>` : ""}</div>`
       : (KP.period < KP.current ? `Der er ingen opkrævninger gemt for ${esc(KP.label)}. <button class="b sm" onclick="payGen()">Opret dem nu</button>` : "Ingen kunder skal opkræves i denne måned."));
-  const F = [["alle", "Alle", L.length], ["mangler", "Mangler", L.filter(c => c.status === "ny" || c.status === "anmodet").length], ["ny", "Ikke anmodet", n("ny")], ["anmodet", "Anmodet", n("anmodet")],
+  const isToday = c => KP.today != null && c.due === KP.today;
+  if (KPF === "idag" && KP.today == null) KPF = "alle";
+  const F = [["alle", "Alle", L.length], ...(KP.today != null ? [["idag", "I dag", L.filter(isToday).length]] : []), ["mangler", "Mangler", L.filter(c => c.status === "ny" || c.status === "anmodet").length], ["ny", "Ikke anmodet", n("ny")], ["anmodet", "Anmodet", n("anmodet")],
     ["betalt", "Betalt", n("betalt")], ["MobilePay", "MobilePay", L.filter(c => c.method === "MobilePay").length], ["Revolut", "Revolut", L.filter(c => c.method === "Revolut").length]];
   $("payPills").innerHTML = KP.preview ? "" : F.map(([k, l, c]) => `<button class="${KPF === k ? "on" : ""}" onclick="KPF='${k}';renderPay()">${l}<span>${c}</span></button>`).join("");
-  const show = L.filter(c => KP.preview || KPF === "alle" || (KPF === "mangler" ? (c.status === "ny" || c.status === "anmodet") : (c.status === KPF || c.method === KPF)));
+  const show = L.filter(c => KP.preview || KPF === "alle" || (KPF === "idag" ? isToday(c) : KPF === "mangler" ? (c.status === "ny" || c.status === "anmodet") : (c.status === KPF || c.method === KPF)));
+  $("paySort").innerHTML = L.length ? `<span class="small" style="margin:0">Sortér efter</span><button class="b sm" aria-pressed="${KPS === "navn"}" style="${KPS === "navn" ? "border-color:var(--accent);color:var(--accent)" : ""}" onclick="paySort('navn')">Navn</button><button class="b sm" aria-pressed="${KPS === "dato"}" style="${KPS === "dato" ? "border-color:var(--accent);color:var(--accent)" : ""}" onclick="paySort('dato')">Betalingsdato</button>` : "";
+  if (KPS === "dato") show.sort((a, b) => a.due - b.due || a.name.localeCompare(b.name, "da"));
+  let lastDue = null;
   $("payList").innerHTML = show.length ? `<div class="kl">${show.map(c => {
+    const grp = KPS === "dato" && c.due !== lastDue ? `<div class="kgrp ${isToday(c) ? "now" : ""}">d. ${c.due}.${isToday(c) ? " · i dag" : ""} <span>${show.filter(x => x.due === c.due).length} ${show.filter(x => x.due === c.due).length === 1 ? "kunde" : "kunder"} · ${kkr(show.filter(x => x.due === c.due && x.status !== "sprunget over").reduce((s, x) => s + x.amount, 0))}</span></div>` : "";
+    lastDue = c.due;
     const [st, cl] = K_ST[c.status], adj = c.adjust.map(a => `${esc(a.text || (a.amount < 0 ? "Fradrag" : "Tillæg"))} ${a.amount > 0 ? "+" : ""}${kkr(a.amount)}`).join(" · ");
     let b = "";
     if (c.id) {
@@ -1941,9 +1953,9 @@ function renderPay() {
       else b = `<button class="b sm" onclick="payAct(${c.id},'unskip')">Tag med igen</button>`;
       b += `<button class="b sm" onclick="payEdit(${c.id})" aria-label="Ret opkrævningen">Ret</button>`;
     }
-    return `<div class="kr ${c.status === "betalt" || c.status === "sprunget over" ? "done" : ""} ${c.late ? "late" : ""}">
+    return grp + `<div class="kr ${c.status === "betalt" || c.status === "sprunget over" ? "done" : ""} ${c.late ? "late" : ""}">
       <div class="who"><b style="cursor:pointer" onclick="kOpen(${c.customer_id})">${esc(c.name)}</b> <span class="pill ${c.late ? "bad" : cl}">${c.late ? "Mangler betaling" : st}</span>
-        <div class="small">${esc(c.services || "–")} · ${esc(c.method || "ingen betalingsmetode")}${c.due_day ? ` · fast dato d. ${c.due_day}.` : ""}${c.contact ? " · " + esc(c.contact) : ""}${c.status === "anmodet" ? " · anmodet " + kDay(c.requested_at) : ""}${c.status === "betalt" ? " · betalt " + kDay(c.paid_at) : ""}</div>
+        <div class="small"><b style="font-weight:600;color:${isToday(c) ? "var(--accent)" : "var(--text)"}">d. ${c.due}.</b> · ${esc(c.services || "–")} · ${esc(c.method || "ingen betalingsmetode")}${c.contact ? " · " + esc(c.contact) : ""}${c.status === "anmodet" ? " · anmodet " + kDay(c.requested_at) : ""}${c.status === "betalt" ? " · betalt " + kDay(c.paid_at) : ""}</div>
         ${adj || c.note ? `<div class="small">${adj}${adj && c.note ? " · " : ""}${esc(c.note)}</div>` : ""}</div>
       <div class="amt">${kkr(c.amount)}</div><div class="btns">${b}</div></div>`; }).join("")}</div>`
     : `<div class="empty">${L.length ? "Ingen i denne visning." : "Intet at vise."}</div>`;

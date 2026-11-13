@@ -8,6 +8,7 @@ Vigtigt:
   i loggen, i Telegram-beskeder eller i Fangarrs eksport – kun når du trykker "Vis".
 - Fangarr sender ingen beskeder til kunderne og spærrer ingen. Du får kun besked på Stream365 Drift.
 """
+import calendar
 import csv
 import datetime
 import io
@@ -593,6 +594,17 @@ def _valid_period(p):
     return p
 
 
+def due_in(due_day, period):
+    """Betalingsdatoen i måneden: kundens faste dato, ellers den 1. En dato, måneden ikke har (fx 31. i en måned med
+    30 dage), bliver til månedens sidste dag."""
+    last = calendar.monthrange(int(period[:4]), int(period[5:7]))[1]
+    try:
+        d = int(due_day or 1)
+    except (TypeError, ValueError):
+        d = 1
+    return min(max(d, 1), last)
+
+
 def charges_for(period):
     cur = cur_period()
     rd = int(settings()["remind_days"])
@@ -609,7 +621,7 @@ def charges_for(period):
         out.append({"id": r["id"], "customer_id": c["id"], "name": c["name"], "amount": num(r["amount"]), "base": num(r["base"]),
                     "lines": det.get("lines", []), "adjust": det.get("adjust", []), "services": service_names(det.get("lines", [])),
                     "method": c["method"], "status": st, "late": late, "requested_at": r["requested_at"], "paid_at": r["paid_at"],
-                    "note": r["note"], "due_day": c["due_day"], "contact": c["contact"], "phone": c["phone"],
+                    "note": r["note"], "due_day": c["due_day"], "due": due_in(c["due_day"], period), "contact": c["contact"], "phone": c["phone"],
                     "message": message_for(c, r["amount"], det.get("lines", []))})
     preview = False
     if period > cur:        # fremtidig måned: vis, hvad der kommer – intet gemmes
@@ -626,10 +638,11 @@ def charges_for(period):
             if amt:
                 out.append({"id": None, "customer_id": c["id"], "name": c["name"], "amount": num(amt), "base": num(amt),
                             "lines": service_lines(sv), "adjust": [], "services": service_names(service_lines(sv)), "method": c["method"],
-                            "status": "kommer", "late": False, "requested_at": None, "paid_at": None, "note": "", "due_day": c["due_day"],
+                            "status": "kommer", "late": False, "requested_at": None, "paid_at": None, "note": "", "due_day": c["due_day"], "due": due_in(c["due_day"], period),
                             "contact": c["contact"], "phone": c["phone"], "message": ""})
     out.sort(key=lambda x: norm(x["name"]))
     return {"period": period, "current": cur, "preview": preview, "prev": _prev_next(period, -1), "next": _prev_next(period, 1),
+            "today": now().day if period == cur else None,
             "label": f"{MONTHS_DA[int(period[5:7]) - 1]} {period[:4]}", "charges": out}
 
 
@@ -928,6 +941,24 @@ def month_message(period):
     return "\n".join(out)
 
 
+def due_message(period, day):
+    """Besked på dagen: de kunder, der har betalingsdato i dag, og som endnu ikke er anmodet, betalt eller sprunget over.
+    Navnene står i beskeden (Jespers valg 13. nov. 2026) – aldrig telefonnumre, koder eller andre oplysninger."""
+    ensure_charges(period)
+    due = [r for r in rows("SELECT ch.amount, c.name, c.method, c.due_day FROM k_charges ch JOIN k_customers c ON c.id=ch.customer_id"
+                           " WHERE ch.period=? AND ch.skipped=0 AND ch.requested_at IS NULL AND ch.paid_at IS NULL", (period,))
+           if due_in(r["due_day"], period) == day]
+    if not due:
+        return ""
+    due.sort(key=lambda r: norm(r["name"]))
+    lines = [f"• {r['name']}: {_kr(r['amount'])}" + (f" · {r['method']}" if r["method"] else "") for r in due[:60]]
+    if len(due) > 60:
+        lines.append(f"… og {len(due) - 60} flere")
+    return (f"📅 Stream365 – skal opkræves i dag ({day}. {MONTHS_DA[int(period[5:7]) - 1]})\n\n" + "\n".join(lines)
+            + f"\n\n{len(due)} {'kunde' if len(due) == 1 else 'kunder'}, {_kr(sum(r['amount'] for r in due))} i alt."
+            + "\nSe dem i Fangarr › Opkrævning › I dag.")
+
+
 def tick():
     """Kaldes hvert minut af Fangarrs baggrundsjob."""
     n = now()
@@ -958,6 +989,15 @@ def tick():
                 msg = month_message(cur)
                 if msg:
                     D["telegram"](msg)
+        if st.get("due_sent") != today:      # besked på dagen om dem, der har betalingsdato i dag
+            st["due_sent"] = today
+            changed = True
+            try:
+                msg = due_message(cur, n.day)
+                if msg:
+                    D["telegram"](msg)
+            except Exception as e:   # må aldrig stoppe baggrundsjobbet
+                D["log"].warning("Dagens opkrævningsbesked fejlede: %s", e)
         if st.get("remind_day") != today:
             st["remind_day"] = today
             changed = True
