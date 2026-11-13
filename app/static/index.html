@@ -482,7 +482,7 @@
     </div>
     <div data-p="import">
       <h2>Import fra regnearket</h2>
-      <p class="hint">Hent fanerne som CSV-filer fra dit regneark, og vælg dem her. Filerne sendes kun til Fangarr på feeder. Du ser først, hvad der bliver oprettet, og intet gemmes, før du trykker <b>Importér</b>. Importen kan køres igen – kunder med samme navn bliver opdateret, ikke oprettet to gange.</p>
+      <p class="hint">Hent fanerne som CSV-filer fra dit regneark, og vælg dem her. Filerne sendes kun til Fangarr på feeder. Du ser først, hvad der bliver oprettet, og intet gemmes, før du trykker <b>Importér</b>. Importen kan køres igen – kunder med samme navn bliver opdateret, ikke oprettet to gange. Har du synket fra Tautulli først, genkendes kunderne på <b>Plex-brugernavnet eller e-mailen</b> fra arket: kunden fra Tautulli får navn, pris og cyklus fra arket, så der ikke kommer to af samme kunde.</p>
       <div class="card">
         <div class="grid">
           <div class="field"><label>1. Fanen "Abonnementer (Optimeret)" – skal med</label><input type="file" id="imp_ab" accept=".csv,text/csv"></div>
@@ -2174,15 +2174,16 @@ async function kImport(apply) {
       IMP = await api("/api/kunder/import/preview", {method: "POST", body: JSON.stringify(body)}); $("impGo").disabled = false;
       $("impOut").innerHTML = `<div class="card"><h2>Det her bliver importeret</h2>
         <p style="margin:0 0 8px"><b>${IMP.customers}</b> kunder · <b>${IMP.services}</b> tjenester · <b>${IMP.iptv}</b> IPTV-linjer${IMP.cockpit ? ` · <b>${IMP.cockpit}</b> opkrævninger fra cockpittet (${esc(body.period)})` : ""} · ${kkr(IMP.monthly)} pr. måned i alt · ${IMP.passwords} koder gemmes</p>
+        ${IMP.tautulli && (IMP.tautulli.accounts || IMP.tautulli.left || IMP.tautulli.blocked) ? `<p style="margin:0 0 8px"><b>Fra Tautulli:</b> ${IMP.tautulli.accounts} Plex-konti findes allerede og bliver lagt sammen med kunderne fra arket (genkendt på brugernavn eller e-mail). ${IMP.tautulli.left} Plex-brugere står ikke i arket og bliver stående under <b>Mangler opsætning</b>.${IMP.tautulli.blocked ? ` ${IMP.tautulli.blocked} konti står på en kunde, der allerede har en cyklus, og flyttes ikke.` : ""}</p>` : ""}
         ${IMP.doubts.length ? `<div class="warn"><b>${IMP.doubts.length} ting, du bør kigge på bagefter</b> – de bliver importeret alligevel, og listen gemmes øverst på Kundeliste:<ul class="kdoubt">${IMP.doubts.map(d => `<li>${esc(d)}</li>`).join("")}</ul></div>` : ""}
         <div style="overflow-x:auto"><table><thead><tr><th>Kunde</th><th>Tjenester</th><th>Cyklus</th><th class="hs">Metode</th><th class="num">Pr. opkrævning</th></tr></thead><tbody>
         ${IMP.preview.map(p => `<tr><td><b>${esc(p.name)}</b>${p.accounts > 1 ? ` <span class="small">${p.accounts} Plex-konti</span>` : ""}</td><td>${esc(p.services)}${p.iptv ? ` <span class="small">${p.iptv} linje${p.iptv > 1 ? "r" : ""}</span>` : ""}</td>
           <td>${esc(p.freq)} · ${esc(p.cycle)}</td><td class="hs">${esc(p.method)}</td><td class="num">${kkr(p.per_charge)}</td></tr>`).join("")}</tbody></table></div></div>`;
       return;
     }
-    if (!confirm(`Importér ${IMP ? IMP.customers : ""} kunder til Fangarr?\n\nKunder, der allerede findes med samme navn, bliver opdateret med oplysningerne fra regnearket.`)) return;
+    if (!confirm(`Importér ${IMP ? IMP.customers : ""} kunder til Fangarr?\n\nKunder, der allerede findes med samme navn eller samme Plex-brugernavn, bliver opdateret med oplysningerne fra regnearket.`)) return;
     const r = await api("/api/kunder/import/apply", {method: "POST", body: JSON.stringify(body)});
-    $("impOut").innerHTML = `<div class="card"><h2 style="color:var(--ok)">Importen er færdig</h2><p style="margin:0">${r.created} kunder oprettet · ${r.updated} opdateret${r.marked ? ` · ${r.marked} opkrævninger markeret fra cockpittet` : ""}.</p>
+    $("impOut").innerHTML = `<div class="card"><h2 style="color:var(--ok)">Importen er færdig</h2><p style="margin:0">${r.created} kunder oprettet · ${r.updated} opdateret${r.taken_over ? ` · ${r.taken_over} Plex-konti fra Tautulli lagt sammen med kunderne` : ""}${r.marked ? ` · ${r.marked} opkrævninger markeret fra cockpittet` : ""}.</p>
       <p style="margin:10px 0 0">Næste skridt: tryk <b>Synk fra Tautulli</b> øverst, så Plex-brugerne bliver koblet til kunderne.</p></div>`;
     $("impGo").disabled = true; ["imp_ab", "imp_iptv", "imp_cp"].forEach(i => $(i).value = ""); await kState(); loadHome();
   } catch (e) { toast(e.message, true); }
