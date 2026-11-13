@@ -104,6 +104,11 @@ Fire nye sider under **Kunder** i menuen. Koden ligger i `app/kunder.py`, data i
 - **Import fra regneark:** tre CSV-filer (fanerne Abonnementer, IPTV og Måneds-Cockpit) vælges i browseren. "Vis, hvad der sker" gemmer intet. Importen kan køres igen – kunder med samme navn opdateres. **Fra 1.16.1** er rækkefølgen ligegyldig: er Tautulli synket først, genkender importen Plex-kontoen på brugernavn eller e-mail (kolonnerne Brugernavn og Email), og kunden, som synken oprettede, får navn, pris og cyklus fra arket. Har én betaler flere konti, samles de på betaleren, og de tomme Tautulli-kunder fjernes. Står samme konto to gange på en kunde (én fra arket uden kobling, én fra Tautulli), beholdes den koblede. En konto flyttes kun fra en kunde, der ikke er sat op (ingen cyklus, ingen opkrævninger) – ellers kommer den på listen over ting, du bør kigge på. "Vis, hvad der sker" viser, hvor mange konti der lægges sammen, og hvor mange Plex-brugere der ikke står i arket. Fra IPTV-fanen læses kun linjerne ned til rækken TOTAL.
 - Kundedata er **ikke** med i Fangarrs eksport/import af regler. De ligger i `data/fangarr.db`, som kommer med i serverens backup af `/opt`. Kundelisten uden koder kan hentes som CSV under Kunder › Indstillinger.
 
+### Betalingsdato (1.16.2)
+- **Betalingsdatoen** er kundens faste dato i måneden (kundekortet › Fast dato i måneden). Kunder uden fast dato regnes som den 1. En dato, måneden ikke har (fx 31.), bliver til månedens sidste dag.
+- **Opkrævning:** sortér efter Navn eller Betalingsdato (valget huskes i browseren). Ved sortering efter dato vises en overskrift pr. dato med antal og beløb. Filteret **I dag** viser dem, der har betalingsdato i dag.
+- **Telegram på dagen** (kl. 8, samme klokkeslæt som de andre beskeder): navn, beløb og betalingsmetode for dem, der har betalingsdato i dag og endnu ikke er anmodet, betalt eller sprunget over. Ingen besked, når ingen skal opkræves. Beskeden den 1. med månedens overblik sendes stadig. Navne står i beskeden – aldrig telefonnumre eller koder.
+
 ## Filer
 - `app/main.py` – server (FastAPI) · `app/static/index.html` – interface · `app/VERSION`
 - `fangarr.env.eksempel` – skabelon til `fangarr.env` (API-nøgler). `chmod 600`. **Kommer aldrig i git.**
