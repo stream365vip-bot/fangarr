@@ -42,7 +42,12 @@ OLD_HOSTS = {h.strip().lower() for h in (os.environ.get("OLD_HOSTS") or "").spli
 UPTIME_URL = (os.environ.get("UPTIME_URL") or "").rstrip("/")             # fx http://uptime:3001 (Uptime Kuma internt på feeder)
 UPTIME_SLUG = (os.environ.get("UPTIME_SLUG") or "kunder").strip()          # statussiden i Uptime Kuma
 # Tekst vist under en monitor, fx adressen kunderne kan skrive af: "IPTV 1=http://…;IPTV 2=http://…"
-STATUS_LINKS = {k.strip().lower(): v.strip() for k, _, v in
+def _key(name):
+    """Monitornavn til opslag: små bogstaver, uden mellemrum ("IPTV 3", "iptv3 " og "IPTV\u00a03" er det samme)."""
+    return re.sub(r"\s+", "", str(name or "")).lower()
+
+
+STATUS_LINKS = {_key(k): v.strip() for k, _, v in
                 (x.partition("=") for x in (os.environ.get("STATUS_LINKS") or "").split(";")) if k.strip() and v.strip()}
 RULES_FILE = os.path.join(SITE_DIR, "_regler.json")      # regler + spørgsmål ved første login (ligger sammen med siden)
 ACCEPT_FILE = os.path.join(DATA_DIR, "accepteret.json")  # hvem har accepteret reglerne, og hvornår
@@ -413,10 +418,10 @@ def fetch_status():
             last = (hb.get(mid) or hb.get(m.get("id")) or [])
             last = last[-1] if last else {}
             u = up.get(f"{mid}_24")
-            name = str(m.get("name") or "")
+            name = " ".join(str(m.get("name") or "").split())
             items.append({
                 "name": name,
-                "link": STATUS_LINKS.get(name.lower()) or "",
+                "link": STATUS_LINKS.get(_key(name)) or "",
                 "state": _STATE.get(last.get("status"), "unknown"),
                 "uptime": round(float(u) * 100, 2) if isinstance(u, (int, float)) else None,
                 "since": str(last.get("time") or ""),
@@ -486,11 +491,22 @@ function render(s){
   '</span><span class="upd">Opdateret '+esc(s.updated||"")+'</span><span class="chev" aria-hidden="true">▾</span></summary><div class="body">'+note+
   (items.length?'<ul>'+li+'</ul>':'')+'</div></details>';
  var d=box.querySelector("details");d.addEventListener("toggle",function(){userToggled=true;lastOpen=d.open;});
+ place();
  box.querySelectorAll("button[data-c]").forEach(function(b){b.addEventListener("click",function(){
   var t=b.getAttribute("data-c");(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){b.textContent="Kopieret";},function(){b.textContent="Markér og kopiér";});
   setTimeout(function(){b.textContent="Kopiér";},2000);});});
 }
 function load(){fetch("/api/status",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(s){if(s)render(s);}).catch(function(){});}
+// Guidens faste menuer (position: fixed øverst) skubbes ned under linjen, så linjen ikke dækker dem
+var fixedEls=null;
+function findFixed(){fixedEls=[];document.querySelectorAll("body *").forEach(function(el){if(el===box||box.contains(el))return;
+ var cs=getComputedStyle(el);if(cs.position!=="fixed"||el.offsetHeight===0)return;
+ if(!el.dataset.s365f){if(parseFloat(cs.top)!==0)return;el.dataset.s365f=el.getBoundingClientRect().height>=window.innerHeight-2?"full":"top";}
+ fixedEls.push({el:el,full:el.dataset.s365f==="full"});});}
+function place(){if(!fixedEls)findFixed();var off=Math.max(0,box.offsetHeight-window.scrollY);
+ fixedEls.forEach(function(f){f.el.style.top=off+"px";if(f.full)f.el.style.height="calc(100vh - "+off+"px)";});}
+window.addEventListener("scroll",place,{passive:true});window.addEventListener("resize",function(){fixedEls=null;place();});
+if(window.ResizeObserver)new ResizeObserver(place).observe(box);
 load();setInterval(load,60000);
 document.addEventListener("visibilitychange",function(){if(!document.hidden)load();});
 })();"""
