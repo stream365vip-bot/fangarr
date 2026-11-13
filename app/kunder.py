@@ -1231,6 +1231,49 @@ def import_plan(b):
     return customers, loose, cockpit, doubts
 
 
+def _keys(*vals):
+    return {str(v or "").strip().lower() for v in vals} - {""}
+
+
+def _plex_plan(con, customers):
+    """Find de Plex-konti fra arket, som allerede findes i Fangarr på en ANDEN kunde – typisk fordi Tautulli blev synket
+    før importen, så kunden er oprettet med Plex-brugerens navn. Kontoen genkendes på brugernavn eller e-mail og flyttes
+    over på kunden fra arket, når den nuværende kunde ikke er sat op endnu (ingen cyklus og ingen opkrævninger)."""
+    info = {r["id"]: dict(r) for r in con.execute("SELECT id, name, freq FROM k_customers").fetchall()}
+    existing = {norm(c["name"]): i for i, c in info.items()}
+    charged = {r[0] for r in con.execute("SELECT DISTINCT customer_id FROM k_charges").fetchall()}
+    loose = {i for i, c in info.items() if not c["freq"] and i not in charged}
+    by_key, linked_on = {}, {}
+    for r in con.execute("SELECT s.id, s.customer_id, s.plex_user_id, s.username, s.email, p.username pu, p.email pe FROM k_services s"
+                         " LEFT JOIN k_plex p ON p.user_id=s.plex_user_id WHERE s.service='plex'").fetchall():
+        for k in _keys(r["username"], r["email"], r["pu"], r["pe"]):
+            by_key.setdefault(k, {})[r["id"]] = r["customer_id"]
+        if r["plex_user_id"]:
+            linked_on.setdefault(r["customer_id"], set()).add(r["id"])
+    sheet_names = {norm(c["name"]) for c in customers}
+    moves, blocked, taken = {}, [], set()
+    for ci, c in enumerate(customers):
+        own = existing.get(norm(c["name"]))
+        for si, sv in enumerate(c["services"]):
+            if sv["service"] != "plex":
+                continue
+            cand = {}
+            for k in _keys(sv["username"], sv["email"]):
+                cand.update(by_key.get(k, {}))
+            cand = {sid: oc for sid, oc in cand.items() if oc != own and sid not in taken}
+            if len(cand) != 1:
+                continue
+            sid, oc = next(iter(cand.items()))
+            if oc in loose:
+                moves[(ci, si)] = (sid, oc)
+                taken.add(sid)
+            else:
+                blocked.append((c["name"], sv["username"] or sv["email"], info[oc]["name"]))
+    # Plex-brugere fra Tautulli, som ikke står i arket: bliver stående som kunder uden cyklus
+    left = sum(1 for i in loose if norm(info[i]["name"]) not in sheet_names and (linked_on.get(i, set()) - taken))
+    return {"existing": existing, "info": info, "moves": moves, "blocked": blocked, "sheet_names": sheet_names, "left": left}
+
+
 def _plan_summary(customers, loose, cockpit, doubts):
     return {"customers": len(customers), "services": sum(len(c["services"]) for c in customers),
             "iptv": sum(len(c["iptv"]) for c in customers) + len(loose), "loose": len(loose), "cockpit": len(cockpit),
@@ -1244,7 +1287,15 @@ def _plan_summary(customers, loose, cockpit, doubts):
 
 @router.post("/import/preview")
 async def import_preview(req: Request):
-    return _plan_summary(*import_plan(await req.json()))
+    customers, loose, cockpit, doubts = import_plan(await req.json())
+    out = _plan_summary(customers, loose, cockpit, doubts)
+    con = D["db"]()
+    try:
+        plan = _plex_plan(con, customers)
+    finally:
+        con.close()
+    out["tautulli"] = {"accounts": len(plan["moves"]), "left": plan["left"], "blocked": len(plan["blocked"])}
+    return out
 
 
 @router.post("/import/apply")
@@ -1253,15 +1304,26 @@ async def import_apply(req: Request):
     customers, loose, cockpit, doubts = import_plan(b)
     period = _valid_period(b.get("period") or cur_period())
     t = iso(now())
-    made = upd = 0
+    made = upd = taken_over = 0
     with _lock:
         con = D["db"]()
         try:
             with con:
                 ids = {}
-                existing = {norm(r["name"]): r["id"] for r in con.execute("SELECT id, name FROM k_customers").fetchall()}
-                for c in customers:
+                plan = _plex_plan(con, customers)
+                existing = plan["existing"]
+                key_of = {v: k for k, v in existing.items()}
+                touched = set()
+                for ci, c in enumerate(customers):
                     cid = existing.get(norm(c["name"]))
+                    mv = [plan["moves"][(ci, si)] for si in range(len(c["services"])) if (ci, si) in plan["moves"]]
+                    if not cid:
+                        # kunden findes ikke på navnet: overtag den kunde, Tautulli har oprettet til Plex-kontoen (hvis navnet ikke tilhører en anden i arket)
+                        for _sid, oc in mv:
+                            if norm(plan["info"][oc]["name"]) not in plan["sheet_names"] and oc not in ids.values():
+                                cid = oc
+                                existing.pop(key_of.get(oc), None)
+                                break
                     vals = (c["name"], c["status"], c["kind"], c["method"], c["freq"], c["cycle"], c["due_day"], c["phone"], c["email"], c["contact"], c["notes"])
                     if cid:
                         con.execute("UPDATE k_customers SET name=?, status=?, kind=?, method=?, freq=?, cycle=?, due_day=?, phone=?, email=?, contact=?,"
@@ -1272,20 +1334,43 @@ async def import_apply(req: Request):
                                           " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", vals + (t, t)).lastrowid
                         made += 1
                     ids[norm(c["name"])] = cid
-                    have = [dict(r) for r in con.execute("SELECT * FROM k_services WHERE customer_id=?", (cid,)).fetchall()]
-                    used = set()
+                    for sid, oc in mv:
+                        if oc != cid:
+                            con.execute("UPDATE k_services SET customer_id=? WHERE id=?", (cid, sid))
+                            touched.add(oc)
+                        taken_over += 1
+                    have = [dict(r) for r in con.execute(
+                        "SELECT s.*, p.username pu, p.email pe FROM k_services s LEFT JOIN k_plex p ON p.user_id=s.plex_user_id"
+                        " WHERE s.customer_id=? ORDER BY (s.plex_user_id IS NULL), s.id", (cid,)).fetchall()]   # koblede konti først
+                    hkeys = lambda h: _keys(h["username"], h["email"], h["pu"], h["pe"])
+                    used, used_keys = set(), {}
                     for s in c["services"]:
                         same = [h for h in have if h["id"] not in used and h["service"] == s["service"]]
-                        hit = next((h for h in same if s["username"] and (h["username"] or "").lower() == s["username"].lower()), None) \
-                            or next((h for h in same if (h["label"] or "") == s["label"]), None) or (same[0] if len(same) == 1 else None)
+                        sk = _keys(s["username"], s["email"])
+                        hit = next((h for h in same if sk and sk & hkeys(h)), None)
+                        if not hit:
+                            # en konto, der er koblet til en anden Plex-bruger, overtages ikke på gæt
+                            free = [h for h in same if not (sk and h["plex_user_id"])]
+                            hit = next((h for h in free if (h["label"] or "") == s["label"]), None) or (free[0] if len(free) == 1 else None)
                         if hit:
                             used.add(hit["id"])
+                            if s["service"] == "plex":
+                                for k in hkeys(hit) | sk:
+                                    used_keys[k] = hit["id"]
                             con.execute("UPDATE k_services SET label=?, price=?, username=CASE WHEN ?='' THEN username ELSE ? END,"
                                         " email=CASE WHEN ?='' THEN email ELSE ? END, note=?, password=CASE WHEN ?='' THEN password ELSE ? END, active=1 WHERE id=?",
                                         (s["label"], s["price"], s["username"], s["username"], s["email"], s["email"], s["note"], s["password"], s["password"], hit["id"]))
                         else:
                             con.execute("INSERT INTO k_services (customer_id, service, label, price, username, email, password, note) VALUES (?,?,?,?,?,?,?,?)",
                                         (cid, s["service"], s["label"], s["price"], s["username"], s["email"], s["password"], s["note"]))
+                    # samme Plex-konto to gange på kunden (én fra arket uden kobling, én fra Tautulli): behold den koblede
+                    for h in have:
+                        if h["service"] == "plex" and h["id"] not in used and not h["plex_user_id"]:
+                            keep = next((used_keys[k] for k in hkeys(h) if k in used_keys), None)
+                            if keep:
+                                if h["password"]:
+                                    con.execute("UPDATE k_services SET password=? WHERE id=? AND password=''", (h["password"], keep))
+                                con.execute("DELETE FROM k_services WHERE id=?", (h["id"],))
                     for l in c["iptv"]:
                         _import_line(con, cid, l)
                     if c["adjust"] and not con.execute("SELECT 1 FROM k_adjust WHERE customer_id=?", (cid,)).fetchone():
@@ -1293,6 +1378,14 @@ async def import_apply(req: Request):
                             con.execute("INSERT INTO k_adjust (customer_id, amount, text, remaining, created) VALUES (?,?,?,1,?)", (cid, a["amount"], a["text"], t))
                 for l in loose:
                     _import_line(con, None, l)
+                # kunder, Tautulli oprettede, og som nu er tomme, fordi kontoen er flyttet til kunden fra arket
+                for oc in touched - set(ids.values()):
+                    if not any(con.execute(f"SELECT 1 FROM {t} WHERE customer_id=? LIMIT 1", (oc,)).fetchone()
+                               for t in ("k_services", "k_iptv", "k_adjust", "k_charges")):
+                        con.execute("DELETE FROM k_customers WHERE id=?", (oc,))
+                for name, user, other in plan["blocked"]:
+                    doubts.append(f"{name}: Plex-kontoen '{user}' står allerede på kunden '{other}', som har en cyklus – den er ikke flyttet. "
+                                  f"Ret navnet i arket, eller flet de to kunder.")
         finally:
             con.close()
     marked = 0
@@ -1315,7 +1408,7 @@ async def import_apply(req: Request):
                 marked += 1
         con.close()
     D["kv_set"]("kunder_doubts", doubts)
-    return {"created": made, "updated": upd, "marked": marked, "doubts": doubts}
+    return {"created": made, "updated": upd, "marked": marked, "doubts": doubts, "taken_over": taken_over}
 
 
 def _import_line(con, cid, l):
