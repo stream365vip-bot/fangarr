@@ -7,6 +7,7 @@ En lille app, der viser en statisk side (nyhedsbrevet på `nyt.stream365.vip`), 
 2. Appen spørger plex.tv, hvilke servere kontoen har adgang til.
 3. Er Stream365-serveren på listen, huskes brugeren på enheden i 90 dage (cookie) og ser siden. Ellers: "Kun for brugere af Stream365".
 
+- **Login-koden laves i brugerens egen browser** (fra 13. nov. 2026, som Seerr). Så viser Plex' login brugerens egen adresse og by – ikke feeders (65.21.142.239, Helsinki, Finland) med en "Sikkerhedsadvarsel". Kan browseren ikke få en kode hos plex.tv, falder knappen automatisk tilbage til den gamle metode, hvor feeder beder om koden (så vises Finland igen, men login virker).
 - Appen ser aldrig brugerens kodeord. Brugerens Plex-nøgle bruges til ét opslag og gemmes ikke.
 - Appen har ingen af dine nøgler. Serverens id hentes fra `PLEX_URL/identity`, som ikke kræver nøgle.
 - Adgangen tjekkes, **når brugeren logger ind**. En bruger, du fjerner i Plex, kan derfor stadig læse siden på en enhed, hvor de allerede er logget ind, til de 90 dage er gået. Log alle ud med det samme: `rm /opt/nyt/data/secret && cd /opt/nyt && docker compose restart` (alle skal så logge ind igen).

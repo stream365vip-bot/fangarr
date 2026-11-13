@@ -1,7 +1,8 @@
 """nyt-login – viser en statisk side (nyhedsbrevet), men kun for Plex-konti med adgang til Stream365-serveren.
 
 Sådan virker det (samme metode som login i Seerr):
-1. Brugeren trykker "Log ind med Plex". Appen beder plex.tv om en engangskode (PIN) og sender brugeren til Plex.
+1. Brugeren trykker "Log ind med Plex". Brugerens browser beder plex.tv om en engangskode (PIN), så Plex ser brugerens
+   egen adresse (ikke feeders i Finland). Virker det ikke, beder appen selv om koden. Brugeren sendes til Plex.
 2. Plex sender brugeren tilbage. Appen henter brugerens nøgle hos plex.tv og spørger, hvilke servere kontoen har adgang til.
 3. Er Stream365-serveren på listen, får brugeren en cookie (underskrevet, gælder SESSION_DAYS dage) og ser siden.
 Brugerens kodeord ses aldrig, og brugerens Plex-nøgle gemmes ikke – den bruges kun til det ene opslag.
@@ -272,8 +273,23 @@ def login_page(next_path="/", note=""):
     return page(f"""<h1>Nyt på Stream365</h1>
 <p>Siden er kun for brugere af Stream365. Log ind med den Plex-konto, du bruger til Stream365.</p>
 {f'<p class="err">{note}</p>' if note else ''}
-<form method="post" action="/auth/start?next={q}"><button class="btn" type="submit">Log ind med Plex</button></form>
-<p class="small">Du logger ind hos Plex. Stream365 ser ikke dit kodeord. Du bliver husket på denne enhed i {SESSION_DAYS} dage.</p>""")
+<form id="lf" method="post" action="/auth/start?next={q}"><button class="btn" type="submit">Log ind med Plex</button></form>
+<p class="small">Du logger ind hos Plex. Stream365 ser ikke dit kodeord. Du bliver husket på denne enhed i {SESSION_DAYS} dage.</p>
+{login_script(q)}""")
+
+
+def login_script(q):
+    """Knappen beder selv plex.tv om koden fra brugerens browser. Så viser Plex brugerens egen adresse og by
+    i stedet for feeders (Helsinki, Finland), og der kommer ingen advarsel om en fremmed enhed.
+    Virker det ikke (gammel browser, plex.tv afviser), sendes formularen som før, og feeder beder om koden."""
+    cfg = json.dumps({"plextv": PLEXTV_URL, "next": q, "headers": {
+        k: v for k, v in plex_headers().items()}}).replace("</", "<\\/")
+    return """<script>(function(){var c=__CFG__,f=document.getElementById("lf");if(!f||!window.fetch)return;
+f.addEventListener("submit",function(ev){ev.preventDefault();var b=f.querySelector("button");b.disabled=true;b.textContent="Åbner Plex …";
+fetch(c.plextv+"/api/v2/pins?strong=true",{method:"POST",headers:c.headers}).then(function(r){if(!r.ok)throw 0;return r.json()})
+.then(function(p){return fetch("/auth/pin?next="+c.next,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},
+body:JSON.stringify({id:p.id,code:p.code})})}).then(function(r){if(!r.ok)throw 0;return r.json()})
+.then(function(j){location.href=j.url}).catch(function(){f.submit()})});})();</script>""".replace("__CFG__", cfg)
 
 
 @app.middleware("http")
@@ -334,9 +350,36 @@ def auth_start(next: str = "/"):
     except Exception as e:
         log.warning("Kunne ikke få en kode hos plex.tv: %s", e.__class__.__name__)
         return login_page(next, "Plex svarer ikke lige nu. Prøv igen om lidt.")
+    resp = RedirectResponse(plex_auth_url(code), status_code=303)
+    set_pin_cookie(resp, pin_id, code, next)
+    return resp
+
+
+def plex_auth_url(code):
     params = {"clientID": CLIENT_ID, "code": code, "context[device][product]": PRODUCT, "forwardUrl": PUBLIC_URL + "/auth/done"}
-    resp = RedirectResponse(PLEX_AUTH_URL + "#?" + urllib.parse.urlencode(params, quote_via=urllib.parse.quote), status_code=303)
-    resp.set_cookie(PIN_COOKIE, make_cookie(f"{pin_id}|{code}|{safe_next(next)}", 900), max_age=900, httponly=True, secure=SECURE, samesite="lax")
+    return PLEX_AUTH_URL + "#?" + urllib.parse.urlencode(params, quote_via=urllib.parse.quote)
+
+
+def set_pin_cookie(resp, pin_id, code, next_path):
+    resp.set_cookie(PIN_COOKIE, make_cookie(f"{int(pin_id)}|{code}|{safe_next(next_path)}", 900), max_age=900,
+                    httponly=True, secure=SECURE, samesite="lax")
+
+
+@app.post("/auth/pin")
+async def auth_pin(req: Request, next: str = "/"):
+    """Koden er lavet i brugerens browser (så Plex ser brugerens egen adresse). Gem den, og giv adressen til Plex' login."""
+    origin = (req.headers.get("origin") or "").rstrip("/")
+    if origin and origin != PUBLIC_URL:   # kun fra vores egen side
+        return JSONResponse({"error": "origin"}, status_code=403)
+    try:
+        d = json.loads(await req.body())
+        pin_id, code = int(d["id"]), str(d["code"])
+        if pin_id <= 0 or not re.fullmatch(r"[A-Za-z0-9]{4,64}", code):
+            raise ValueError
+    except Exception:
+        return JSONResponse({"error": "pin"}, status_code=400)
+    resp = JSONResponse({"url": plex_auth_url(code)}, headers={"Cache-Control": "no-store"})
+    set_pin_cookie(resp, pin_id, code, next)
     return resp
 
 
