@@ -10,6 +10,9 @@ services:
       OLD_HOSTS: "nyt.stream365.vip"   # den gamle adresse sendes videre til guiden
       PLEX_URL: "https://plex.stream365.vip"
       SESSION_DAYS: "90"
+      UPTIME_URL: "http://uptime:3001"   # driftstatus øverst i guiden (Uptime Kuma internt – ikke via internettet)
+      UPTIME_SLUG: "kunder"              # statussiden i Uptime Kuma
+      STATUS_LINKS: "IPTV 1=http://172.110.210.78:2095;IPTV 2=http://195.128.27.253:2095;IPTV 3=http://88.135.69.66:2095"
     hostname: "nyt"
     build: /opt/fangarr/nyt-login
     image: "nyt:local"

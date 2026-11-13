@@ -39,6 +39,11 @@ PRODUCT = os.environ.get("PRODUCT_NAME") or "Stream365"
 SESSION_DAYS = int(os.environ.get("SESSION_DAYS") or "90")
 CONTACT = os.environ.get("CONTACT_TEXT") or "Skriv til Stream365, hvis du mener, det er en fejl."
 OLD_HOSTS = {h.strip().lower() for h in (os.environ.get("OLD_HOSTS") or "").split(",") if h.strip()}   # gamle adresser, der sendes videre
+UPTIME_URL = (os.environ.get("UPTIME_URL") or "").rstrip("/")             # fx http://uptime:3001 (Uptime Kuma internt på feeder)
+UPTIME_SLUG = (os.environ.get("UPTIME_SLUG") or "kunder").strip()          # statussiden i Uptime Kuma
+# Tekst vist under en monitor, fx adressen kunderne kan skrive af: "IPTV 1=http://…;IPTV 2=http://…"
+STATUS_LINKS = {k.strip().lower(): v.strip() for k, _, v in
+                (x.partition("=") for x in (os.environ.get("STATUS_LINKS") or "").split(";")) if k.strip() and v.strip()}
 RULES_FILE = os.path.join(SITE_DIR, "_regler.json")      # regler + spørgsmål ved første login (ligger sammen med siden)
 ACCEPT_FILE = os.path.join(DATA_DIR, "accepteret.json")  # hvem har accepteret reglerne, og hvornår
 COOKIE, PIN_COOKIE = "s365_nyt", "s365_pin"
@@ -283,7 +288,7 @@ async def old_hosts(req: Request, call_next):
 @app.get("/health")
 def health():
     return {"ok": True, "site": os.path.isfile(os.path.join(SITE_DIR, "index.html")), "server_id": bool(machine_id()),
-            "rules": bool(rules())}
+            "rules": bool(rules()), "status": (status_data()["ok"] if UPTIME_URL else None)}
 
 
 @app.post("/regler")
@@ -385,6 +390,132 @@ def auth_done(req: Request):
     return resp
 
 
+# ---------------------------------------------------------------- driftstatus (fra Uptime Kuma)
+_status = {"ts": 0.0, "data": None}
+_status_lock = threading.Lock()
+STATUS_TTL = 30   # sekunder – Uptime Kuma spørges højst to gange i minuttet, uanset antal brugere
+_STATE = {0: "down", 1: "up", 2: "pending", 3: "maintenance"}
+
+
+def fetch_status():
+    """Statussiden UPTIME_SLUG fra Uptime Kuma: navn, seneste status og oppetid 24 t for hver monitor."""
+    base = f"{UPTIME_URL}/api/status-page"
+    page_ = httpx.get(f"{base}/{UPTIME_SLUG}", timeout=8)
+    page_.raise_for_status()
+    beats = httpx.get(f"{base}/heartbeat/{UPTIME_SLUG}", timeout=8)
+    beats.raise_for_status()
+    p, b = page_.json(), beats.json()
+    hb, up = b.get("heartbeatList") or {}, b.get("uptimeList") or {}
+    items = []
+    for group in p.get("publicGroupList") or []:
+        for m in group.get("monitorList") or []:
+            mid = str(m.get("id"))
+            last = (hb.get(mid) or hb.get(m.get("id")) or [])
+            last = last[-1] if last else {}
+            u = up.get(f"{mid}_24")
+            name = str(m.get("name") or "")
+            items.append({
+                "name": name,
+                "link": STATUS_LINKS.get(name.lower()) or "",
+                "state": _STATE.get(last.get("status"), "unknown"),
+                "uptime": round(float(u) * 100, 2) if isinstance(u, (int, float)) else None,
+                "since": str(last.get("time") or ""),
+            })
+    inc = p.get("incident") or None
+    notice = None
+    if inc and (inc.get("title") or inc.get("content")):
+        notice = {"title": str(inc.get("title") or ""), "text": str(inc.get("content") or ""), "style": str(inc.get("style") or "info")}
+    maint = [str(x.get("title") or "") for x in (p.get("maintenanceList") or []) if x.get("title")]
+    return {"ok": True, "items": items, "notice": notice, "maintenance": maint,
+            "updated": datetime.datetime.now().strftime("%H:%M")}
+
+
+def status_data():
+    with _status_lock:
+        if _status["data"] is not None and time.time() - _status["ts"] < STATUS_TTL:
+            return _status["data"]
+        try:
+            data = fetch_status()
+        except Exception as e:
+            log.warning("Kunne ikke hente driftstatus fra Uptime Kuma: %s", e.__class__.__name__)
+            data = {"ok": False, "items": [], "notice": None, "maintenance": [],
+                    "updated": datetime.datetime.now().strftime("%H:%M")}
+        _status.update(ts=time.time(), data=data)
+        return data
+
+
+STATUS_JS = r"""(function(){
+var L={up:"Kører",down:"Nede",pending:"Ustabil",maintenance:"Vedligehold",unknown:"Ukendt"};
+var css="#s365s{background:#121418;border-bottom:1px solid #262A32;color:#ECEEF1;font:14px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;position:relative;z-index:50}"+
+"#s365s *{box-sizing:border-box}#s365s summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 16px;min-height:44px;max-width:1200px;margin:0 auto}"+
+"#s365s summary::-webkit-details-marker{display:none}#s365s summary:focus-visible{outline:2px solid #58D9AE;outline-offset:-2px}"+
+"#s365s .d{width:10px;height:10px;border-radius:50%;flex:none;background:#6B7280}#s365s .up{background:#58D9AE;box-shadow:0 0 0 3px rgba(88,217,174,.18)}"+
+"#s365s .down{background:#F27D77;box-shadow:0 0 0 3px rgba(242,125,119,.2)}#s365s .pending{background:#F2C14E}#s365s .maintenance{background:#7AA7FF}"+
+"#s365s .sum{font-weight:600;flex:1;min-width:0}#s365s .upd{color:#9BA3AE;font-size:12.5px;white-space:nowrap}"+
+"#s365s .chev{color:#9BA3AE;transition:transform .15s}#s365s details[open] .chev{transform:rotate(180deg)}"+
+"#s365s .body{max-width:1200px;margin:0 auto;padding:0 16px 14px}#s365s ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:8px;align-items:start}"+
+"#s365s li{background:#0B0C0E;border:1px solid #262A32;border-radius:12px;padding:10px 12px;display:grid;grid-template-columns:auto 1fr auto;gap:4px 10px;align-items:center}"+
+"#s365s li .n{font-weight:600}#s365s li .st{color:#9BA3AE;font-size:13px;text-align:right}#s365s li .u{grid-column:2/4;color:#9BA3AE;font-size:12.5px}"+
+"#s365s li .lk{grid-column:2/4;display:flex;gap:8px;align-items:center;min-width:0}#s365s li code{font:13px ui-monospace,Menlo,Consolas,monospace;color:#C9CFCD;user-select:all;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}"+
+"#s365s button{background:none;border:1px solid #262A32;color:#58D9AE;border-radius:8px;font:600 12.5px system-ui,sans-serif;padding:4px 9px;min-height:30px;cursor:pointer;flex:none}"+
+"#s365s button:hover{border-color:#58D9AE}#s365s .note{background:#1A1F27;border:1px solid #2F3846;border-radius:12px;padding:10px 12px;margin:0 0 10px;color:#D5D9DF}"+
+"#s365s .note.danger{background:#3A1C1B;border-color:#5A2A28;color:#FFC1BD}#s365s .note.warning{background:#3A311B;border-color:#5A4A28;color:#FFE3A8}#s365s .note b{display:block;color:inherit}";
+var st=document.createElement("style");st.textContent=css;document.head.appendChild(st);
+var box=document.createElement("div");box.id="s365s";box.setAttribute("role","region");box.setAttribute("aria-label","Driftstatus");
+document.body.insertBefore(box,document.body.firstChild);
+var userToggled=false,lastOpen=null;
+function esc(t){var d=document.createElement("div");d.textContent=t==null?"":String(t);return d.innerHTML;}
+function pct(u){return u==null?"":(u>=99.995?"100":u.toFixed(u>=99?2:1).replace(".",","))+" %";}
+function render(s){
+ var items=s.items||[],bad=items.filter(function(i){return i.state!=="up";}),dot,txt;
+ if(!s.ok||!items.length){dot="";txt="Driftstatus kan ikke hentes lige nu";}
+ else if(!bad.length){dot="up";txt="Alle tjenester kører";}
+ else if(bad.every(function(i){return i.state==="maintenance";})){dot="maintenance";txt="Vedligehold: "+bad.map(function(i){return i.name;}).join(", ");}
+ else{var dn=bad.filter(function(i){return i.state==="down";});dot=dn.length?"down":"pending";
+  txt=(dn.length?dn:bad).map(function(i){return i.name;}).join(", ")+(dn.length?(dn.length>1?" er nede":" er nede"):" er ustabil");}
+ var note="";
+ if(s.notice){note='<div class="note '+esc(s.notice.style)+'"><b>'+esc(s.notice.title)+'</b>'+esc(s.notice.text)+'</div>';}
+ (s.maintenance||[]).forEach(function(m){note+='<div class="note"><b>Planlagt vedligehold</b>'+esc(m)+'</div>';});
+ var li=items.map(function(i){
+  return '<li><span class="d '+esc(i.state)+'" aria-hidden="true"></span><span class="n">'+esc(i.name)+'</span><span class="st">'+L[i.state]+'</span>'+
+   (i.link?'<span class="lk"><code>'+esc(i.link)+'</code><button type="button" data-c="'+esc(i.link)+'">Kopiér</button></span>':'')+
+   '<span class="u">Oppetid seneste 24 timer: '+(i.uptime==null?"–":pct(i.uptime))+'</span></li>';}).join("");
+ var problem=!!(bad.length||s.notice||(s.maintenance||[]).length);
+ var open=userToggled?lastOpen:(problem||window.matchMedia("(min-width: 900px)").matches);
+ box.innerHTML='<details'+(open?" open":"")+'><summary><span class="d '+dot+'" aria-hidden="true"></span><span class="sum">'+esc(txt)+
+  '</span><span class="upd">Opdateret '+esc(s.updated||"")+'</span><span class="chev" aria-hidden="true">▾</span></summary><div class="body">'+note+
+  (items.length?'<ul>'+li+'</ul>':'')+'</div></details>';
+ var d=box.querySelector("details");d.addEventListener("toggle",function(){userToggled=true;lastOpen=d.open;});
+ box.querySelectorAll("button[data-c]").forEach(function(b){b.addEventListener("click",function(){
+  var t=b.getAttribute("data-c");(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){b.textContent="Kopieret";},function(){b.textContent="Markér og kopiér";});
+  setTimeout(function(){b.textContent="Kopiér";},2000);});});
+}
+function load(){fetch("/api/status",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.ok?r.json():null;}).then(function(s){if(s)render(s);}).catch(function(){});}
+load();setInterval(load,60000);
+document.addEventListener("visibilitychange",function(){if(!document.hidden)load();});
+})();"""
+
+
+def status_allowed(req: Request):
+    s = session(req)
+    return bool(UPTIME_URL) and s is not None and has_accepted(s[0])
+
+
+@app.get("/api/status")
+def api_status(req: Request):
+    """Driftstatus til linjen øverst i guiden – kun for brugere, der er logget ind."""
+    if not status_allowed(req):
+        return JSONResponse({"detail": "log ind først"}, status_code=401)
+    return JSONResponse(status_data(), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/status.js")
+def api_status_js(req: Request):
+    if not status_allowed(req):
+        return HTMLResponse("", status_code=401, media_type="application/javascript")
+    return HTMLResponse(STATUS_JS, media_type="application/javascript", headers={"Cache-Control": "private, max-age=300"})
+
+
 @app.get("/logout")
 def logout():
     resp = RedirectResponse("/login", status_code=303)
@@ -418,6 +549,12 @@ def site(path: str, req: Request):
     if not os.path.isfile(full):
         return page("<h1>Siden findes ikke</h1><p>Adressen er forkert.</p><a class=\"btn\" href=\"/\">Til forsiden</a>", 404)
     is_html = full.endswith(".html")
+    if is_html and UPTIME_URL:
+        with open(full, encoding="utf-8", errors="replace") as f:
+            doc = f.read()
+        tag = '<script src="/api/status.js" defer></script>'
+        doc = doc.replace("</body>", tag + "</body>", 1) if "</body>" in doc else doc + tag
+        return HTMLResponse(doc, headers={"Cache-Control": "private, no-cache", "X-Robots-Tag": "noindex, nofollow"})
     return FileResponse(full, media_type=mimetypes.guess_type(full)[0] or "application/octet-stream",
                         headers={"Cache-Control": "private, no-cache" if is_html else "private, max-age=86400",
                                  "X-Robots-Tag": "noindex, nofollow"})
