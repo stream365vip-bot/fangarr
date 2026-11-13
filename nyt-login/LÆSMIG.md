@@ -18,7 +18,7 @@ En lille app, der viser en statisk side (nyhedsbrevet på `nyt.stream365.vip`), 
 - `/opt/nyt/data/` – `secret` (underskriver cookies) og `client_id` (appens id hos Plex). Monteres som `/config`.
 
 ## Indstillinger (miljøvariabler, alle valgfri)
-`PUBLIC_URL` (standard `https://nyt.stream365.vip`), `PLEX_URL` (`https://plex.stream365.vip`), `PLEX_MACHINE_ID` (hvis serverens id ikke skal hentes automatisk), `SESSION_DAYS` (90), `CONTACT_TEXT`.
+`PUBLIC_URL` (standard `https://nyt.stream365.vip`), `PLEX_URL` (`https://plex.stream365.vip`), `PLEX_MACHINE_ID` (hvis serverens id ikke skal hentes automatisk), `SESSION_DAYS` (90), `CONTACT_TEXT`, `UPTIME_URL`, `UPTIME_SLUG` (kunder), `STATUS_LINKS` (se Driftstatus).
 
 ## Opdatering
 - Ny udgave af siden: læg filerne i `/opt/nyt/site/` – ingen genstart.
@@ -35,3 +35,12 @@ En lille app, der viser en statisk side (nyhedsbrevet på `nyt.stream365.vip`), 
 
 ## Adresse
 `PUBLIC_URL` er guidens adresse (`https://guide.stream365.vip`). Adresser i `OLD_HOSTS` (fx `nyt.stream365.vip`) sendes videre dertil. Begge adresser skal stå i Traefik-reglen i `docker-compose.yml` og have en DNS-post til feeder (grå sky).
+
+## Driftstatus øverst i guiden (fra 13. nov. 2026)
+- Er `UPTIME_URL` sat (fx `http://uptime:3001`), får alle HTML-sider en statuslinje øverst: én lampe pr. monitor på Uptime Kuma-statussiden `UPTIME_SLUG` (Plex, Seerr, IPTV 1–3), status (Kører/Nede/Ustabil/Vedligehold) og oppetid de seneste 24 timer. Linjen opdateres hvert minut.
+- Kun for brugere, der er logget ind og har accepteret reglerne (`/api/status` giver ellers 401). Appen spørger Uptime Kuma internt i Docker-netværket – Uptime Kuma åbnes ikke udefra.
+- `STATUS_LINKS`: tekst vist under en monitor med knappen Kopiér, adskilt med `;` – `Monitornavn=tekst`. Navnet skal være monitorens navn på statussiden (store/små bogstaver ligegyldige).
+- En hændelse (Incident) på statussiden i Uptime Kuma vises som besked i linjen; aktive vedligeholdelsesvinduer vises som "Planlagt vedligehold".
+- På computer er linjen foldet ud; på telefon er den foldet sammen, når alt kører, og foldes ud af sig selv ved problemer.
+- Svarer Uptime Kuma ikke: "Driftstatus kan ikke hentes lige nu" (grå). Svaret gemmes i 30 sek., så Uptime Kuma spørges højst to gange i minuttet.
+- Kontrol (feeder): `docker exec nyt python -c "import urllib.request as u;print(u.urlopen('http://127.0.0.1:8080/health').read().decode())"` → `"status":true`.
