@@ -6,7 +6,7 @@ Fanger nye serier og film fra autobrr og lægger dem i Sonarr/Radarr ud fra dine
 - Fangarr slår titlen op (genrer, originalsprog, kanal, år, rating) og tjekker reglerne oppefra.
 - Mangler TheTVDB/TMDb titlen endnu, kan den komme på **ventelisten** og prøves igen automatisk.
 
-Faner: Regler · Test en titel (+ prøv en regel på autobrr-historikken) · Venteliste · Premierer (kommende serier fra TMDb via Seerr – tilføj eller følg) · Statistik (størrelse og afspilninger fra Tracearr pr. regel) · Kontodeling (konti, hvor to tv afspiller samtidig fra hver sin adresse – fra Tautulli) · Oversættelser (Oversætterens tilstand, forbrug og prognose, skjult for kunderne, på vej, problemer, færdige oversættelser, statistik og indstillinger) · Log · autobrr (opret/opdatér filtre) · Indstillinger (Seerr-tjek, eksport/import, natlig eksport).
+Faner: Regler · Test en titel (+ prøv en regel på autobrr-historikken) · Venteliste · Premierer (kommende serier fra TMDb via Seerr – tilføj eller følg) · Statistik (størrelse og afspilninger fra Tracearr pr. regel) · Guide (hvem har været inde på guide.stream365.vip, læste afsnit og søgeord) · Kontodeling (konti, hvor to tv afspiller samtidig fra hver sin adresse – fra Tautulli) · Oversættelser (Oversætterens tilstand, forbrug og prognose, skjult for kunderne, på vej, problemer, færdige oversættelser, statistik og indstillinger) · Log · autobrr (opret/opdatér filtre) · Indstillinger (Seerr-tjek, eksport/import, natlig eksport).
 
 Sikringer: prøvetilstand, loft pr. døgn, pladsgrænse, kun præcise titelmatch, Seerr-tjek, Telegram ved fejl og "i orden igen", dagligt resumé.
 
@@ -108,6 +108,17 @@ Fire nye sider under **Kunder** i menuen. Koden ligger i `app/kunder.py`, data i
 - **Betalingsdatoen** er kundens faste dato i måneden (kundekortet › Fast dato i måneden). Kunder uden fast dato regnes som den 1. En dato, måneden ikke har (fx 31.), bliver til månedens sidste dag.
 - **Opkrævning:** sortér efter Navn eller Betalingsdato (valget huskes i browseren). Ved sortering efter dato vises en overskrift pr. dato med antal og beløb. Filteret **I dag** viser dem, der har betalingsdato i dag.
 - **Telegram på dagen** (kl. 8, samme klokkeslæt som de andre beskeder): navn, beløb og betalingsmetode for dem, der har betalingsdato i dag og endnu ikke er anmodet, betalt eller sprunget over. Ingen besked, når ingen skal opkræves. Beskeden den 1. med månedens overblik sendes stadig. Navne står i beskeden – aldrig telefonnumre eller koder.
+
+## Guide – hvem har været inde på guide.stream365.vip? (1.18.0)
+Fanen **Guide** (under Kunder) viser, hvem der har været inde på guiden, hvornår, hvilke afsnit de har læst, og hvad de har søgt efter – med rigtige navne fra Kunder (Tautulli).
+- **Tallene kommer fra appen `nyt`** (mappen `nyt-login/`), som skriver én fil pr. dag i `/opt/nyt/data/statistik/`. Fangarr læser kun – den ændrer intet i guiden og sender ingen beskeder. Se `nyt-login/LÆSMIG.md` › Tæller.
+- **Opsætning (én gang):** tilføj linjen `- "/opt/nyt/data/statistik:/guide-stat:ro"` under `volumes:` i `/opt/fangarr/docker-compose.yml`, og kør `cd /opt/fangarr && docker compose up -d`. Indtil da viser fanen, hvad der mangler. Mappen kan ændres med `GUIDE_STAT_DIR` i `fangarr.env`.
+- **Kortene øverst:** hvor mange der har været inde i perioden (7, 30 eller 90 dage), antal besøg, hvor mange der har accepteret reglerne ud af de aktive kunder med Plex, og hvor mange aktive kunder der aldrig har været inde.
+- **Hvem har været inde:** én linje pr. bruger med seneste besøg og antal. **Vis** folder brugerens læste afsnit og søgninger ud.
+- **Mest læste afsnit** og **Søgeord:** samlet for alle – viser, hvad kunderne bruger guiden til, og hvad de leder efter uden at finde.
+- **Nederst:** dem, der har accepteret reglerne uden at have været inde i perioden, og aktive kunder, der aldrig har været inde (hvis du vil minde nogen om guiden).
+- Din egen konto (`STAT_EXCLUDE` i `/opt/nyt/docker-compose.yml`, standard Stream365) tælles ikke. Ingen IP-adresser gemmes, og alt ældre end 90 dage slettes af `nyt`.
+- En bruger mærket **ukendt i Kunder** har en Plex-konto, Fangarr ikke kender – tryk "Synk fra Tautulli" under Kunder.
 
 ## Kom det faktisk i Plex? (1.17.0)
 - Kræver Oversætteren med trin C5 (`REVEAL_VERIFY=true`, standard). Før blev Plex kun bedt om at scanne én gang. Kunne Plex' server endnu ikke se den nye mappe, fandt scanningen ingenting, og filmen kom aldrig i Plex, selvom den stod som vist (fem NORDiC-film 9.–14. nov. 2026).

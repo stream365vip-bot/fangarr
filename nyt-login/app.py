@@ -43,8 +43,20 @@ OLD_HOSTS = {h.strip().lower() for h in (os.environ.get("OLD_HOSTS") or "").spli
 UPTIME_URL = (os.environ.get("UPTIME_URL") or "").rstrip("/")             # fx http://uptime:3001 (Uptime Kuma internt på feeder)
 UPTIME_SLUG = (os.environ.get("UPTIME_SLUG") or "kunder").strip()          # statussiden i Uptime Kuma
 # Tekst vist under en monitor, fx adressen kunderne kan skrive af: "IPTV 1=http://…;IPTV 2=http://…"
-STATUS_LINKS = {k.strip().lower(): v.strip() for k, _, v in
-                (x.partition("=") for x in (os.environ.get("STATUS_LINKS") or "").split(";")) if k.strip() and v.strip()}
+def link_key(name):
+    """'IPTV 3', 'iptv3' og 'IPTV-3 ' er samme monitor."""
+    return re.sub(r"[^a-z0-9æøå]+", "", str(name or "").lower())
+
+
+STATUS_LINKS = {link_key(k): v.strip() for k, _, v in
+                (x.partition("=") for x in (os.environ.get("STATUS_LINKS") or "").split(";")) if link_key(k) and v.strip()}
+# Tælleren (hvem har været inde, hvilke afsnit, hvilke søgeord). Fangarr læser mappen og viser fanen Guide.
+STAT_ON = (os.environ.get("STAT") or "1").strip() != "0"
+STAT_DIR = os.environ.get("STAT_DIR") or os.path.join(DATA_DIR, "statistik")
+STAT_DAYS = int(os.environ.get("STAT_DAYS") or "90")           # ældre dage slettes automatisk
+STAT_VISIT_GAP = 30 * 60                                        # pause på 30 min. = et nyt besøg
+# Konti, der ikke tælles med (Plex-brugernavn eller Plex-id, adskilt med komma) – fx din egen
+STAT_EXCLUDE = {x.strip().lower() for x in (os.environ.get("STAT_EXCLUDE") or "Stream365").split(",") if x.strip()}
 RULES_FILE = os.path.join(SITE_DIR, "_regler.json")      # regler + spørgsmål ved første login (ligger sammen med siden)
 ACCEPT_FILE = os.path.join(DATA_DIR, "accepteret.json")  # hvem har accepteret reglerne, og hvornår
 COOKIE, PIN_COOKIE = "s365_nyt", "s365_pin"
@@ -196,6 +208,7 @@ def save_accept(uid, name):
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(d, f, ensure_ascii=False, indent=1)
         os.replace(tmp, ACCEPT_FILE)
+    stat_copy_accepted()
     log.info("Reglerne (version %s) er accepteret af Plex-kontoen %s", r.get("version") or 1, name or uid)
 
 
@@ -290,6 +303,11 @@ fetch(c.plextv+"/api/v2/pins?strong=true",{method:"POST",headers:c.headers}).the
 .then(function(p){return fetch("/auth/pin?next="+c.next,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},
 body:JSON.stringify({id:p.id,code:p.code})})}).then(function(r){if(!r.ok)throw 0;return r.json()})
 .then(function(j){location.href=j.url}).catch(function(){f.submit()})});})();</script>""".replace("__CFG__", cfg)
+
+
+@app.on_event("startup")
+def startup():
+    stat_copy_accepted()
 
 
 @app.middleware("http")
@@ -425,6 +443,7 @@ def auth_done(req: Request):
     if not uid:
         return login_page(next_path, "Plex svarer ikke lige nu. Prøv igen om lidt.")
     log.info("Adgang givet til Plex-kontoen %s", user or "?")
+    stat_log(uid, user, "login")
     resp = RedirectResponse(safe_next(next_path), status_code=303)
     val = uid + ":" + base64.urlsafe_b64encode(user.encode()).decode()
     resp.set_cookie(COOKIE, make_cookie(val, SESSION_DAYS * 86400), max_age=SESSION_DAYS * 86400,
@@ -449,7 +468,7 @@ def fetch_status():
     beats.raise_for_status()
     p, b = page_.json(), beats.json()
     hb, up = b.get("heartbeatList") or {}, b.get("uptimeList") or {}
-    items = []
+    items, seen = [], set()
     for group in p.get("publicGroupList") or []:
         for m in group.get("monitorList") or []:
             mid = str(m.get("id"))
@@ -457,13 +476,21 @@ def fetch_status():
             last = last[-1] if last else {}
             u = up.get(f"{mid}_24")
             name = str(m.get("name") or "")
+            seen.add(link_key(name))
             items.append({
                 "name": name,
-                "link": STATUS_LINKS.get(name.lower()) or "",
+                # adressen under lampen: fra STATUS_LINKS – ellers monitorens egen adresse, hvis den er slået til på statussiden
+                "link": STATUS_LINKS.get(link_key(name)) or (str(m.get("url") or "") if m.get("sendUrl") else ""),
                 "state": _STATE.get(last.get("status"), "unknown"),
                 "uptime": round(float(u) * 100, 2) if isinstance(u, (int, float)) else None,
                 "since": str(last.get("time") or ""),
             })
+    missing = sorted(k for k in STATUS_LINKS if k not in seen)
+    if items and missing != _status.get("warned"):
+        _status["warned"] = missing
+        if missing:
+            log.warning("STATUS_LINKS: %s passer ikke til nogen monitor på statussiden (monitorer: %s)",
+                        ", ".join(missing), ", ".join(i["name"] for i in items))
     inc = p.get("incident") or None
     notice = None
     if inc and (inc.get("title") or inc.get("content")):
@@ -489,20 +516,28 @@ def status_data():
 
 STATUS_JS = r"""(function(){
 var L={up:"Kører",down:"Nede",pending:"Ustabil",maintenance:"Vedligehold",unknown:"Ukendt"};
-var css="#s365s{background:#121418;border-bottom:1px solid #262A32;color:#ECEEF1;font:14px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;position:relative;z-index:50}"+
-"#s365s *{box-sizing:border-box}#s365s summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 16px;min-height:44px;max-width:1200px;margin:0 auto}"+
+var css="#s365s{background:#0F1C18;border-bottom:2px solid rgba(88,217,174,.55);color:#ECEEF1;font:15px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;position:relative;z-index:50}"+
+"#s365s.down{background:#3A1C1B;border-bottom-color:#F27D77}#s365s.pending{background:#33290F;border-bottom-color:#F2C14E}"+
+"#s365s.maintenance,#s365s.info{background:#141E33;border-bottom-color:#7AA7FF}#s365s.na{background:#121418;border-bottom-color:#262A32}"+
+"#s365s *{box-sizing:border-box}#s365s summary{list-style:none;cursor:pointer;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 16px;min-height:48px;max-width:1200px;margin:0 auto}"+
 "#s365s summary::-webkit-details-marker{display:none}#s365s summary:focus-visible{outline:2px solid #58D9AE;outline-offset:-2px}"+
-"#s365s .d{width:10px;height:10px;border-radius:50%;flex:none;background:#6B7280}#s365s .up{background:#58D9AE;box-shadow:0 0 0 3px rgba(88,217,174,.18)}"+
-"#s365s .down{background:#F27D77;box-shadow:0 0 0 3px rgba(242,125,119,.2)}#s365s .pending{background:#F2C14E}#s365s .maintenance{background:#7AA7FF}"+
-"#s365s .sum{font-weight:600;flex:1;min-width:0}#s365s .upd{color:#9BA3AE;font-size:12.5px;white-space:nowrap}"+
-"#s365s .chev{color:#9BA3AE;transition:transform .15s}#s365s details[open] .chev{transform:rotate(180deg)}"+
-"#s365s .body{max-width:1200px;margin:0 auto;padding:0 16px 14px}#s365s ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:8px;align-items:start}"+
+"#s365s .d{width:10px;height:10px;border-radius:50%;flex:none;background:#6B7280;display:inline-block}#s365s .up{background:#58D9AE;box-shadow:0 0 0 3px rgba(88,217,174,.18)}"+
+"#s365s .down{background:#F27D77;box-shadow:0 0 0 3px rgba(242,125,119,.25)}#s365s .pending{background:#F2C14E}#s365s .maintenance{background:#7AA7FF}"+
+"#s365s .hd{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;flex:1 1 150px;min-width:0}#s365s .hd b{font-weight:700;white-space:nowrap}#s365s .sum{font-weight:600;min-width:0}"+
+"#s365s.ok .sum{color:#8FE8C8}#s365s .more{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(236,238,241,.28);border-radius:999px;padding:5px 12px;font-size:13px;font-weight:600;white-space:nowrap;min-height:32px}"+
+"#s365s summary:hover .more{border-color:#58D9AE}#s365s .chev{transition:transform .15s}#s365s details[open] .chev{transform:rotate(180deg)}"+
+"#s365s .chips{display:flex;flex-wrap:wrap;gap:6px 8px;flex:1 0 100%}#s365s details[open] .chips{display:none}"+
+"#s365s .c{display:inline-flex;align-items:center;gap:7px;background:rgba(11,12,14,.55);border:1px solid rgba(236,238,241,.14);border-radius:999px;padding:4px 11px 4px 9px;font-size:13.5px;font-weight:600;white-space:nowrap}"+
+"#s365s .c.bad{border-color:currentColor}#s365s .c small{font-weight:500;color:#C9CFCD;font-size:12.5px}"+
+"#s365s .body{max-width:1200px;margin:0 auto;padding:2px 16px 14px}#s365s ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:8px;align-items:start}"+
 "#s365s li{background:#0B0C0E;border:1px solid #262A32;border-radius:12px;padding:10px 12px;display:grid;grid-template-columns:auto 1fr auto;gap:4px 10px;align-items:center}"+
 "#s365s li .n{font-weight:600}#s365s li .st{color:#9BA3AE;font-size:13px;text-align:right}#s365s li .u{grid-column:2/4;color:#9BA3AE;font-size:12.5px}"+
 "#s365s li .lk{grid-column:2/4;display:flex;gap:8px;align-items:center;min-width:0}#s365s li code{font:13px ui-monospace,Menlo,Consolas,monospace;color:#C9CFCD;user-select:all;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}"+
 "#s365s button{background:none;border:1px solid #262A32;color:#58D9AE;border-radius:8px;font:600 12.5px system-ui,sans-serif;padding:4px 9px;min-height:30px;cursor:pointer;flex:none}"+
 "#s365s button:hover{border-color:#58D9AE}#s365s .note{background:#1A1F27;border:1px solid #2F3846;border-radius:12px;padding:10px 12px;margin:0 0 10px;color:#D5D9DF}"+
-"#s365s .note.danger{background:#3A1C1B;border-color:#5A2A28;color:#FFC1BD}#s365s .note.warning{background:#3A311B;border-color:#5A4A28;color:#FFE3A8}#s365s .note b{display:block;color:inherit}";
+"#s365s .note.danger{background:#3A1C1B;border-color:#5A2A28;color:#FFC1BD}#s365s .note.warning{background:#3A311B;border-color:#5A4A28;color:#FFE3A8}#s365s .note b{display:block;color:inherit}"+
+"#s365s .upd{color:#9BA3AE;font-size:12.5px;margin:10px 0 0}#s365s .more .sm{display:none}"+
+"@media(max-width:600px){#s365s .more .lg{display:none}#s365s .more .sm{display:inline}}";
 var st=document.createElement("style");st.textContent=css;document.head.appendChild(st);
 var box=document.createElement("div");box.id="s365s";box.setAttribute("role","region");box.setAttribute("aria-label","Driftstatus");
 document.body.insertBefore(box,document.body.firstChild);
@@ -510,24 +545,30 @@ var userToggled=false,lastOpen=null;
 function esc(t){var d=document.createElement("div");d.textContent=t==null?"":String(t);return d.innerHTML;}
 function pct(u){return u==null?"":(u>=99.995?"100":u.toFixed(u>=99?2:1).replace(".",","))+" %";}
 function render(s){
- var items=s.items||[],bad=items.filter(function(i){return i.state!=="up";}),dot,txt;
- if(!s.ok||!items.length){dot="";txt="Driftstatus kan ikke hentes lige nu";}
- else if(!bad.length){dot="up";txt="Alle tjenester kører";}
- else if(bad.every(function(i){return i.state==="maintenance";})){dot="maintenance";txt="Vedligehold: "+bad.map(function(i){return i.name;}).join(", ");}
- else{var dn=bad.filter(function(i){return i.state==="down";});dot=dn.length?"down":"pending";
-  txt=(dn.length?dn:bad).map(function(i){return i.name;}).join(", ")+(dn.length?(dn.length>1?" er nede":" er nede"):" er ustabil");}
+ var items=s.items||[],bad=items.filter(function(i){return i.state!=="up";}),dot,txt,cls;
+ if(!s.ok||!items.length){dot="";cls="na";txt="kan ikke hentes lige nu";}
+ else if(!bad.length){dot="up";cls="ok";txt="Alle tjenester kører";}
+ else if(bad.every(function(i){return i.state==="maintenance";})){dot=cls="maintenance";txt="Vedligehold: "+bad.map(function(i){return i.name;}).join(", ");}
+ else{var dn=bad.filter(function(i){return i.state==="down";});dot=cls=dn.length?"down":"pending";
+  txt=(dn.length?dn:bad).map(function(i){return i.name;}).join(", ")+(dn.length?" er nede":" er ustabil");}
+ if(cls==="ok"&&(s.notice||(s.maintenance||[]).length))cls=s.notice&&s.notice.style==="danger"?"down":s.notice&&s.notice.style==="warning"?"pending":"info";
  var note="";
  if(s.notice){note='<div class="note '+esc(s.notice.style)+'"><b>'+esc(s.notice.title)+'</b>'+esc(s.notice.text)+'</div>';}
  (s.maintenance||[]).forEach(function(m){note+='<div class="note"><b>Planlagt vedligehold</b>'+esc(m)+'</div>';});
+ var chips=items.map(function(i){return '<span class="c'+(i.state==="up"?"":" bad")+'"><span class="d '+esc(i.state)+'" aria-hidden="true"></span>'+esc(i.name)+
+  (i.state==="up"?'<span style="position:absolute;left:-9999px"> kører</span>':' <small>'+L[i.state]+'</small>')+'</span>';}).join("");
  var li=items.map(function(i){
   return '<li><span class="d '+esc(i.state)+'" aria-hidden="true"></span><span class="n">'+esc(i.name)+'</span><span class="st">'+L[i.state]+'</span>'+
    (i.link?'<span class="lk"><code>'+esc(i.link)+'</code><button type="button" data-c="'+esc(i.link)+'">Kopiér</button></span>':'')+
    '<span class="u">Oppetid seneste 24 timer: '+(i.uptime==null?"–":pct(i.uptime))+'</span></li>';}).join("");
  var problem=!!(bad.length||s.notice||(s.maintenance||[]).length);
  var open=userToggled?lastOpen:(problem||window.matchMedia("(min-width: 900px)").matches);
- box.innerHTML='<details'+(open?" open":"")+'><summary><span class="d '+dot+'" aria-hidden="true"></span><span class="sum">'+esc(txt)+
-  '</span><span class="upd">Opdateret '+esc(s.updated||"")+'</span><span class="chev" aria-hidden="true">▾</span></summary><div class="body">'+note+
-  (items.length?'<ul>'+li+'</ul>':'')+'</div></details>';
+ var links=items.some(function(i){return i.link;});
+ box.className=cls;
+ box.innerHTML='<details'+(open?" open":"")+'><summary><span class="hd"><span class="d '+dot+'" aria-hidden="true"></span><b>Driftstatus</b><span class="sum">'+esc(txt)+
+  '</span></span>'+(items.length||note?'<span class="more"><span class="lg">'+(links?"Adresser og oppetid":"Oppetid")+'</span><span class="sm">'+(links?"Adresser":"Oppetid")+'</span> <span class="chev" aria-hidden="true">▾</span></span>':'')+
+  (chips?'<span class="chips">'+chips+'</span>':'')+'</summary><div class="body">'+note+
+  (items.length?'<ul>'+li+'</ul>':'')+'<p class="upd">Opdateret kl. '+esc(s.updated||"")+' – opdateres hvert minut</p></div></details>';
  var d=box.querySelector("details");d.addEventListener("toggle",function(){userToggled=true;lastOpen=d.open;});
  box.querySelectorAll("button[data-c]").forEach(function(b){b.addEventListener("click",function(){
   var t=b.getAttribute("data-c");(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){b.textContent="Kopieret";},function(){b.textContent="Markér og kopiér";});
@@ -557,6 +598,158 @@ def api_status_js(req: Request):
     if not status_allowed(req):
         return HTMLResponse("", status_code=401, media_type="application/javascript")
     return HTMLResponse(STATUS_JS, media_type="application/javascript", headers={"Cache-Control": "private, max-age=300"})
+
+
+# ---------------------------------------------------------------- tæller (læses af Fangarr, fanen Guide)
+# Én fil pr. dag i STAT_DIR (fx 2026-11-15.jsonl), én linje pr. hændelse: login, besøg, afsnit, søgning.
+# Der gemmes Plex-id, brugernavn og tidspunkt – ingen IP-adresser. Filer ældre end STAT_DAYS dage slettes.
+_stat_lock = threading.Lock()
+_stat = {"last": {}, "rate": {}, "cleaned": ""}
+
+
+def stat_excluded(uid, name):
+    return not STAT_ON or str(uid).lower() in STAT_EXCLUDE or str(name or "").lower() in STAT_EXCLUDE
+
+
+def _clean_text(v, n):
+    return re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f]", " ", str(v or ""))).strip()[:n]
+
+
+def stat_log(uid, name, event, **fields):
+    """Skriv én hændelse. Fejl her må aldrig give brugeren en fejl."""
+    if stat_excluded(uid, name):
+        return
+    now = datetime.datetime.now()
+    row = {"t": now.isoformat(timespec="seconds"), "uid": str(uid), "user": str(name or ""), "e": event}
+    row.update({k: v for k, v in fields.items() if v})
+    try:
+        with _stat_lock:
+            os.makedirs(STAT_DIR, exist_ok=True)
+            day = now.strftime("%Y-%m-%d")
+            with open(os.path.join(STAT_DIR, day + ".jsonl"), "a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            if _stat["cleaned"] != day:
+                _stat["cleaned"] = day
+                limit = (now - datetime.timedelta(days=STAT_DAYS)).strftime("%Y-%m-%d")
+                for fn in os.listdir(STAT_DIR):
+                    if re.fullmatch(r"\d{4}-\d\d-\d\d\.jsonl", fn) and fn[:10] < limit:
+                        os.remove(os.path.join(STAT_DIR, fn))
+    except OSError as e:
+        log.warning("Tælleren kunne ikke skrive (%s)", e.__class__.__name__)
+
+
+def stat_visit(uid, name):
+    """Et besøg = brugeren åbner guiden efter mindst 30 minutters pause."""
+    if stat_excluded(uid, name):
+        return
+    now = time.time()
+    with _stat_lock:
+        new = now - _stat["last"].get(str(uid), 0) > STAT_VISIT_GAP
+        _stat["last"][str(uid)] = now
+    if new:
+        stat_log(uid, name, "visit")
+
+
+def stat_rate_ok(uid, n):
+    """Højst 120 hændelser pr. bruger pr. 10 minutter – resten smides væk."""
+    now, key = time.time(), str(uid)
+    with _stat_lock:
+        start, used = _stat["rate"].get(key, (now, 0))
+        if now - start > 600:
+            start, used = now, 0
+        ok = used + n <= 120
+        _stat["rate"][key] = (start, used + n if ok else used)
+        return ok
+
+
+def stat_copy_accepted():
+    """Kopi af listen over accepterede regler til Fangarr (uden dine egne konti)."""
+    if not STAT_ON:
+        return
+    try:
+        d = {k: v for k, v in _accepted_all().items() if not stat_excluded(k, (v or {}).get("user"))}
+        os.makedirs(STAT_DIR, exist_ok=True)
+        tmp = os.path.join(STAT_DIR, "accepteret.json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+        os.replace(tmp, os.path.join(STAT_DIR, "accepteret.json"))
+    except OSError as e:
+        log.warning("Listen over accepterede regler kunne ikke kopieres til tælleren (%s)", e.__class__.__name__)
+
+
+STAT_JS = r"""(function(){
+var q=[],timer=null,done={},cur=null,ticks=0,lastQ="";
+function flush(){if(!q.length)return;var b=JSON.stringify({events:q.splice(0,20)});
+ try{if(navigator.sendBeacon&&navigator.sendBeacon("/api/stat",new Blob([b],{type:"application/json"})))return;}catch(e){}
+ try{fetch("/api/stat",{method:"POST",credentials:"same-origin",keepalive:true,headers:{"Content-Type":"application/json"},body:b}).catch(function(){});}catch(e){}}
+function push(ev){q.push(ev);clearTimeout(timer);timer=setTimeout(flush,2000);}
+function txt(el){return (el.textContent||"").replace(/\s+/g," ").trim().slice(0,80);}
+function list(){
+ var a=[].slice.call(document.querySelectorAll("section[id],article[id]")).filter(function(e){return e.id!=="s365s"&&!e.closest("#s365s");});
+ a=a.filter(function(e){return !e.querySelector("section[id],article[id]");});
+ if(a.length>=3)return {mode:"box",els:a};
+ return {mode:"head",els:[].slice.call(document.querySelectorAll("h2[id],h3[id]")).filter(function(e){return !e.closest("#s365s");})};}
+function title(el){if(/^H\d$/.test(el.tagName))return txt(el);var h=el.querySelector("h1,h2,h3,h4");return h?txt(h):el.id;}
+function current(){var L=list(),mid=window.innerHeight/2,hit=null,i,r;
+ for(i=0;i<L.els.length;i++){r=L.els[i].getBoundingClientRect();if(!r.width&&!r.height)continue;
+  if(L.mode==="box"){if(r.top<=mid&&r.bottom>mid){hit=L.els[i];break;}}
+  else if(r.top<=mid)hit=L.els[i];else break;}
+ return hit;}
+setInterval(function(){if(document.hidden)return;var el=current();
+ if(!el){cur=null;ticks=0;return;}
+ if(el!==cur){cur=el;ticks=0;return;}
+ if(++ticks===5&&!done[el.id]){done[el.id]=1;push({e:"section",id:el.id,title:title(el)});}},1000);
+var st=null;
+document.addEventListener("input",function(ev){var el=ev.target;
+ if(!el||el.tagName!=="INPUT"||el.closest("#s365s"))return;
+ var isSearch=el.type==="search"||/s(ø|oe)g|search/i.test((el.placeholder||"")+" "+(el.id||"")+" "+(el.name||"")+" "+(el.getAttribute("aria-label")||""));
+ if(!isSearch)return;clearTimeout(st);
+ st=setTimeout(function(){var v=(el.value||"").replace(/\s+/g," ").trim().toLowerCase().slice(0,60);
+  if(v.length>=3&&v!==lastQ){lastQ=v;push({e:"search",q:v});}},1500);},true);
+window.addEventListener("pagehide",flush);
+document.addEventListener("visibilitychange",function(){if(document.hidden)flush();});
+})();"""
+
+
+@app.post("/api/stat")
+async def api_stat(req: Request):
+    """Tælleren: hvilke afsnit en indlogget bruger har læst, og hvad der er søgt efter. Svarer altid kort og uden indhold."""
+    s = session(req)
+    if not s or not has_accepted(s[0]):
+        return JSONResponse({"detail": "log ind først"}, status_code=401)
+    origin = (req.headers.get("origin") or "").rstrip("/")
+    if origin and origin != PUBLIC_URL:   # kun fra vores egen side
+        return JSONResponse({"error": "origin"}, status_code=403)
+    empty = HTMLResponse("", status_code=204)
+    if stat_excluded(s[0], s[1]):
+        return empty
+    try:
+        body = await req.body()
+        events = json.loads(body).get("events") if len(body) <= 8000 else None
+    except Exception:
+        events = None
+    if not isinstance(events, list):
+        return empty
+    events = [e for e in events[:20] if isinstance(e, dict)]
+    if not events or not stat_rate_ok(s[0], len(events)):
+        return empty
+    stat_visit(s[0], s[1])
+    for e in events:
+        if e.get("e") == "section" and re.fullmatch(r"[\w\-:.]{1,80}", str(e.get("id") or "")):
+            stat_log(s[0], s[1], "section", id=str(e["id"]), title=_clean_text(e.get("title"), 80))
+        elif e.get("e") == "search":
+            term = _clean_text(e.get("q"), 60).lower()
+            if len(term) >= 3:
+                stat_log(s[0], s[1], "search", q=term)
+    return empty
+
+
+@app.get("/api/stat.js")
+def api_stat_js(req: Request):
+    s = session(req)
+    if not s or not has_accepted(s[0]) or stat_excluded(s[0], s[1]):
+        return HTMLResponse("", status_code=401, media_type="application/javascript")
+    return HTMLResponse(STAT_JS, media_type="application/javascript", headers={"Cache-Control": "private, max-age=300"})
 
 
 @app.get("/logout")
@@ -592,11 +785,14 @@ def site(path: str, req: Request):
     if not os.path.isfile(full):
         return page("<h1>Siden findes ikke</h1><p>Adressen er forkert.</p><a class=\"btn\" href=\"/\">Til forsiden</a>", 404)
     is_html = full.endswith(".html")
-    if is_html and UPTIME_URL:
+    if is_html:
+        stat_visit(s[0], s[1])
+    tags = ('<script src="/api/status.js" defer></script>' if UPTIME_URL else "") + \
+           ('<script src="/api/stat.js" defer></script>' if not stat_excluded(s[0], s[1]) else "")
+    if is_html and tags:
         with open(full, encoding="utf-8", errors="replace") as f:
             doc = f.read()
-        tag = '<script src="/api/status.js" defer></script>'
-        doc = doc.replace("</body>", tag + "</body>", 1) if "</body>" in doc else doc + tag
+        doc = doc.replace("</body>", tags + "</body>", 1) if "</body>" in doc else doc + tags
         return HTMLResponse(doc, headers={"Cache-Control": "private, no-cache", "X-Robots-Tag": "noindex, nofollow"})
     return FileResponse(full, media_type=mimetypes.guess_type(full)[0] or "application/octet-stream",
                         headers={"Cache-Control": "private, no-cache" if is_html else "private, max-age=86400",

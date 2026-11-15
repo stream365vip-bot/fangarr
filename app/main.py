@@ -23,6 +23,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import guide
 from . import kunder
 
 DATA_DIR = os.environ.get("DATA_DIR", "/config")
@@ -1402,6 +1403,7 @@ def filter_fields(media, opts):
 
 app = FastAPI(title="Fangarr", docs_url=None, redoc_url=None)
 app.include_router(kunder.router)   # Kunder og betalinger (1.16.0) – se app/kunder.py
+app.include_router(guide.router)    # Guide: besøg på guide.stream365.vip (1.18.0) – se app/guide.py
 
 
 @app.on_event("startup")
@@ -1454,7 +1456,7 @@ def state():
         "waiting": venter,
         "features": {"tracearr": bool(TRACEARR_URL and TRACEARR_APIKEY), "seerr": bool(SEERR_URL and SEERR_APIKEY),
                      "autobrr": bool(AUTOBRR_URL and AUTOBRR_APIKEY), "translator": ov_enabled(),
-                     "plex": bool(PLEX_URL and PLEX_TOKEN), "tautulli": tautulli_enabled(), "version": VERSION},
+                     "plex": bool(PLEX_URL and PLEX_TOKEN), "tautulli": tautulli_enabled(), "guide": guide.enabled(), "version": VERSION},
     }
 
 
@@ -2952,6 +2954,7 @@ def tautulli(cmd, **params):
 
 kunder.setup(db=db, telegram=telegram, tautulli=tautulli, tautulli_enabled=tautulli_enabled, now=now,
              kv_get=kv_get, kv_set=kv_set, log=log)
+guide.setup(db=db, now=now, log=log)
 
 
 def device_kind(platform, product, player):
