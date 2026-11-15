@@ -114,6 +114,7 @@ Fire nye sider under **Kunder** i menuen. Koden ligger i `app/kunder.py`, data i
 - Oversætteren tjekker nu selv efter 2 minutter og beder Plex scanne igen, hvis filen mangler (igen efter 5, 15 og 60 minutter, derefter hver time i et døgn).
 - **Vist i Plex** viser under hver titel, om Plex har bekræftet den ("i Plex", evt. "efter 2 ekstra scanninger"). Ældre rækker fra før trinnet har ingen linje.
 - Mangler en titel stadig efter ca. en time, står den øverst under **Skjult for kunderne** med ⚠, og der sendes én Telegram-besked ("ikke kommet i Plex") – og én, når den er kommet ind ("i orden igen"). Fangarr husker, hvad der er meldt (tabellen `plex_missing_notified`).
+- **1.17.1:** "se listen" på kortene Problemer og Skjult for kunderne (Oversættelser › Status) åbner nu den rigtige underfane. Linkene pegede på lister, der siden 1.15.0 ligger på skjulte underfaner, så der skete ingenting.
 
 ## Filer
 - `app/main.py` – server (FastAPI) · `app/static/index.html` – interface · `app/VERSION`

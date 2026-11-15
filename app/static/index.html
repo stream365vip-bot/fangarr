@@ -1453,8 +1453,8 @@ function renderTr() {
     ["I kø", st.queue ?? 0, "valgt i denne runde"],
     ["I dag", sum(t, "titles"), kr(sum(t, "usd"), k)],
     ["Seneste 7 dage", sum(w, "titles"), kr(sum(w, "usd"), k) + " · " + (sum(w, "titles") ? kr(sum(w, "usd") / sum(w, "titles"), k) + " pr. stk." : "")],
-    ["Problemer", probs, probs ? '<a href="#trProblems" style="color:var(--warn)">se listen</a>' : "ingen"],
-    ...((TR.reveal || {}).enabled ? [["Skjult for kunderne", (TR.reveal.waiting || []).length, '<a href="#trHidden" style="color:var(--info)">se listen</a>']] : []),
+    ["Problemer", probs, probs ? '<a href="#tr/problemer" onclick="go(&quot;tr&quot;,&quot;problemer&quot;);return false" style="color:var(--warn)">se listen</a>' : "ingen"],
+    ...((TR.reveal || {}).enabled ? [["Skjult for kunderne", (TR.reveal.waiting || []).length, '<a href="#tr/skjult" onclick="go(&quot;tr&quot;,&quot;skjult&quot;);return false" style="color:var(--info)">se listen</a>']] : []),
   ].map(([l, v, sub]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="small">${sub}</div></div>`).join("");
   const b = f.budget_usd || 0, pct = x => b ? Math.min(100, x / b * 100) : 0, over = b && f.forecast_usd > b;
   $("trMoney").innerHTML = `<div class="row" style="justify-content:space-between;margin:0"><b>Månedens forbrug</b>
