@@ -13,6 +13,7 @@ services:
       UPTIME_URL: "http://uptime:3001"   # driftstatus øverst i guiden (Uptime Kuma internt – ikke via internettet)
       UPTIME_SLUG: "kunder"              # statussiden i Uptime Kuma
       STATUS_LINKS: "IPTV 1=http://172.110.210.78:2095;IPTV 2=http://195.128.27.253:2095;IPTV 3=http://88.135.69.66:2095"
+      STAT_EXCLUDE: "Stream365"          # konti, der ikke tælles med i Fangarrs fane Guide (Plex-brugernavn eller -id, komma imellem)
     hostname: "nyt"
     build: /opt/fangarr/nyt-login
     image: "nyt:local"

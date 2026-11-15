@@ -243,6 +243,7 @@
   .kmonth { display: flex; align-items: center; gap: 8px; } .kmonth b { font: 600 17px var(--head); min-width: 150px; text-align: center; text-transform: capitalize; }
   .ksec { margin: 22px 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
   .ksec h3 { margin: 0; font: 600 16px var(--head); }
+  #guide h3 { font: 600 16px var(--head); }
   .kitem { display: flex; gap: 10px 14px; align-items: center; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 6px; background: var(--bg); }
   .kitem .who { flex: 1 1 200px; min-width: 0; } .kitem .amt { font-weight: 600; white-space: nowrap; }
   .ksecret { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; background: var(--panel2); border-radius: 6px; padding: 2px 7px; user-select: all; overflow-wrap: anywhere; }
@@ -293,6 +294,7 @@
     <button class="nv" data-tab="iptv"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v11H3zM8 21h8M12 17v4"/></svg><span class="t">IPTV-linjer</span><span class="bdg" data-bdg="iptv"></span></button>
     <button class="nv" data-tab="eco"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16l4-5 3 3 5-7"/></svg><span class="t">Økonomi</span></button>
     <button class="nv" data-tab="share"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a3 3 0 0 0 0-6M21 20a6 6 0 0 0-3-5"/></svg><span class="t">Kontodeling</span><span class="bdg" data-bdg="share"></span></button>
+    <button class="nv" data-tab="guide"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3zM5 17a3 3 0 0 1 3-3h11M9 8h6"/></svg><span class="t">Guide</span></button>
     <div class="grp">Indsigt</div>
     <button class="nv" data-tab="stats"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10M12 20V4M19 20v-7"/></svg><span class="t">Statistik</span></button>
     <div class="grp">System</div>
@@ -451,6 +453,38 @@
     <div id="shSum"></div>
     <div id="shGroups"><div class="card empty">Vælg periode og tryk Analysér. Allerførste gang hentes hele Tautullis historik – det kan tage et par minutter. Derefter er den gemt.</div></div>
     <div id="shKinds"></div>
+  </section>
+
+  <section id="guide">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <h2>Guide</h2>
+        <p class="hint" style="margin:0">Hvem der har været inde på <b>guide.stream365.vip</b>, hvornår, hvilke afsnit de har læst, og hvad de har søgt efter. Navnene kommer fra Kunder (Tautulli). Din egen konto tælles ikke med.</p>
+      </div>
+      <select id="gDays" onchange="loadGuide()" style="width:auto" aria-label="Periode"><option value="7">Seneste 7 dage</option><option value="30" selected>Seneste 30 dage</option><option value="90">Seneste 90 dage</option></select>
+    </div>
+    <div id="gNote" style="margin-top:14px"></div>
+    <div class="kpis" id="gKpis"></div>
+    <details class="card"><summary><b>Sådan læser du siden</b> <span class="small">(tryk for at folde ud)</span></summary>
+      <ul style="margin:10px 0 0; padding-left:20px; line-height:1.6">
+        <li><b>Besøg:</b> en bruger åbner guiden efter mindst 30 minutters pause. Flere sider i træk er ét besøg.</li>
+        <li><b>Login:</b> brugeren har logget ind med Plex på en enhed. Det sker kun én gang pr. enhed hver 90. dag, så de fleste besøg er uden login.</li>
+        <li><b>Afsnit:</b> tælles, når afsnittet har stået midt på skærmen i 5 sekunder. Højst én gang pr. afsnit, hver gang siden åbnes.</li>
+        <li><b>Søgeord:</b> det, brugeren har skrevet i guidens søgefelt (mindst 3 tegn, efter en kort pause). Bruges til at se, hvad kunderne leder efter – og hvad guiden mangler.</li>
+        <li><b>Accepterede regler:</b> første gang en konto svarer rigtigt på de tre spørgsmål. Listen går tilbage til 12. nov. 2026 – også før tælleren blev sat i gang.</li>
+        <li>Der gemmes ingen IP-adresser. Tælleren sletter selv alt, der er ældre end 90 dage. Tallene begynder den dag, tælleren blev installeret.</li>
+      </ul></details>
+    <h3 style="margin:18px 0 8px">Hvem har været inde</h3>
+    <div class="card" style="padding:0; overflow-x:auto"><table>
+      <thead><tr><th>Navn</th><th>Seneste besøg</th><th class="num">Besøg</th><th class="num hs">Afsnit</th><th class="num hs">Søgninger</th><th></th></tr></thead>
+      <tbody id="gUsers"><tr><td colspan="6" class="empty">Henter …</td></tr></tbody></table></div>
+    <h3 style="margin:18px 0 8px">Mest læste afsnit</h3>
+    <div class="card" style="padding:0; overflow-x:auto"><table>
+      <thead><tr><th>Afsnit</th><th class="num">Brugere</th><th class="num">Gange</th><th>Senest</th></tr></thead><tbody id="gSecs"></tbody></table></div>
+    <h3 style="margin:18px 0 8px">Søgeord</h3>
+    <div class="card" style="padding:0; overflow-x:auto"><table>
+      <thead><tr><th>Søgt efter</th><th class="num">Gange</th><th>Hvem</th><th>Senest</th></tr></thead><tbody id="gQs"></tbody></table></div>
+    <div id="gMore"></div>
   </section>
 
   <section id="pay">
@@ -1266,6 +1300,48 @@ function renderStats() {
     : '<tr><td colspan="7" class="empty">Ingen titler med Fangarr-mærker i Sonarr/Radarr endnu.</td></tr>';
 }
 
+// ---------- guide (besøg på guide.stream365.vip)
+let GD = null, gOpen = new Set();
+const G_MON = ["jan.", "feb.", "mar.", "apr.", "maj", "jun.", "jul.", "aug.", "sep.", "okt.", "nov.", "dec."];
+function gDate(t) { if (!t) return "–"; const m = /^(\d{4})-(\d\d)-(\d\d)T(\d\d:\d\d)/.exec(t); return m ? `${Number(m[3])}. ${G_MON[Number(m[2]) - 1]} kl. ${m[4]}` : esc(t); }
+async function loadGuide() {
+  try { GD = await api("/api/guide?days=" + $("gDays").value); renderGuide(); } catch (e) { toast(e.message, true); }
+}
+function gToggle(uid) { gOpen.has(uid) ? gOpen.delete(uid) : gOpen.add(uid); renderGuide(); }
+function renderGuide() {
+  const d = GD, k = d.kpis;
+  $("gNote").innerHTML = d.enabled ? (d.first_event ? "" : '<div class="warn">Tælleren er sat op, men der er ingen besøg i perioden endnu. Tallene begynder, når den nye udgave af guiden (nyt) er installeret, og den første kunde åbner guiden.</div>')
+    : `<div class="warn"><b>Tælleren er ikke sat op endnu.</b> Fangarr kan ikke se mappen <code>${esc(d.dir)}</code>. Tilføj linjen <code>- "/opt/nyt/data/statistik:/guide-stat:ro"</code> under <code>volumes:</code> i <code>/opt/fangarr/docker-compose.yml</code> på feeder, og genstart Fangarr (se LÆSMIG › Guide).</div>`;
+  $("gKpis").innerHTML = [
+    ["Har været inde", k.visitors, `brugere de seneste ${d.days} dage`],
+    ["Besøg", k.visits, `${k.sections} læste afsnit · ${k.searches} søgninger`],
+    ["Har accepteret reglerne", k.accepted, k.active_customers ? `af ${k.active_customers} aktive kunder med Plex` : "i alt"],
+    ["Har aldrig været inde", k.never, "aktive kunder – se listen nederst"],
+  ].map(x => `<div class="kpi"><div class="l">${x[0]}</div><div class="v">${x[1]}</div><div class="s">${x[2]}</div></div>`).join("");
+  $("gUsers").innerHTML = d.users.length ? d.users.map(u => {
+    const open = gOpen.has(u.uid), secs = u.sections, qs = u.searches;
+    const detail = open ? `<tr><td colspan="6" style="background:var(--bg)">
+      <div class="small" style="margin:0 0 8px">Første besøg i perioden: ${gDate(u.first)} · Login på en enhed: ${u.logins} · Regler accepteret: ${gDate(u.accepted_at)}</div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px">
+        <div><b>Afsnit, brugeren har læst</b>${secs.length ? "<ul style='margin:6px 0 0; padding-left:18px'>" + secs.map(s => `<li>${esc(s.title)}${s.n > 1 ? ` <span class="small">× ${s.n}</span>` : ""} <span class="small">– ${gDate(s.last)}</span></li>`).join("") + "</ul>" : '<div class="small">Ingen afsnit endnu.</div>'}</div>
+        <div><b>Søgninger</b>${qs.length ? "<ul style='margin:6px 0 0; padding-left:18px'>" + qs.map(s => `<li>“${esc(s.q)}” <span class="small">– ${gDate(s.t)}</span></li>`).join("") + "</ul>" : '<div class="small">Ingen søgninger.</div>'}</div>
+      </div></td></tr>` : "";
+    return `<tr><td><b>${esc(u.name)}</b>${u.known ? "" : ' <span class="tag" title="Plex-kontoen findes ikke under Kunder – synk fra Tautulli">ukendt i Kunder</span>'}<div class="small">${esc(u.username)}</div></td>
+      <td>${gDate(u.last)}</td><td class="num">${u.visits}</td><td class="num hs">${secs.length}</td><td class="num hs">${qs.length}</td>
+      <td class="num"><button class="b sm" onclick="gToggle('${esc(u.uid)}')" aria-expanded="${open}">${open ? "Skjul" : "Vis"}</button></td></tr>${detail}`; }).join("")
+    : '<tr><td colspan="6" class="empty">Ingen har været inde i perioden.</td></tr>';
+  $("gSecs").innerHTML = d.sections.length ? d.sections.map(s => `<tr><td><b>${esc(s.title)}</b></td><td class="num">${s.users}</td><td class="num">${s.views}</td><td style="white-space:nowrap">${gDate(s.last)}</td></tr>`).join("")
+    : '<tr><td colspan="4" class="empty">Ingen læste afsnit i perioden.</td></tr>';
+  $("gQs").innerHTML = d.searches.length ? d.searches.map(s => `<tr><td><b>${esc(s.q)}</b></td><td class="num">${s.n}</td><td>${esc(s.users.join(", "))}</td><td style="white-space:nowrap">${gDate(s.last)}</td></tr>`).join("")
+    : '<tr><td colspan="4" class="empty">Ingen søgninger i perioden.</td></tr>';
+  $("gMore").innerHTML =
+    (d.earlier.length ? `<details class="card" style="margin-top:14px"><summary><b>Har accepteret reglerne, men ikke været inde i perioden (${d.earlier.length})</b> <span class="small">(tryk for at folde ud)</span></summary>
+      <ul style="margin:10px 0 0; padding-left:20px; line-height:1.6">${d.earlier.map(a => `<li>${esc(a.name)} <span class="small">(${esc(a.username)}) – accepterede ${gDate(a.accepted_at)}</span></li>`).join("")}</ul></details>` : "") +
+    (d.never.length ? `<details class="card" style="margin-top:14px"><summary><b>Aktive kunder, der aldrig har været inde (${d.never.length})</b> <span class="small">(tryk for at folde ud)</span></summary>
+      <p class="small">Kunder med en aktiv Plex-konto, som hverken har accepteret reglerne eller besøgt guiden. Bruges, hvis du vil minde nogen om guiden.</p>
+      <div style="columns:220px; line-height:1.7">${d.never.map(n => `<div>${esc(n)}</div>`).join("")}</div></details>` : "");
+}
+
 // ---------- kontodeling
 let SH = null, shOpen = new Set(), shLast = null;
 const SH_KIND = {tv: "Tv", mobil: "Mobil", ukendt: "Ukendt"};
@@ -1658,7 +1734,7 @@ const ICON = {
   home: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z", wait: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
   log: "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01", share: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a3 3 0 0 0 0-6M21 20a6 6 0 0 0-3-5"};
 const SUBDEF = {tr: "status", settings: "gen", setup: "test", cust: "liste"};
-const TAB_IDS = ["home", "wait", "log", "rules", "prem", "tr", "pay", "cust", "iptv", "eco", "share", "stats", "settings", "setup", "search"];
+const TAB_IDS = ["home", "wait", "log", "rules", "prem", "tr", "pay", "cust", "iptv", "eco", "share", "guide", "stats", "settings", "setup", "search"];
 let TAB = "home", SUB = {...SUBDEF}, OV = null, CONN = null, VER = null, ADDED = null, logFirst = true;
 
 function showSub(tab) {
@@ -1682,6 +1758,7 @@ function go(tab, sub) {
   if (tab === "prem") loadPrem(0);
   if (tab === "stats") loadStats();
   if (tab === "share") loadShare();
+  if (tab === "guide") loadGuide();
   if (tab === "pay") loadPay();
   if (tab === "cust") { loadCust().then(renderKSet); if (SUB.cust === "logins") loadLogins(); }
   if (tab === "iptv") loadIptv();
