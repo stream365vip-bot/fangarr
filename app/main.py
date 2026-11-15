@@ -105,6 +105,9 @@ def init_db():
             con.execute("ALTER TABLE waitlist ADD COLUMN suggestions TEXT DEFAULT '[]'")
         con.execute("CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)")  # intern tilstand
         con.execute("CREATE TABLE IF NOT EXISTS reveal_notified (id TEXT PRIMARY KEY, ts TEXT)")
+        # 1.17.0: film/afsnit, der er meldt som "ikke kommet i Plex" (fixed=1, når "nu i Plex" er sendt)
+        con.execute("CREATE TABLE IF NOT EXISTS plex_missing_notified (id TEXT PRIMARY KEY, ts TEXT, title TEXT,"
+                    " fixed INTEGER DEFAULT 0)")
         # titler, du har fjernet fra ventelisten med "Fjern og husk" – de kommer ikke på ventelisten igen
         con.execute("CREATE TABLE IF NOT EXISTS ignored (id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, media TEXT,"
                     " key TEXT, title TEXT, UNIQUE(media, key))")
@@ -2447,6 +2450,34 @@ def notify_safety_net(shown):
              "Se Fangarr › Oversættelser › Skjult for kunderne.")
 
 
+def notify_plex_missing(missing, fixed):
+    """1.17.0 (Oversætterens trin C5): besked, når en vist film/et afsnit stadig ikke er kommet i Plex efter flere
+    scanninger (ca. en time), og igen når den er kommet ind. Hver titel meldes kun én gang hver vej."""
+    rid = lambda x: f"{x['key']}|{x['import_at']}"  # noqa: E731
+    con = db()
+    known = {r["id"]: r for r in con.execute("SELECT id, title, fixed FROM plex_missing_notified").fetchall()}
+    new = [x for x in missing if rid(x) not in known]
+    back = [x for x in fixed if rid(x) in known and not known[rid(x)]["fixed"]]
+    with con:
+        for x in new:
+            con.execute("INSERT OR IGNORE INTO plex_missing_notified (id, ts, title) VALUES (?, ?, ?)",
+                        (rid(x), iso(now()), x.get("title") or x["key"]))
+        for x in back:
+            con.execute("UPDATE plex_missing_notified SET fixed = 1 WHERE id = ?", (rid(x),))
+        con.execute("DELETE FROM plex_missing_notified WHERE ts < ?", (iso(now() - datetime.timedelta(days=45)),))
+    con.close()
+
+    def lines(rows):
+        text = "\n".join(f"• {x.get('title') or x['key']}" for x in rows[:20])
+        return text + (f"\n… og {len(rows) - 20} mere" if len(rows) > 20 else "")
+
+    if new:
+        telegram(f"🚨 Fangarr – ikke kommet i Plex, selvom Plex er bedt om at scanne flere gange:\n{lines(new)}\n\n"
+                 "Oversætteren prøver igen hver time i et døgn. Se Fangarr › Oversættelser › Skjult for kunderne.")
+    if back:
+        telegram(f"✅ Fangarr – i orden igen, nu i Plex:\n{lines(back)}")
+
+
 def check_reveal():
     """Køres fra baggrundsjobbet ca. hvert 5. minut."""
     if not ov_enabled():
@@ -2490,6 +2521,7 @@ def check_reveal():
         kv_set("reveal_enabled", enabled)
     if enabled:
         notify_safety_net(data.get("shown") or [])
+        notify_plex_missing(data.get("plex_missing") or [], data.get("plex_fixed") or [])
 
 
 def classify_imports(days):

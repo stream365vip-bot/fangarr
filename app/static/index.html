@@ -551,6 +551,7 @@
     <div data-p="skjult">
     <h2>Skjult for kunderne</h2>
     <p class="hint">Nye film og afsnit, som endnu ikke er vist i Plex, fordi de mangler dansk tale eller dansk tekst. De vises af sig selv, når teksten er klar – og senest efter sikkerhedsnettet. Plex viser en hel mappe ad gangen, så et afsnit, der venter, holder resten af sæsonmappen tilbage.</p>
+    <p class="hint">Når noget er vist, tjekker Oversætteren et par minutter efter, at det faktisk er kommet i Plex. Er det ikke det, beder den Plex scanne mappen igen (efter 2, 7, 22 og 82 minutter, derefter hver time i et døgn). Mangler det stadig efter ca. en time, står det øverst her med ⚠, og du får en besked på Telegram – og en ny, når det er kommet ind.</p>
     <div id="trRevealInfo"></div>
     <div class="card" style="padding:0; overflow-x:auto"><table>
       <thead><tr><th>Titel</th><th>Hvorfor</th><th>Oversættelse</th><th>Importeret</th><th>Vises senest</th></tr></thead>
@@ -1559,6 +1560,15 @@ async function trStraks(on) {
   catch (e) { toast(e.message, true); }
 }
 const RV_WHY = {"dansk originalsprog": "dansk tale", "dansk tale": "dansk tale", "indlejret dansk tekst": "dansk tekst i filen", "dansk tekstfil": "dansk tekst"};
+// 1.17.0: har Plex bekræftet filen? (Oversætterens trin C5 – feltet mangler på ældre rækker)
+function RV_PLEX(i) {
+  const n = i.plex_tries || 0;
+  if (i.plex === "ok") return `<div class="small">i Plex${n ? ` efter ${n} ekstra scanning${n > 1 ? "er" : ""}` : ""}</div>`;
+  if (i.plex === "tjekkes") return `<div class="small">${n ? `ikke i Plex endnu – ${n} ekstra scanning${n > 1 ? "er" : ""}` : "venter på bekræftelse fra Plex"}</div>`;
+  if (i.plex === "mangler") return '<div class="small" style="color:var(--warn)">⚠ ikke kommet i Plex – prøver igen hver time</div>';
+  if (i.plex === "opgivet") return '<div class="small" style="color:var(--warn)">⚠ ikke kommet i Plex – opgivet efter et døgn</div>';
+  return "";
+}
 function renderReveal() {
   const R = TR.reveal, W = TR.on_the_way || [];
   if (!R || !R.enabled) {
@@ -1566,7 +1576,8 @@ function renderReveal() {
     $("trHidden").innerHTML = '<tr><td colspan="5" class="empty">–</td></tr>'; $("trShown").innerHTML = '<tr><td colspan="3" class="empty">–</td></tr>';
   } else {
     $("trRevealInfo").innerHTML = (R.last_error ? `<div class="warn">Seneste kørsel fejlede: ${esc(R.last_error)}</div>` : "")
-      + `<div class="small" style="margin-bottom:8px">Tjekkes hvert ${R.interval_seconds}. sekund (seneste ${lt(R.last_run)}). Sikkerhedsnet: ${R.safety_hours} timer.</div>`;
+      + `<div class="small" style="margin-bottom:8px">Tjekkes hvert ${R.interval_seconds}. sekund (seneste ${lt(R.last_run)}). Sikkerhedsnet: ${R.safety_hours} timer.</div>`
+      + ((R.plex_missing || []).length ? `<div class="warn">⚠ Vist, men ikke kommet i Plex: ${R.plex_missing.map(i => `<b>${esc(i.title)}</b> (${i.plex === "opgivet" ? "opgivet efter et døgn" : "prøver igen hver time"})`).join(", ")}</div>` : "");
     const H = R.waiting || [];
     $("trHidden").innerHTML = H.length ? H.map(i => { const left = i.reveal_by ? (new Date(i.reveal_by) - Date.now()) / 36e5 : null;
       return `<tr><td><b>${esc(i.title)}</b><div class="small">${esc(i.file || i.key)}</div></td><td>${esc(i.reason || "")}</td>
@@ -1576,7 +1587,7 @@ function renderReveal() {
       : '<tr><td colspan="5" class="empty">Intet er skjult lige nu 🎉</td></tr>';
     const S = R.shown || [];
     $("trShown").innerHTML = S.length ? S.slice(0, 50).map(i => `<tr><td><b>${esc(i.title)}</b><div class="small">${esc(i.file || i.key)}</div></td>
-      <td>${i.shown_by === "sikkerhedsnet" ? `<span style="color:var(--warn)">⏰ uden dansk</span><div class="small">${esc(i.reason || "")}</div>` : `<span style="color:var(--ok)">✓ ${esc(RV_WHY[i.reason] || i.reason || "klar")}</span>`}</td>
+      <td>${i.shown_by === "sikkerhedsnet" ? `<span style="color:var(--warn)">⏰ uden dansk</span><div class="small">${esc(i.reason || "")}</div>` : `<span style="color:var(--ok)">✓ ${esc(RV_WHY[i.reason] || i.reason || "klar")}</span>`}${RV_PLEX(i)}</td>
       <td style="white-space:nowrap">${lt(i.shown_at)}</td></tr>`).join("") + (S.length > 50 ? `<tr><td colspan="3" class="small" style="text-align:center">… og ${S.length - 50} mere</td></tr>` : "")
       : '<tr><td colspan="3" class="empty">Intet vist endnu.</td></tr>';
   }
