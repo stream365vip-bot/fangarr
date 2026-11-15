@@ -57,3 +57,9 @@ Vises i **Fangarr › Guide** med rigtige navne fra Kunder (Tautulli). Kunderne 
 - **Fangarr skal kunne læse mappen:** tilføj under `volumes:` i `/opt/fangarr/docker-compose.yml`: `- "/opt/nyt/data/statistik:/guide-stat:ro"` og kør `cd /opt/fangarr && docker compose up -d`.
 - Se dagens hændelser (feeder): `tail -n 20 /opt/nyt/data/statistik/$(date +%F).jsonl`
 - Slå tælleren fra: `STAT: "0"` i compose-filen og `cd /opt/nyt && docker compose up -d`. Slet alt, der er talt: `rm -r /opt/nyt/data/statistik`.
+
+## Søgefeltet i toppen på telefon (fra 15. nov. 2026)
+Guidens søgefelt lå kun inde i menuen, så det var gemt væk på telefon og smalle skærme (under 960 px), hvor menuen er foldet ind. Scriptet `soeg-i-toppen.py` flytter feltet op i toppen ved siden af "Menu" på de skærme; resultaterne vises som en liste under feltet. På computer er intet ændret.
+- Kør (feeder): `python3 /opt/fangarr/nyt-login/soeg-i-toppen.py /opt/nyt/site/index.html` – ingen genstart. Scriptet tilføjer kun en blok før `</body>` og gemmer først en kopi som `/opt/nyt/index.html.før-soeg-<dato>`.
+- Fortryd: samme kommando med `--fjern` til sidst.
+- **Skal køres igen, hver gang en ny udgave af guiden er pakket ud i `/opt/nyt/site/`** – indtil ændringen er kommet med i guidens byggescript.
