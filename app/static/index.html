@@ -2095,10 +2095,19 @@ async function newsDel() {
 const sdlg = $("sdlg");
 let SC = null;
 const S_VAR = {link: "Betalingslink (kunden har ikke Revolut)", app: "Direkte i Revolut-appen (kunden har Revolut)"};
+// På Android åbnes appen direkte (tg:// og en "intent"-adresse til Messenger), så browseren ikke viser hjemmesiden i stedet.
+// På computer bruges de almindelige adresser t.me og m.me.
+const ANDROID = /Android/i.test(navigator.userAgent);
 function tgUrl(h, text) {
-  let u = String(h || "").trim();
-  if (/^\+?[\d ]+$/.test(u)) { u = u.replace(/\D/g, ""); if (u.length === 8) u = "45" + u; u = "+" + u; }
-  return `https://t.me/${u}?text=${encodeURIComponent(text)}`;
+  let u = String(h || "").trim(), phone = false;
+  if (/^\+?[\d ]+$/.test(u)) { u = u.replace(/\D/g, ""); if (u.length === 8) u = "45" + u; phone = true; }
+  const t = encodeURIComponent(text);
+  if (ANDROID) return `tg://resolve?${phone ? "phone" : "domain"}=${u}&text=${t}`;
+  return `https://t.me/${phone ? "+" : ""}${u}?text=${t}`;
+}
+function fbUrl(h) {
+  const u = encodeURIComponent(String(h || "").trim()), web = "https://m.me/" + u;
+  return ANDROID ? `intent://m.me/${u}#Intent;scheme=https;package=com.facebook.orca;S.browser_fallback_url=${encodeURIComponent(web)};end` : web;
 }
 function paySend(id) {
   const c = KP.charges.find(x => x.id === id); if (!c) return;
@@ -2116,8 +2125,8 @@ function paySend(id) {
     <div class="small" id="sd_how" style="margin-top:10px"></div>`;
   const tg = c.tg && c.channel !== "messenger", fb = c.fb && c.channel !== "telegram";
   $("sdFoot").innerHTML = `<button class="b" onclick="sCopy()">Kopiér</button><button class="b ${tg || fb ? "" : "pri"}" onclick="sShare()">Del …</button>`
-    + (fb ? `<a class="b pri" id="sd_fb" target="_blank" rel="noopener" onclick="return sGo('fb')">Kopiér + åbn Messenger</a>` : "")
-    + (tg ? `<a class="b pri" id="sd_tg" target="_blank" rel="noopener" onclick="return sGo('tg')">Åbn i Telegram</a>` : "");
+    + (fb ? `<a class="b pri" id="sd_fb" ${ANDROID ? "" : 'target="_blank" rel="noopener"'} onclick="return sGo('fb')">Kopiér + åbn Messenger</a>` : "")
+    + (tg ? `<a class="b pri" id="sd_tg" ${ANDROID ? "" : 'target="_blank" rel="noopener"'} onclick="return sGo('tg')">Åbn i Telegram</a>` : "");
   $("sd_how").innerHTML = (tg ? "<b>Åbn i Telegram</b> åbner chatten med kunden med beskeden skrevet – du trykker bare send. " : "")
     + (fb ? "<b>Kopiér + åbn Messenger</b> kopierer beskeden og åbner chatten med kunden – hold fingeren i skrivefeltet, vælg Sæt ind, og tryk send. " : "")
     + "<b>Del …</b> åbner telefonens delemenu – vælg appen og kunden, så står beskeden klar. <b>Kopiér</b> kopierer beskeden, så du selv kan sætte den ind et sted. Alle knapperne sætter kunden til Anmodet."
@@ -2136,7 +2145,7 @@ function sText() { return $("sd_text").value.split("{link}").join(sLink()).trim(
 function sUpd() {
   const t = sText();
   if ($("sd_tg")) $("sd_tg").href = tgUrl(SC.tg, t);
-  if ($("sd_fb")) $("sd_fb").href = "https://m.me/" + encodeURIComponent(SC.fb);
+  if ($("sd_fb")) $("sd_fb").href = fbUrl(SC.fb);
 }
 async function sPaste() {
   try { $("sd_link").value = (await navigator.clipboard.readText()).trim(); sUpd(); }

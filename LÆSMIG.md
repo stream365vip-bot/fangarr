@@ -114,6 +114,7 @@ Knappen **Send besked** ved hver kunde under Opkrævning afløser Kopiér besked
 
 - **Telegram:** *Åbn i Telegram* åbner chatten med kunden med beskeden skrevet i feltet (`https://t.me/<brugernavn>?text=…`). Kræver kundens Telegram-brugernavn (eller et synligt telefonnummer) på kundekortet.
 - **Messenger:** *Kopiér + åbn Messenger* kopierer beskeden og åbner chatten (`https://m.me/<brugernavn>`). Messenger kan ikke få teksten sat ind via et link til en privat profil, så den sættes ind med fingeren. Kræver kundens Messenger-brugernavn på kundekortet (det, der står efter `facebook.com/`).
+- **1.19.1:** på Android åbnes apperne direkte i stedet for hjemmesiden i browseren: Telegram med `tg://resolve?domain=…&text=…`, Messenger med en intent-adresse til appen `com.facebook.orca` (med m.me som nødløsning, hvis appen mangler). På computer bruges stadig t.me og m.me.
 - **Del …** åbner telefonens delemenu (vælg app og kunde, teksten står klar). **Kopiér** kopierer kun.
 - Alle fire knapper sætter kunden til **Anmodet**. Fortrydes under Ret › Fortryd Anmodet.
 - **Kontakt via** på kundekortet (FB/TG) bestemmer, hvilken app der åbnes. Er feltet tomt, bruges det brugernavn, der er udfyldt.
