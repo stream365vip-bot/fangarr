@@ -109,6 +109,12 @@ Fire nye sider under **Kunder** i menuen. Koden ligger i `app/kunder.py`, data i
 - **Opkrævning:** sortér efter Navn eller Betalingsdato (valget huskes i browseren). Ved sortering efter dato vises en overskrift pr. dato med antal og beløb. Filteret **I dag** viser dem, der har betalingsdato i dag.
 - **Telegram på dagen** (kl. 8, samme klokkeslæt som de andre beskeder): navn, beløb og betalingsmetode for dem, der har betalingsdato i dag og endnu ikke er anmodet, betalt eller sprunget over. Ingen besked, når ingen skal opkræves. Beskeden den 1. med månedens overblik sendes stadig. Navne står i beskeden – aldrig telefonnumre eller koder.
 
+## Kom det faktisk i Plex? (1.17.0)
+- Kræver Oversætteren med trin C5 (`REVEAL_VERIFY=true`, standard). Før blev Plex kun bedt om at scanne én gang. Kunne Plex' server endnu ikke se den nye mappe, fandt scanningen ingenting, og filmen kom aldrig i Plex, selvom den stod som vist (fem NORDiC-film 9.–14. nov. 2026).
+- Oversætteren tjekker nu selv efter 2 minutter og beder Plex scanne igen, hvis filen mangler (igen efter 5, 15 og 60 minutter, derefter hver time i et døgn).
+- **Vist i Plex** viser under hver titel, om Plex har bekræftet den ("i Plex", evt. "efter 2 ekstra scanninger"). Ældre rækker fra før trinnet har ingen linje.
+- Mangler en titel stadig efter ca. en time, står den øverst under **Skjult for kunderne** med ⚠, og der sendes én Telegram-besked ("ikke kommet i Plex") – og én, når den er kommet ind ("i orden igen"). Fangarr husker, hvad der er meldt (tabellen `plex_missing_notified`).
+
 ## Filer
 - `app/main.py` – server (FastAPI) · `app/static/index.html` – interface · `app/VERSION`
 - `fangarr.env.eksempel` – skabelon til `fangarr.env` (API-nøgler). `chmod 600`. **Kommer aldrig i git.**
