@@ -15,6 +15,7 @@ import io
 import json
 import re
 import threading
+import uuid
 import unicodedata
 
 from fastapi import APIRouter, HTTPException, Request
@@ -41,9 +42,19 @@ DEFAULTS = {
     "sync_hour": 3,            # natlig synk fra Tautulli
     "fixed_costs": "",         # faste udgifter pr. måned, én pr. linje: "Hetzner: 2813"
     "template": ("Hej {fornavn}! 👋\n\nHermed opkrævning for dine tjenester ({tjenester}):\n"
-                 "💰 Beløb: {beløb} kr. ({frekvens} • Cyklus: {cyklus})\n💳 Betales via: {metode}\n\n"
+                 "💰 Beløb: {beløb} kr. ({frekvens} • Cyklus: {cyklus})\n{rabatter}\n{betaling}\n\n{nyhed}\n\n"
                  "Sig endelig til hvis der er noget. Rigtig god fornøjelse! 🍿"),
+    # linjen {betaling} i beskeden – én tekst pr. måde, du anmoder på (1.19.0)
+    "pay_link_text": "💳 Betal nemt med kort her: {link}",
+    "pay_revolut_text": "💳 Jeg har sendt dig en anmodning i Revolut-appen.",
+    "pay_mobilepay_text": "💳 Jeg har sendt dig en anmodning i MobilePay.",
+    "pay_other_text": "💳 Betales via: {metode}",
 }
+OLD_TEMPLATE = ("Hej {fornavn}! 👋\n\nHermed opkrævning for dine tjenester ({tjenester}):\n"
+                "💰 Beløb: {beløb} kr. ({frekvens} • Cyklus: {cyklus})\n💳 Betales via: {metode}\n\n"
+                "Sig endelig til hvis der er noget. Rigtig god fornøjelse! 🍿")   # standardteksten før 1.19.0
+PAY_TEXTS = ("pay_link_text", "pay_revolut_text", "pay_mobilepay_text", "pay_other_text")
+REVOLUT = ("", "link", "app")   # sådan anmoder du en Revolut-kunde: ikke valgt · betalingslink · direkte i appen
 _lock = threading.Lock()
 
 
@@ -117,6 +128,12 @@ def init():
                     " method TEXT DEFAULT '', note TEXT DEFAULT '', created TEXT, UNIQUE(customer_id, period))")
         con.execute("CREATE TABLE IF NOT EXISTS k_logins (id INTEGER PRIMARY KEY AUTOINCREMENT, service TEXT DEFAULT '', label TEXT DEFAULT '',"
                     " username TEXT DEFAULT '', password TEXT DEFAULT '', note TEXT DEFAULT '')")
+        # 1.19.0 – Send besked: Telegram/Messenger på kunden, betalingslink og nyhed på opkrævningen
+        for table, col in (("k_customers", "tg TEXT DEFAULT ''"), ("k_customers", "fb TEXT DEFAULT ''"), ("k_customers", "revolut TEXT DEFAULT ''"),
+                           ("k_charges", "pay_link TEXT DEFAULT ''"), ("k_charges", "news_id TEXT DEFAULT ''"), ("k_charges", "sent_at TEXT")):
+            have = {r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
+            if col.split(" ")[0] not in have:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {col}")
     con.close()
 
 
@@ -146,6 +163,8 @@ def run(sql, args=()):
 def settings():
     s = dict(DEFAULTS)
     s.update(D["kv_get"]("kunder_settings", {}) or {})
+    if s["template"].strip() == OLD_TEMPLATE:      # den gamle standardtekst afløses af den nye med {rabatter} {betaling} {nyhed}
+        s["template"] = DEFAULTS["template"]
     return s
 
 
@@ -185,15 +204,108 @@ def service_names(lines):
     return ", ".join(out)
 
 
-def message_for(c, amount, lines):
+def news():
+    """Den fælles nyhed, der flettes ind i beskederne med {nyhed}. Tom tekst = ingen nyhed."""
+    n = D["kv_get"]("kunder_news", {}) or {}
+    return n if str(n.get("text") or "").strip() and n.get("id") else None
+
+
+def news_due(cid, chid, nw=None):
+    """Skal kunden have nyheden med i denne besked? Ja, indtil den er sendt med én af kundens opkrævninger.
+    Samme opkrævning tæller ikke, så beskeden kan sendes igen med nyheden i."""
+    nw = nw or news()
+    if not nw:
+        return False
+    return not one("SELECT id FROM k_charges WHERE customer_id=? AND news_id=? AND id!=?", (cid, nw["id"], chid or 0))
+
+
+def pay_variants(c):
+    """Hvilke tekster kan stå på linjen {betaling} for denne kunde?"""
+    m = norm(c["method"])
+    if m == "revolut":
+        return ["link", "app"]
+    if m == "mobilepay":
+        return ["mobilepay"]
+    return ["other"]
+
+
+def _amount(v):
+    """1314 -> '1.314' · 49.5 -> '49,50' (dansk skrivemåde til beskeden)."""
+    v = num(v)
+    return f"{v:,}".replace(",", ".") if isinstance(v, int) else f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def adjust_lines(adjust):
+    out = []
+    for a in adjust or []:
+        amt = float(a.get("amount") or 0)
+        if not amt:
+            continue
+        txt = str(a.get("text") or "").strip() or ("Rabat" if amt < 0 else "Tillæg")
+        out.append(f"{'🎁' if amt < 0 else '➕'} {txt}: {'+' if amt > 0 else '-'}{_amount(abs(amt))} kr.")
+    return "\n".join(out)
+
+
+_OPTIONAL = ("rabatter", "betaling", "nyhed")
+
+
+def message_for(c, amount, lines, adjust=None, variant="other", news_text=""):
+    """Beskeden til kunden. {link} bliver stående – det sættes ind i browseren, når du har indsat betalingslinket.
+    En linje, der kun består af {rabatter}, {betaling} eller {nyhed}, forsvinder, når feltet er tomt."""
     s = settings()
+    key = {"link": "pay_link_text", "app": "pay_revolut_text", "mobilepay": "pay_mobilepay_text"}.get(variant, "pay_other_text")
     vals = {"fornavn": (c["name"] or "").split(" ")[0], "navn": c["name"] or "", "tjenester": service_names(lines) or "–",
-            "beløb": f"{num(amount):,}".replace(",", "."), "frekvens": FREQ_DA.get(c["freq"], "–"),
+            "beløb": _amount(amount), "frekvens": FREQ_DA.get(c["freq"], "–"),
             "cyklus": cycle_text(c["freq"], c["cycle"]), "metode": c["method"] or "–"}
-    txt = s["template"]
+    vals.update({"rabatter": adjust_lines(adjust), "betaling": str(s.get(key) or "").strip(), "nyhed": str(news_text or "").strip()})
+    out = []
+    for line in s["template"].split("\n"):
+        if any("{" + k + "}" in line for k in _OPTIONAL):
+            bare = line
+            for k in _OPTIONAL:
+                bare = bare.replace("{" + k + "}", vals[k])
+            if not bare.strip():
+                continue
+        out.append(line)
+    txt = "\n".join(out)
+    for k in _OPTIONAL:                 # først de tre, så felter inde i dem (fx {metode}) også bliver udfyldt
+        txt = txt.replace("{" + k + "}", vals[k])
     for k, v in vals.items():
         txt = txt.replace("{" + k + "}", str(v))
-    return txt
+    return re.sub(r"\n{3,}", "\n\n", txt).strip()
+
+
+def messages_for(c, ch, det, nw=None):
+    """Alle udgaver af beskeden for én opkrævning – én pr. måde at anmode på."""
+    txt = nw["text"] if nw and news_due(c["id"], ch["id"], nw) else ""
+    return {v: message_for(c, ch["amount"], det.get("lines", []), det.get("adjust", []), v, txt) for v in pay_variants(c)}, bool(txt)
+
+
+def handle(v, kind):
+    """Ryd op i et brugernavn: '@navn', 'https://t.me/navn' og 'facebook.com/navn' bliver til 'navn'."""
+    v = str(v or "").strip()
+    if kind == "tg":
+        v = re.sub(r"^(https?://)?(t\.me|telegram\.me)/", "", v, flags=re.I).lstrip("@").split("?")[0]
+        return v if re.fullmatch(r"\+?[\d ]{6,20}|[A-Za-z][A-Za-z0-9_]{3,31}", v) else ""
+    m = re.search(r"profile\.php\?id=(\d+)", v)
+    if m:
+        return m.group(1)
+    v = re.sub(r"^(https?://)?((www|m|web)\.)?(facebook\.com|messenger\.com/t|m\.me)/", "", v, flags=re.I).lstrip("@").split("?")[0].strip("/")
+    return v if re.fullmatch(r"[A-Za-z0-9.\-]{2,60}", v) else ""
+
+
+def channel(c):
+    """Hvor skrives der med kunden? Læses af 'Kontakt via' (FB, TG …), ellers af hvilket brugernavn der er udfyldt."""
+    k = norm(c.get("contact"))
+    if k.startswith(("fb", "messenger", "facebook")):
+        return "messenger"
+    if k.startswith(("tg", "telegram")):
+        return "telegram"
+    if c.get("tg") and not c.get("fb"):
+        return "telegram"
+    if c.get("fb") and not c.get("tg"):
+        return "messenger"
+    return ""
 
 
 def _create_charge(con, c, services, period):
@@ -310,6 +422,19 @@ def customers_out():
     return out
 
 
+def _contact_fields(b, o):
+    out = {}
+    for k in ("tg", "fb"):
+        raw = str(b.get(k, o.get(k, "")) or "").strip()
+        out[k] = handle(raw, k)
+        if raw and not out[k]:
+            raise HTTPException(400, "Telegram: skriv brugernavnet (fx @navn) eller telefonnummeret" if k == "tg"
+                                else "Messenger: skriv det, der står efter facebook.com/ på kundens profil")
+    rv = str(b.get("revolut", o.get("revolut", "")) or "")
+    out["revolut"] = rv if rv in REVOLUT else ""
+    return out
+
+
 def clean_customer(b, old=None):
     o = dict(old or {})
     name = str(b.get("name", o.get("name", ""))).strip()
@@ -330,14 +455,14 @@ def clean_customer(b, old=None):
     return {"name": name, "status": status, "kind": kind, "freq": freq, "cycle": _int("cycle", 1, 12), "due_day": _int("due_day", 1, 31),
             "method": str(b.get("method", o.get("method", "")) or "").strip(), "phone": str(b.get("phone", o.get("phone", "")) or "").strip(),
             "email": str(b.get("email", o.get("email", "")) or "").strip(), "contact": str(b.get("contact", o.get("contact", "")) or "").strip(),
-            "notes": str(b.get("notes", o.get("notes", "")) or "").strip()}
+            "notes": str(b.get("notes", o.get("notes", "")) or "").strip(), **_contact_fields(b, o)}
 
 
 def add_customer(d):
-    return run("INSERT INTO k_customers (name, status, kind, method, freq, cycle, due_day, phone, email, contact, notes, created, updated)"
-               " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    return run("INSERT INTO k_customers (name, status, kind, method, freq, cycle, due_day, phone, email, contact, notes, tg, fb, revolut, created, updated)"
+               " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                (d["name"], d["status"], d["kind"], d["method"], d["freq"], d["cycle"], d["due_day"], d["phone"], d["email"], d["contact"],
-                d["notes"], iso(now()), iso(now())))
+                d["notes"], d.get("tg", ""), d.get("fb", ""), d.get("revolut", ""), iso(now()), iso(now())))
 
 
 def customer_detail(cid):
@@ -362,9 +487,42 @@ def customer_detail(cid):
             "charges": ch}
 
 
+def news_out():
+    nw = news()
+    if not nw:
+        return None
+    total = one("SELECT COUNT(*) n FROM k_customers WHERE status='aktiv' AND kind='kunde' AND freq IS NOT NULL")["n"]
+    sent = one("SELECT COUNT(DISTINCT customer_id) n FROM k_charges WHERE news_id=?", (nw["id"],))["n"]
+    return {"id": nw["id"], "text": nw["text"], "created": nw.get("created"), "sent": sent, "total": total}
+
+
+@router.put("/news")
+async def news_put(req: Request):
+    """Gem den fælles nyhed. 'fresh' giver den et nyt nummer, så alle kunder får den igen."""
+    b = await req.json()
+    text = str(b.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "skriv nyheden – eller tryk Fjern for at stoppe den")
+    if len(text) > 1500:
+        raise HTTPException(400, "nyheden er for lang (højst 1.500 tegn) – så kan beskeden ikke åbnes i Telegram")
+    old = news()
+    if old and not b.get("fresh"):
+        nw = {**old, "text": text}
+    else:
+        nw = {"id": uuid.uuid4().hex[:12], "text": text, "created": iso(now())}
+    D["kv_set"]("kunder_news", nw)
+    return news_out()
+
+
+@router.delete("/news")
+def news_delete():
+    D["kv_set"]("kunder_news", {})
+    return None
+
+
 @router.get("/state")
 def state():
-    return {"settings": settings(), "services": SERVICES, "freq": FREQ_DA, "period": cur_period(),
+    return {"settings": settings(), "services": SERVICES, "freq": FREQ_DA, "period": cur_period(), "news": news_out(),
             "tautulli": D["tautulli_enabled"](), "sync": D["kv_get"]("kunder_sync"), "doubts": D["kv_get"]("kunder_doubts", []),
             "plex_free": [p for p in rows("SELECT user_id, username, friendly_name FROM k_plex WHERE active=1 AND user_id NOT IN"
                                           " (SELECT plex_user_id FROM k_services WHERE plex_user_id IS NOT NULL) ORDER BY friendly_name")]}
@@ -382,13 +540,16 @@ async def put_settings(req: Request):
                 raise HTTPException(400, f"{k} skal være et helt tal")
     if "plex_price" in b:
         s["plex_price"] = num(money(b["plex_price"]))
-    for k in ("fixed_costs", "template"):
+    for k in ("fixed_costs", "template") + PAY_TEXTS:
         if k in b:
             s[k] = str(b[k])
+    for k in PAY_TEXTS:
+        if not s[k].strip():
+            s[k] = DEFAULTS[k]
     if not s["template"].strip():
         s["template"] = DEFAULTS["template"]
     D["kv_set"]("kunder_settings", s)
-    return s
+    return settings()
 
 
 @router.get("/customers")
@@ -413,9 +574,9 @@ async def customers_put(cid: int, req: Request):
     if not old:
         raise HTTPException(404, "kunden findes ikke")
     d = clean_customer(await req.json(), old)
-    run("UPDATE k_customers SET name=?, status=?, kind=?, method=?, freq=?, cycle=?, due_day=?, phone=?, email=?, contact=?, notes=?, updated=?"
-        " WHERE id=?", (d["name"], d["status"], d["kind"], d["method"], d["freq"], d["cycle"], d["due_day"], d["phone"], d["email"],
-                        d["contact"], d["notes"], iso(now()), cid))
+    run("UPDATE k_customers SET name=?, status=?, kind=?, method=?, freq=?, cycle=?, due_day=?, phone=?, email=?, contact=?, notes=?, tg=?, fb=?,"
+        " revolut=?, updated=? WHERE id=?", (d["name"], d["status"], d["kind"], d["method"], d["freq"], d["cycle"], d["due_day"], d["phone"],
+                                             d["email"], d["contact"], d["notes"], d["tg"], d["fb"], d["revolut"], iso(now()), cid))
     return customer_detail(cid)
 
 
@@ -612,17 +773,22 @@ def charges_for(period):
         ensure_charges(period)
     cust = {c["id"]: c for c in rows("SELECT * FROM k_customers")}
     out = []
+    nw = news()
     for r in rows("SELECT * FROM k_charges WHERE period=?", (period,)):
         c = cust.get(r["customer_id"])
         if not c:
             continue
         det = json.loads(r["detail"] or "{}")
         st, late = charge_status(r, rd)
+        msgs, has_news = messages_for(c, r, det, nw)
+        variant = (c["revolut"] if c["revolut"] in msgs else "") if len(msgs) > 1 else next(iter(msgs))
         out.append({"id": r["id"], "customer_id": c["id"], "name": c["name"], "amount": num(r["amount"]), "base": num(r["base"]),
+                    "messages": msgs, "variant": variant, "news": has_news, "channel": channel(c), "tg": c["tg"], "fb": c["fb"],
+                    "pay_link": r["pay_link"] or "", "sent_at": r["sent_at"],
                     "lines": det.get("lines", []), "adjust": det.get("adjust", []), "services": service_names(det.get("lines", [])),
                     "method": c["method"], "status": st, "late": late, "requested_at": r["requested_at"], "paid_at": r["paid_at"],
                     "note": r["note"], "due_day": c["due_day"], "due": due_in(c["due_day"], period), "contact": c["contact"], "phone": c["phone"],
-                    "message": message_for(c, r["amount"], det.get("lines", []))})
+                    "message": msgs.get(variant) or next(iter(msgs.values()))})
     preview = False
     if period > cur:        # fremtidig måned: vis, hvad der kommer – intet gemmes
         preview = True
@@ -669,8 +835,24 @@ async def charge_action(chid: int, req: Request):
     a, t = b.get("action"), iso(now())
     if a == "request":
         run("UPDATE k_charges SET requested_at=COALESCE(requested_at, ?), skipped=0 WHERE id=?", (t, chid))
+    elif a == "sent":          # beskeden er sendt (Telegram, Messenger, Del eller Kopiér): sæt Anmodet, gem linket og husk nyheden
+        c = one("SELECT * FROM k_customers WHERE id=?", (ch["customer_id"],))
+        variant = str(b.get("variant") or "")
+        if not c or variant not in pay_variants(c):
+            raise HTTPException(400, "vælg, hvordan du anmoder kunden")
+        link = str(b.get("link") or "").strip()
+        if variant == "link":
+            if not re.fullmatch(r"https://[^\s<>\"']{4,500}", link):
+                raise HTTPException(400, "indsæt betalingslinket fra Revolut (det skal begynde med https://)")
+            run("UPDATE k_charges SET pay_link=? WHERE id=?", (link, chid))
+        if variant in ("link", "app") and c["revolut"] != variant:
+            run("UPDATE k_customers SET revolut=? WHERE id=?", (variant, c["id"]))      # husk valget til næste gang
+        nw = news()
+        if nw and b.get("news") and news_due(c["id"], chid, nw):
+            run("UPDATE k_charges SET news_id=? WHERE id=?", (nw["id"], chid))
+        run("UPDATE k_charges SET requested_at=COALESCE(requested_at, ?), sent_at=?, skipped=0 WHERE id=?", (t, t, chid))
     elif a == "unrequest":
-        run("UPDATE k_charges SET requested_at=NULL WHERE id=?", (chid,))
+        run("UPDATE k_charges SET requested_at=NULL, sent_at=NULL, news_id='' WHERE id=?", (chid,))
     elif a == "paid":
         run("UPDATE k_charges SET paid_at=?, requested_at=COALESCE(requested_at, ?), skipped=0 WHERE id=?", (t, t, chid))
     elif a == "unpaid":

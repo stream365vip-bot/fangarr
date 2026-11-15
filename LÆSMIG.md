@@ -94,7 +94,7 @@ Det, der gemmes på disken, er kun dine egne afgørelser og sager. Historikken o
 ## Kunder og betalinger (1.16.0)
 Fire nye sider under **Kunder** i menuen. Koden ligger i `app/kunder.py`, data i de nye tabeller `k_*` i `data/fangarr.db`.
 
-- **Opkrævning:** månedens liste laves af sig selv ud fra kundernes cyklus (månedlig, kvartal 1/4/7/10 · 2/5/8/11 · 3/6/9/12, halvårlig, årlig). Beløb = kundens tjenester pr. måned × antal måneder + fradrag/tillæg. Knapper: Kopiér besked, Anmodet, Betalt, Ret (beløb, note, spring over, regn om).
+- **Opkrævning:** månedens liste laves af sig selv ud fra kundernes cyklus (månedlig, kvartal 1/4/7/10 · 2/5/8/11 · 3/6/9/12, halvårlig, årlig). Beløb = kundens tjenester pr. måned × antal måneder + fradrag/tillæg. Knapper: Send besked (fra 1.19.0, før Kopiér besked), Anmodet, Betalt, Ret (beløb, note, spring over, regn om).
 - **Kunder:** kundeliste med søgning, kundekort (betaling, tjenester med pris, fradrag og tillæg, IPTV-linjer, opkrævninger), Delte logins, Import fra regneark og Indstillinger. Én kunde kan betale for flere konti. "Flet ind i anden kunde" flytter en konto over til den, der betaler.
 - **IPTV-linjer:** alle linjer med udløbsdato, pris og knappen Fornyet.
 - **Økonomi:** betalt/ventet indtægt pr. måned mod IPTV-fornyelser og faste udgifter.
@@ -108,6 +108,25 @@ Fire nye sider under **Kunder** i menuen. Koden ligger i `app/kunder.py`, data i
 - **Betalingsdatoen** er kundens faste dato i måneden (kundekortet › Fast dato i måneden). Kunder uden fast dato regnes som den 1. En dato, måneden ikke har (fx 31.), bliver til månedens sidste dag.
 - **Opkrævning:** sortér efter Navn eller Betalingsdato (valget huskes i browseren). Ved sortering efter dato vises en overskrift pr. dato med antal og beløb. Filteret **I dag** viser dem, der har betalingsdato i dag.
 - **Telegram på dagen** (kl. 8, samme klokkeslæt som de andre beskeder): navn, beløb og betalingsmetode for dem, der har betalingsdato i dag og endnu ikke er anmodet, betalt eller sprunget over. Ingen besked, når ingen skal opkræves. Beskeden den 1. med månedens overblik sendes stadig. Navne står i beskeden – aldrig telefonnumre eller koder.
+
+## Send besked fra Opkrævning (1.19.0)
+Knappen **Send besked** ved hver kunde under Opkrævning afløser Kopiér besked. Den viser beskeden til kunden og åbner chatten med beskeden klar. Du trykker stadig selv send i appen – Fangarr skriver aldrig selv til kunderne.
+
+- **Telegram:** *Åbn i Telegram* åbner chatten med kunden med beskeden skrevet i feltet (`https://t.me/<brugernavn>?text=…`). Kræver kundens Telegram-brugernavn (eller et synligt telefonnummer) på kundekortet.
+- **Messenger:** *Kopiér + åbn Messenger* kopierer beskeden og åbner chatten (`https://m.me/<brugernavn>`). Messenger kan ikke få teksten sat ind via et link til en privat profil, så den sættes ind med fingeren. Kræver kundens Messenger-brugernavn på kundekortet (det, der står efter `facebook.com/`).
+- **Del …** åbner telefonens delemenu (vælg app og kunde, teksten står klar). **Kopiér** kopierer kun.
+- Alle fire knapper sætter kunden til **Anmodet**. Fortrydes under Ret › Fortryd Anmodet.
+- **Kontakt via** på kundekortet (FB/TG) bestemmer, hvilken app der åbnes. Er feltet tomt, bruges det brugernavn, der er udfyldt.
+- **Tre måder at anmode på**, hver med sin tekst på linjen `{betaling}` (rettes under Kunder › Indstillinger):
+  - Revolut med **betalingslink**: linket indsættes i Send besked og sættes ind ved `{link}`. Der kan ikke sendes uden et link, der begynder med `https://`.
+  - Revolut **direkte i appen** og **MobilePay**: kunden får bare besked om, at der er anmodet.
+  - Valget for en Revolut-kunde huskes på kundekortet ("Revolut: sådan anmoder du").
+- **Rabatter og tillæg** flettes ind med `{rabatter}` – én linje pr. fradrag/tillæg på opkrævningen med den tekst, der er skrevet på kunden (fx "🎁 Rabat som ny kunde: -60 kr."). Uden tekst står der Rabat eller Tillæg.
+- **Nyhed til kunderne** (kortet øverst i Opkrævning) flettes ind med `{nyhed}`. Hver kunde får den én gang, med sin næste opkrævning, og den bliver stående, til den fjernes. *Gem* retter teksten uden at sende den igen; *Send til alle igen* starter forfra. Sletter du nyheden fra en enkelt besked, før du sender, har kunden den stadig til gode.
+- Beskeden kan rettes i Send besked, før den sendes (gælder kun den ene besked).
+- En linje i skabelonen, der kun består af `{rabatter}`, `{betaling}` eller `{nyhed}`, forsvinder, når feltet er tomt. Den gamle standardskabelon skiftes selv ud med den nye; en skabelon, du selv har rettet, bevares, og Indstillinger advarer, hvis de nye felter mangler.
+- **Databasen:** nye kolonner `tg`, `fb`, `revolut` på `k_customers` og `pay_link`, `news_id`, `sent_at` på `k_charges` (oprettes selv ved start). Nyheden ligger i `kv` under `kunder_news`. Betalingslinket gemmes kun i databasen og skrives aldrig i loggen eller i Telegram.
+- Tilbage til 1.18.0: de nye kolonner gør ingen skade i den gamle version.
 
 ## Guide – hvem har været inde på guide.stream365.vip? (1.18.0)
 Fanen **Guide** (under Kunder) viser, hvem der har været inde på guiden, hvornår, hvilke afsnit de har læst, og hvad de har søgt efter – med rigtige navne fra Kunder (Tautulli).
