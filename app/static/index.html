@@ -79,8 +79,8 @@
   button.b, a.b { display: inline-flex; align-items: center; justify-content: center; min-height: 38px; background: var(--panel2); color: var(--text);
                   border: 1px solid var(--line); border-radius: 9px; padding: 0 14px; font-size: 14px; cursor: pointer; text-decoration: none; white-space: nowrap; }
   button.b:hover, a.b:hover { border-color: #3A404B; }
-  button.b.pri { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
-  button.b.pri:hover { background: #6FE2BC; }
+  button.b.pri, a.b.pri { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  button.b.pri:hover, a.b.pri:hover { background: #6FE2BC; }
   button.b.danger { color: var(--bad); }
   button.b:disabled { opacity: .45; cursor: default; }
   button.b.sm { min-height: 30px; padding: 0 10px; font-size: 13px; }
@@ -489,12 +489,19 @@
 
   <section id="pay">
     <h2>Opkrævning</h2>
-    <p class="hint">Månedens liste laves af sig selv ud fra kundernes cyklus. Tryk <b>Kopiér besked</b>, send den selv i Messenger eller Telegram, og tryk <b>Anmodet</b>. Tryk <b>Betalt</b>, når pengene er kommet. Fangarr skriver aldrig til kunderne. <b>Betalingsdatoen</b> er kundens faste dato i måneden (sættes på kundekortet) – kunder uden fast dato regnes som den 1. Sortér efter dato, eller tryk <b>I dag</b> for at se dem, der skal opkræves i dag. Du får også besked i Telegram om morgenen på dagen.</p>
+    <p class="hint">Månedens liste laves af sig selv ud fra kundernes cyklus. Tryk <b>Send besked</b> for at se beskeden til kunden. Derfra åbner du chatten i Telegram eller Messenger med beskeden klar, og kunden sættes selv til <b>Anmodet</b> – du trykker stadig selv send i appen. Har du anmodet på anden vis, så tryk <b>Anmodet</b>. Tryk <b>Betalt</b>, når pengene er kommet. Fangarr skriver aldrig selv til kunderne. <b>Betalingsdatoen</b> er kundens faste dato i måneden (sættes på kundekortet) – kunder uden fast dato regnes som den 1. Sortér efter dato, eller tryk <b>I dag</b> for at se dem, der skal opkræves i dag. Du får også besked i Telegram om morgenen på dagen.</p>
     <div class="row" style="justify-content:space-between">
       <div class="kmonth"><button class="b" onclick="loadPay(KP.prev)" aria-label="Forrige måned">←</button><b id="payMonth">…</b><button class="b" onclick="loadPay(KP.next)" aria-label="Næste måned">→</button>
         <button class="b sm" id="payNow" onclick="loadPay(KP.current)">Denne måned</button></div>
     </div>
     <div class="card" id="payHead"></div>
+    <details class="card" id="payNews">
+      <summary><b>Nyhed til kunderne</b> <span class="small" id="payNewsInfo"></span></summary>
+      <p class="small" style="margin:10px 0">Skriv en nyhed, som skal med i opkrævningsbeskeden. Hver kunde får den <b>én gang</b> – med sin næste opkrævning – så den når alle, også dem der betaler hvert kvartal, halvår eller år. Den bliver stående, til du trykker <b>Fjern</b>. Den sættes ind, hvor der står <code>{nyhed}</code> i beskedskabelonen (Kunder › Indstillinger).</p>
+      <textarea class="kta" id="payNewsText" style="min-height:90px" maxlength="1500" placeholder="fx 📣 Nyt: nu kan du selv ønske film og serier på …"></textarea>
+      <div class="row" style="margin:10px 0 0"><button class="b pri" onclick="newsSave(false)">Gem</button><button class="b" id="payNewsFresh" onclick="newsSave(true)">Send til alle igen</button><button class="b danger" id="payNewsDel" onclick="newsDel()">Fjern</button></div>
+      <div class="small" id="payNewsHelp" style="margin-top:8px"></div>
+    </details>
     <div class="pills" id="payPills"></div>
     <div class="row" id="paySort" style="margin:-4px 0 12px"></div>
     <div id="payList"><div class="empty">Henter …</div></div>
@@ -543,8 +550,15 @@
           <div class="field"><label>Beskeder på Stream365 Drift kl.</label><input type="number" id="ks_message_hour" min="0" max="23"></div>
           <div class="field"><label>Natlig synk fra Tautulli kl.</label><input type="number" id="ks_sync_hour" min="0" max="23"></div>
         </div>
-        <div class="field" style="margin-top:14px"><label>Besked til kunden (kopieres fra Opkrævning)</label><textarea class="kta" id="ks_template"></textarea>
-          <div class="small">Du kan bruge: {fornavn} {navn} {tjenester} {beløb} {frekvens} {cyklus} {metode}</div></div>
+        <div class="field" style="margin-top:14px"><label>Besked til kunden (kopieres fra Opkrævning)</label><textarea class="kta" id="ks_template" style="min-height:230px"></textarea>
+          <div class="small">Du kan bruge: {fornavn} {navn} {tjenester} {beløb} {frekvens} {cyklus} {metode} – og tre felter, der skal stå på <b>deres egen linje</b>: <b>{rabatter}</b> (kundens fradrag og tillæg, én linje pr. stk.), <b>{betaling}</b> (én af de fire tekster herunder) og <b>{nyhed}</b> (nyheden fra Opkrævning). Er et af de tre tomt for en kunde, forsvinder linjen.</div>
+          <div class="warn" id="ks_tplWarn" style="display:none;margin:10px 0 0"></div></div>
+        <div class="grid" style="margin-top:14px">
+          <div class="field"><label>{betaling} – Revolut med betalingslink</label><input type="text" id="ks_pay_link_text"><div class="small">{link} bliver til det link, du indsætter, når du sender.</div></div>
+          <div class="field"><label>{betaling} – Revolut, anmodet i appen</label><input type="text" id="ks_pay_revolut_text"></div>
+          <div class="field"><label>{betaling} – MobilePay, anmodet i appen</label><input type="text" id="ks_pay_mobilepay_text"></div>
+          <div class="field"><label>{betaling} – anden betalingsmetode</label><input type="text" id="ks_pay_other_text"></div>
+        </div>
         <div class="field" style="margin-top:14px"><label>Faste udgifter pr. måned (til Økonomi) – én pr. linje</label><textarea class="kta" id="ks_fixed_costs" style="min-height:90px" placeholder="Hetzner: 2813"></textarea></div>
         <div class="row" style="margin:14px 0 0"><button class="b pri" onclick="kSaveSettings()">Gem</button><a class="b" href="/api/kunder/export.csv">Hent kundelisten som CSV (uden koder)</a></div>
       </div>
@@ -891,6 +905,11 @@
     <div class="dlg-body" id="edBody"></div>
     <div class="dlg-foot"><span class="small" id="edErr" style="color:var(--bad)"></span><div class="btns"><button class="b" onclick="edlg.close()">Annullér</button><button class="b pri" id="edSave">Gem</button></div></div>
   </form>
+</dialog>
+<dialog id="sdlg" style="width:min(620px,96vw)">
+  <div class="dlg-head"><b id="sdTitle">Send besked</b><button class="b" onclick="sdlg.close()">Luk</button></div>
+  <div class="dlg-body" id="sdBody"></div>
+  <div class="dlg-foot"><span class="small" id="sdErr" style="color:var(--bad)"></span><div class="btns" id="sdFoot"></div></div>
 </dialog>
 <div id="toast"></div>
 
@@ -2029,21 +2048,22 @@ function renderPay() {
   $("paySort").innerHTML = L.length ? `<span class="small" style="margin:0">Sortér efter</span><button class="b sm" aria-pressed="${KPS === "navn"}" style="${KPS === "navn" ? "border-color:var(--accent);color:var(--accent)" : ""}" onclick="paySort('navn')">Navn</button><button class="b sm" aria-pressed="${KPS === "dato"}" style="${KPS === "dato" ? "border-color:var(--accent);color:var(--accent)" : ""}" onclick="paySort('dato')">Betalingsdato</button>` : "";
   if (KPS === "dato") show.sort((a, b) => a.due - b.due || a.name.localeCompare(b.name, "da"));
   let lastDue = null;
+  renderNews();
   $("payList").innerHTML = show.length ? `<div class="kl">${show.map(c => {
     const grp = KPS === "dato" && c.due !== lastDue ? `<div class="kgrp ${isToday(c) ? "now" : ""}">d. ${c.due}.${isToday(c) ? " · i dag" : ""} <span>${show.filter(x => x.due === c.due).length} ${show.filter(x => x.due === c.due).length === 1 ? "kunde" : "kunder"} · ${kkr(show.filter(x => x.due === c.due && x.status !== "sprunget over").reduce((s, x) => s + x.amount, 0))}</span></div>` : "";
     lastDue = c.due;
     const [st, cl] = K_ST[c.status], adj = c.adjust.map(a => `${esc(a.text || (a.amount < 0 ? "Fradrag" : "Tillæg"))} ${a.amount > 0 ? "+" : ""}${kkr(a.amount)}`).join(" · ");
     let b = "";
     if (c.id) {
-      if (c.status === "ny") b = `<button class="b sm" onclick="payCopy(${c.id})">Kopiér besked</button><button class="b sm" onclick="payAct(${c.id},'request')">Anmodet</button><button class="b sm pri" onclick="payAct(${c.id},'paid')">Betalt</button>`;
-      else if (c.status === "anmodet") b = `<button class="b sm" onclick="payCopy(${c.id})">Kopiér besked</button><button class="b sm pri" onclick="payAct(${c.id},'paid')">Betalt</button>`;
+      if (c.status === "ny") b = `<button class="b sm pri" onclick="paySend(${c.id})">Send besked</button><button class="b sm" onclick="payAct(${c.id},'request')">Anmodet</button><button class="b sm" onclick="payAct(${c.id},'paid')">Betalt</button>`;
+      else if (c.status === "anmodet") b = `<button class="b sm" onclick="paySend(${c.id})">Send igen</button><button class="b sm pri" onclick="payAct(${c.id},'paid')">Betalt</button>`;
       else if (c.status === "betalt") b = `<button class="b sm" onclick="payAct(${c.id},'unpaid')">Fortryd betalt</button>`;
       else b = `<button class="b sm" onclick="payAct(${c.id},'unskip')">Tag med igen</button>`;
       b += `<button class="b sm" onclick="payEdit(${c.id})" aria-label="Ret opkrævningen">Ret</button>`;
     }
     return grp + `<div class="kr ${c.status === "betalt" || c.status === "sprunget over" ? "done" : ""} ${c.late ? "late" : ""}">
       <div class="who"><b style="cursor:pointer" onclick="kOpen(${c.customer_id})">${esc(c.name)}</b> <span class="pill ${c.late ? "bad" : cl}">${c.late ? "Mangler betaling" : st}</span>
-        <div class="small"><b style="font-weight:600;color:${isToday(c) ? "var(--accent)" : "var(--text)"}">d. ${c.due}.</b> · ${esc(c.services || "–")} · ${esc(c.method || "ingen betalingsmetode")}${c.contact ? " · " + esc(c.contact) : ""}${c.status === "anmodet" ? " · anmodet " + kDay(c.requested_at) : ""}${c.status === "betalt" ? " · betalt " + kDay(c.paid_at) : ""}</div>
+        <div class="small"><b style="font-weight:600;color:${isToday(c) ? "var(--accent)" : "var(--text)"}">d. ${c.due}.</b> · ${esc(c.services || "–")} · ${esc(c.method || "ingen betalingsmetode")}${c.contact ? " · " + esc(c.contact) : ""}${c.status === "anmodet" ? " · " + (c.sent_at ? "besked sendt " : "anmodet ") + kDay(c.requested_at) : ""}${c.status === "betalt" ? " · betalt " + kDay(c.paid_at) : ""}</div>
         ${adj || c.note ? `<div class="small">${adj}${adj && c.note ? " · " : ""}${esc(c.note)}</div>` : ""}</div>
       <div class="amt">${kkr(c.amount)}</div><div class="btns">${b}</div></div>`; }).join("")}</div>`
     : `<div class="empty">${L.length ? "Ingen i denne visning." : "Intet at vise."}</div>`;
@@ -2051,7 +2071,116 @@ function renderPay() {
 async function payAct(id, action, extra) {
   try { KP = await api(`/api/kunder/charges/${id}`, {method: "POST", body: JSON.stringify({action, ...(extra || {})})}); renderPay(); loadHome(); } catch (e) { toast(e.message, true); }
 }
-function payCopy(id) { const c = KP.charges.find(x => x.id === id); if (c) shCopyText(c.message); }
+
+// ---------- nyhed til kunderne (flettes ind med {nyhed} – hver kunde får den én gang)
+function renderNews() {
+  const n = K && K.news, box = $("payNews");
+  $("payNewsInfo").textContent = n ? `· sendt til ${n.sent} af ${n.total} kunder` : "· ingen nyhed lige nu";
+  if (document.activeElement !== $("payNewsText") && !box.open) $("payNewsText").value = n ? n.text : "";
+  $("payNewsFresh").style.display = $("payNewsDel").style.display = n ? "" : "none";
+  $("payNewsHelp").innerHTML = n ? `Lagt ind ${kDay(n.created)}. <b>Gem</b> retter teksten – dem, der har fået nyheden, får den ikke igen. <b>Send til alle igen</b> starter forfra, så alle får den med næste opkrævning.` : "";
+}
+async function newsSave(fresh) {
+  if (fresh && !confirm("Send nyheden til alle igen?\n\nAlle kunder får den med deres næste opkrævning – også dem, der allerede har fået den.")) return;
+  try { K.news = await api("/api/kunder/news", {method: "PUT", body: JSON.stringify({text: $("payNewsText").value, fresh})}); toast("Nyheden er gemt"); $("payNews").open = false; await loadPay(); }
+  catch (e) { toast(e.message, true); }
+}
+async function newsDel() {
+  if (!confirm("Fjern nyheden?\n\nDen kommer ikke med i flere beskeder. Kunder, der ikke har fået den endnu, får den ikke.")) return;
+  try { await api("/api/kunder/news", {method: "DELETE"}); K.news = null; $("payNewsText").value = ""; $("payNews").open = false; toast("Nyheden er fjernet"); await loadPay(); }
+  catch (e) { toast(e.message, true); }
+}
+
+// ---------- send besked: åbner chatten i Telegram/Messenger med beskeden klar og sætter kunden til Anmodet
+const sdlg = $("sdlg");
+let SC = null;
+const S_VAR = {link: "Betalingslink (kunden har ikke Revolut)", app: "Direkte i Revolut-appen (kunden har Revolut)"};
+function tgUrl(h, text) {
+  let u = String(h || "").trim();
+  if (/^\+?[\d ]+$/.test(u)) { u = u.replace(/\D/g, ""); if (u.length === 8) u = "45" + u; u = "+" + u; }
+  return `https://t.me/${u}?text=${encodeURIComponent(text)}`;
+}
+function paySend(id) {
+  const c = KP.charges.find(x => x.id === id); if (!c) return;
+  SC = c;
+  const two = Object.keys(c.messages).length > 1;
+  $("sdTitle").textContent = (c.status === "anmodet" ? "Send igen – " : "Send besked – ") + c.name; $("sdErr").textContent = "";
+  $("sdBody").innerHTML = `<div class="small" style="margin-bottom:12px">${kkr(c.amount)} · ${esc(c.method || "ingen betalingsmetode")}${c.news ? ' · <span style="color:var(--accent)">nyheden er med</span>' : ""}</div>
+    ${two ? `<div class="field" style="margin-bottom:12px"><label for="sd_var">Sådan anmoder du kunden</label><select id="sd_var" onchange="sVar()"><option value="">– vælg –</option>${Object.keys(c.messages).map(v => `<option value="${v}" ${v === c.variant ? "selected" : ""}>${S_VAR[v]}</option>`).join("")}</select>
+      <div class="small">Fangarr husker valget på kundekortet til næste gang.</div></div>
+    <div class="field" id="sd_linkBox" style="margin-bottom:12px"><label for="sd_link">Betalingslink fra Revolut</label>
+      <div style="display:flex;gap:6px"><input type="text" id="sd_link" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…" value="${esc(c.pay_link)}" oninput="sUpd()"><button class="b" type="button" onclick="sPaste()">Sæt ind</button></div>
+      <div class="small">Lav linket i Revolut-appen, kopiér det, og tryk Sæt ind. Det sættes ind, hvor der står {link} i beskeden.</div></div>` : ""}
+    <div class="field"><label for="sd_text">Beskeden til kunden</label><textarea class="kta" id="sd_text" style="min-height:230px" oninput="sUpd()"></textarea>
+      <div class="small">Du kan rette teksten her – det gælder kun denne besked. Den faste tekst retter du under Kunder › Indstillinger.</div></div>
+    <div class="small" id="sd_how" style="margin-top:10px"></div>`;
+  const tg = c.tg && c.channel !== "messenger", fb = c.fb && c.channel !== "telegram";
+  $("sdFoot").innerHTML = `<button class="b" onclick="sCopy()">Kopiér</button><button class="b ${tg || fb ? "" : "pri"}" onclick="sShare()">Del …</button>`
+    + (fb ? `<a class="b pri" id="sd_fb" target="_blank" rel="noopener" onclick="return sGo('fb')">Kopiér + åbn Messenger</a>` : "")
+    + (tg ? `<a class="b pri" id="sd_tg" target="_blank" rel="noopener" onclick="return sGo('tg')">Åbn i Telegram</a>` : "");
+  $("sd_how").innerHTML = (tg ? "<b>Åbn i Telegram</b> åbner chatten med kunden med beskeden skrevet – du trykker bare send. " : "")
+    + (fb ? "<b>Kopiér + åbn Messenger</b> kopierer beskeden og åbner chatten med kunden – hold fingeren i skrivefeltet, vælg Sæt ind, og tryk send. " : "")
+    + "<b>Del …</b> åbner telefonens delemenu – vælg appen og kunden, så står beskeden klar. <b>Kopiér</b> kopierer beskeden, så du selv kan sætte den ind et sted. Alle knapperne sætter kunden til Anmodet."
+    + (!tg && !fb ? ` <a href="#" onclick="sdlg.close();kOpen(${c.customer_id});return false">Skriv kundens Telegram- eller Messenger-brugernavn på kundekortet</a>, så kan chatten åbnes direkte.` : "");
+  sVar(); sdlg.showModal();
+}
+function sVariant() { const el = $("sd_var"); return el ? el.value : Object.keys(SC.messages)[0]; }
+function sVar() {
+  const v = sVariant();
+  if ($("sd_linkBox")) $("sd_linkBox").style.display = v === "link" ? "" : "none";
+  $("sd_text").value = SC.messages[v || SC.variant || Object.keys(SC.messages)[0]] || "";
+  sUpd();
+}
+function sLink() { return sVariant() === "link" && $("sd_link") ? $("sd_link").value.trim() : ""; }
+function sText() { return $("sd_text").value.split("{link}").join(sLink()).trim(); }
+function sUpd() {
+  const t = sText();
+  if ($("sd_tg")) $("sd_tg").href = tgUrl(SC.tg, t);
+  if ($("sd_fb")) $("sd_fb").href = "https://m.me/" + encodeURIComponent(SC.fb);
+}
+async function sPaste() {
+  try { $("sd_link").value = (await navigator.clipboard.readText()).trim(); sUpd(); }
+  catch (e) { toast("Kunne ikke læse udklipsholderen – hold fingeren i feltet og vælg Sæt ind", true); $("sd_link").focus(); }
+}
+function sCheck() {
+  const v = sVariant(); let err = "";
+  if (!v) err = "Vælg først, hvordan du anmoder kunden.";
+  else if (v === "link" && !/^https:\/\/\S{4,}$/.test(sLink())) err = "Indsæt betalingslinket fra Revolut (det begynder med https://).";
+  else if (v === "link" && !$("sd_text").value.includes("{link}")) err = "Beskeden mangler {link} – skriv {link} dér, hvor linket skal stå.";
+  else if (!sText()) err = "Beskeden er tom.";
+  $("sdErr").textContent = err;
+  return !err;
+}
+function sCopyNow(t) {     // kopierer med det samme (uden at vente), så det også virker, når en anden app åbner lige bagefter
+  const a = document.createElement("textarea"); a.value = t; a.style.position = "fixed"; a.style.opacity = "0"; sdlg.appendChild(a); a.select();
+  let ok = false; try { ok = document.execCommand("copy"); } catch (e) {} a.remove();
+  if (navigator.clipboard) navigator.clipboard.writeText(t).catch(() => {});
+  return ok;
+}
+async function sDone(how) {
+  const c = SC, body = {action: "sent", variant: sVariant(), link: sLink(), news: c.news && !!(K.news && sText().includes(K.news.text.trim()))};
+  try {
+    KP = await api(`/api/kunder/charges/${c.id}`, {method: "POST", body: JSON.stringify(body), keepalive: true});
+    sdlg.close(); toast(how + " – " + c.name + " er sat til Anmodet");
+    try { await kState(); } catch (e) {}
+    renderPay(); loadHome();
+  } catch (e) { $("sdErr").textContent = e.message; }
+}
+function sGo(kind) {       // kaldes af linket selv, så telefonen åbner appen direkte
+  if (!sCheck()) return false;
+  sUpd();
+  if (kind === "fb") sCopyNow(sText());
+  setTimeout(() => sDone(kind === "fb" ? "Kopieret, Messenger åbnet" : "Telegram åbnet"), 50);
+  return true;
+}
+async function sShare() {
+  if (!sCheck()) return;
+  const t = sText();
+  if (!navigator.share) { sCopyNow(t); toast("Denne browser har ingen delemenu – beskeden er kopieret i stedet"); return sDone("Kopieret"); }
+  try { await navigator.share({text: t}); } catch (e) { if (e.name !== "AbortError") $("sdErr").textContent = "Kunne ikke åbne delemenuen – brug Kopiér."; return; }
+  sDone("Delt");
+}
+function sCopy() { if (!sCheck()) return; sCopyNow(sText()); sDone("Kopieret"); }
 async function payGen() { try { KP = await api("/api/kunder/charges/generate", {method: "POST", body: JSON.stringify({period: KP.period})}); renderPay(); } catch (e) { toast(e.message, true); } }
 function payEdit(id) {
   const c = KP.charges.find(x => x.id === id);
@@ -2131,12 +2260,19 @@ function renderCard() {
       <div class="field"><label>Status</label>${sel("kc_status", Object.entries(K_STATUS), c.status)}</div>
       <div class="field"><label>Type</label>${sel("kc_kind", [["kunde", "Kunde (betaler)"], ["egen", "Egen (familie – opkræves ikke)"]], c.kind)}</div>
       <div class="field"><label>Betalingsmetode</label>${sel("kc_method", [["", "– vælg –"], ["MobilePay", "MobilePay"], ["Revolut", "Revolut"], ["Andet", "Andet"]], c.method)}</div>
+      <div class="field"><label>Revolut: sådan anmoder du</label>${sel("kc_revolut", [["", "– vælges, når du sender –"], ["link", "Betalingslink (har ikke Revolut)"], ["app", "Direkte i Revolut-appen"]], c.revolut)}
+        <div class="small">Kun for kunder, der betaler med Revolut.</div></div>
       <div class="field"><label>Hvor tit betaler kunden?</label><select id="kc_freq" onchange="$('kc_cycle').innerHTML=kCycleOpts(this.value)">${K_FREQ.map(([v, l]) => `<option value="${v}" ${v === (c.freq || "") ? "selected" : ""}>${l}</option>`).join("")}</select></div>
       <div class="field"><label>Cyklus (måneder, der opkræves)</label><select id="kc_cycle">${kCycleOpts(c.freq, c.cycle)}</select></div>
       <div class="field"><label>Fast dato i måneden (valgfri)</label><input type="text" inputmode="numeric" id="kc_due_day" value="${c.due_day ?? ""}" placeholder="fx 15"></div>
       <div class="field"><label>Telefon</label><input type="text" id="kc_phone" value="${esc(c.phone)}"></div>
       <div class="field"><label>E-mail</label><input type="text" id="kc_email" value="${esc(c.email)}"></div>
-      <div class="field"><label>Kontakt via</label><input type="text" id="kc_contact" value="${esc(c.contact)}" placeholder="FB, TG, SMS …"></div>
+      <div class="field"><label>Kontakt via</label><input type="text" id="kc_contact" value="${esc(c.contact)}" placeholder="FB, TG, SMS …">
+        <div class="small">FB = Messenger, TG = Telegram. Bestemmer, hvilken app Send besked åbner.</div></div>
+      <div class="field"><label>Telegram-brugernavn eller nummer</label><input type="text" id="kc_tg" value="${esc(c.tg)}" placeholder="@brugernavn" autocomplete="off" spellcheck="false">
+        <div class="small">Står i Telegram på kundens profil. Så åbner Send besked chatten med beskeden klar. Et telefonnummer virker kun, hvis kunden viser sit nummer.</div></div>
+      <div class="field"><label>Messenger-brugernavn</label><input type="text" id="kc_fb" value="${esc(c.fb)}" placeholder="fornavn.efternavn.12" autocomplete="off" spellcheck="false">
+        <div class="small">Det, der står efter facebook.com/ på kundens profil (eller tallet efter id=). Du kan også indsætte hele adressen.</div></div>
     </div>
     <div class="field" style="margin-top:12px"><label>Noter</label><textarea id="kc_notes" style="min-height:60px">${esc(c.notes)}</textarea></div>
 
@@ -2150,7 +2286,7 @@ function renderCard() {
     ${c.adjust.length ? c.adjust.map(a => `<div class="kitem" style="${a.remaining ? "" : "opacity:.55"}"><div class="who"><b>${esc(a.text || (a.amount < 0 ? "Fradrag" : "Tillæg"))}</b>
         <div class="small">${a.remaining ? `regnes med på ${a.remaining === 1 ? "næste opkrævning" : "de næste " + a.remaining + " opkrævninger"}` : "er brugt"}</div></div>
       <div class="amt">${a.amount > 0 ? "+" : ""}${kkr(a.amount)}</div><div class="btns"><button class="b sm danger" onclick="kAdjDel(${a.id})">Fjern</button></div></div>`).join("")
-      : '<div class="small">Bruges til fx "træk 49 kr. fra næste", en gratis måned eller halv pris. Skriv minus foran et fradrag.</div>'}
+      : '<div class="small">Bruges til fx "træk 49 kr. fra næste", en gratis måned eller halv pris. Skriv minus foran et fradrag. Teksten og beløbet står i beskeden til kunden.</div>'}
 
     <div class="ksec"><h3>IPTV-linjer</h3><button class="b sm" onclick="kLineEdit(null, ${c.id})">Tilføj linje</button></div>
     ${c.iptv.length ? c.iptv.map(l => `<div class="kitem"><div class="who"><b>${esc(l.label || l.username || "Linje")}</b>
@@ -2162,7 +2298,7 @@ function renderCard() {
       <td><span class="pill ${h.late ? "bad" : K_ST[h.status][1]}">${h.late ? "Mangler betaling" : K_ST[h.status][0]}</span></td><td class="small hs">${h.paid_at ? "betalt " + kDay(h.paid_at) : h.requested_at ? "anmodet " + kDay(h.requested_at) : ""}</td></tr>`).join("")}</tbody></table>` : '<div class="small">Ingen opkrævninger endnu.</div>'}`;
   $("kdFoot").innerHTML = `<button class="b danger" onclick="kDelete()">Slet</button><button class="b" onclick="kMerge()">Flet ind i anden kunde</button><button class="b pri" onclick="kSaveCard()">Gem</button>`;
 }
-function kCardVals() { const o = {}; ["name", "status", "kind", "method", "freq", "cycle", "due_day", "phone", "email", "contact", "notes"].forEach(k => o[k] = $("kc_" + k).value.trim()); return o; }
+function kCardVals() { const o = {}; ["name", "status", "kind", "method", "revolut", "freq", "cycle", "due_day", "phone", "email", "contact", "tg", "fb", "notes"].forEach(k => o[k] = $("kc_" + k).value.trim()); return o; }
 async function kSaveCard(quiet) {
   try { KCUR = await api("/api/kunder/customers/" + KCUR.id, {method: "PUT", body: JSON.stringify(kCardVals())}); if (!quiet) { kdlg.close(); toast("Gemt"); } kAfter(); return true; }
   catch (e) { $("kdErr").textContent = e.message; return false; }
@@ -2200,7 +2336,7 @@ function kSvcEdit(id) {
   });
 }
 function kAdjAdd() {
-  kForm("Fradrag eller tillæg", [{k: "text", label: "Tekst", type: "text", ph: "fx Gratis måned (henvisning)"}, {k: "amount", label: "Beløb (kr.) – minus for fradrag", type: "money", ph: "-120"},
+  kForm("Fradrag eller tillæg", [{k: "text", label: "Tekst – står i beskeden til kunden", type: "text", ph: "fx Rabat som ny kunde", hint: "Skriv det, så kunden forstår det: fx Gratis måned (henvisning), Rabat som ny kunde eller Ekstra ønsker i Seerr. I beskeden står der fx: 🎁 Rabat som ny kunde: -60 kr."}, {k: "amount", label: "Beløb (kr.) – minus for fradrag", type: "money", ph: "-120"},
     {k: "remaining", label: "Hvor mange opkrævninger skal det gælde?", type: "int", hint: "1 = kun den næste opkrævning."}], {remaining: 1},
     async v => { KCUR = await api("/api/kunder/adjust", {method: "POST", body: JSON.stringify({...v, customer_id: KCUR.id})}); renderCard(); });
 }
@@ -2290,8 +2426,10 @@ async function kImport(apply) {
 }
 
 // ---------- indstillinger for kunder
-const KS = ["remind_days", "remind_repeat_days", "inactive_days", "plex_price", "message_hour", "sync_hour", "template", "fixed_costs"];
-function renderKSet() { if (K) { KS.forEach(k => $("ks_" + k).value = K.settings[k] ?? ""); if (!$("imp_period").value) $("imp_period").value = K.period; } }
+const KS = ["remind_days", "remind_repeat_days", "inactive_days", "plex_price", "message_hour", "sync_hour", "template", "fixed_costs", "pay_link_text", "pay_revolut_text", "pay_mobilepay_text", "pay_other_text"];
+function renderKSet() { if (K) { KS.forEach(k => $("ks_" + k).value = K.settings[k] ?? "");
+    const miss = ["{betaling}", "{rabatter}", "{nyhed}"].filter(f => !String(K.settings.template || "").includes(f)), w = $("ks_tplWarn");
+    w.style.display = miss.length ? "" : "none"; w.innerHTML = miss.length ? `Skabelonen mangler ${miss.map(esc).join(", ")}. Uden ${miss.length === 1 ? "det felt" : "de felter"} kommer ${miss.map(f => ({"{betaling}": "betalingslinket", "{rabatter}": "rabatter og tillæg", "{nyhed}": "nyheden"})[f]).join(", ")} ikke med i beskeden. Sæt ${miss.length === 1 ? "det" : "dem"} ind på hver sin linje, og tryk Gem.` : ""; if (!$("imp_period").value) $("imp_period").value = K.period; } }
 async function kSaveSettings() {
   const b = {}; KS.forEach(k => b[k] = $("ks_" + k).value);
   try { K.settings = await api("/api/kunder/settings", {method: "PUT", body: JSON.stringify(b)}); renderKSet(); toast("Gemt"); } catch (e) { toast(e.message, true); }
