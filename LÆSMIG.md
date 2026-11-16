@@ -109,6 +109,14 @@ Fire nye sider under **Kunder** i menuen. Koden ligger i `app/kunder.py`, data i
 - **Opkrævning:** sortér efter Navn eller Betalingsdato (valget huskes i browseren). Ved sortering efter dato vises en overskrift pr. dato med antal og beløb. Filteret **I dag** viser dem, der har betalingsdato i dag.
 - **Telegram på dagen** (kl. 8, samme klokkeslæt som de andre beskeder): navn, beløb og betalingsmetode for dem, der har betalingsdato i dag og endnu ikke er anmodet, betalt eller sprunget over. Ingen besked, når ingen skal opkræves. Beskeden den 1. med månedens overblik sendes stadig. Navne står i beskeden – aldrig telefonnumre eller koder.
 
+## Roligere alarmer om Sonarr/Radarr (1.19.3)
+Natten til 16. nov. 2026 kom der mange beskeder "sonarr2: kan ikke nås (ReadTimeout)" efterfulgt af "i orden igen". sonarr2 var ikke nede: det var opslag hos SkyHook (TheTVDB), der tog over 30 sekunder. Hver fejl i Fangarr blev fulgt 70 sekunder senere af "SkyHookProxy … Http request timed out" i sonarr2's log.
+
+- Et **opslag** (`/lookup`), der tager over 30 sekunder eller giver 5xx, giver ingen alarm. Det står i Docker-loggen ("opslag tog over 30 sekunder – TheTVDB/TMDb er langsom"), og titlen prøves igen fra ventelisten som før.
+- **"Har ikke svaret i X minutter"** kommer først, når Sonarr/Radarr ikke har svaret i 5 minutter i træk (`DOWN_ALARM_SECONDS=300`, kan ændres i `fangarr.env`). Ét langsomt svar står kun i Docker-loggen.
+- "I orden igen" kommer kun, når der har været en alarm.
+- Andre fejl (4xx/5xx på andet end opslag) giver alarm med det samme som før.
+
 ## Send besked fra Opkrævning (1.19.0)
 Knappen **Send besked** ved hver kunde under Opkrævning afløser Kopiér besked. Den viser beskeden til kunden og åbner chatten med beskeden klar. Du trykker stadig selv send i appen – Fangarr skriver aldrig selv til kunderne.
 
