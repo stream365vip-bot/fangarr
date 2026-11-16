@@ -242,14 +242,25 @@ def _key_ok(given):
     return ok
 
 
+TILE = {"down": "#FF3A1C1B"}     # feltets baggrund i widgetten (AARRGGBB); alle andre tilstande: TILE_BG
+TILE_BG, CLEAR = "#FF1A1D23", "#00000000"
+PAD_MAX = 60
+
+
 @router.get("/widget/{given}")
-def widget(given: str, req: Request):
-    """Til widgetten på telefonen. Flad liste, så KWGT kan slå felt nr. N op: .apps[N].n / .s / .c / .u"""
+def widget(given: str, req: Request, pad: int = 0):
+    """Til widgetten på telefonen. Flad liste, så KWGT kan slå felt nr. N op: .apps[N].n / .s / .c / .u
+    `h` er gruppens navn på gruppens første app (ellers tom) og `b` feltets baggrundsfarve.
+    Med ?pad=30 fyldes listen op til 30 med tomme, gennemsigtige felter, så en widget med et fast antal
+    felter aldrig slår op uden for listen."""
     if not _key_ok(given):
         raise HTTPException(404, "Not Found")     # samme svar, uanset om adressen er slået fra eller nøglen er forkert
     d = build(req)
-    apps = [{"n": a["name"], "g": g["name"], "s": a["state"], "t": LABELS[a["state"]], "c": COLORS[a["state"]],
-             "u": a["url"]} for g in d["groups"] for a in g["apps"]]
+    apps = [{"n": a["name"], "g": g["name"], "h": g["name"].upper() if i == 0 else "", "s": a["state"],
+             "t": LABELS[a["state"]], "c": COLORS[a["state"]], "b": TILE.get(a["state"], TILE_BG), "u": a["url"]}
+            for g in d["groups"] for i, a in enumerate(g["apps"])]
+    while len(apps) < min(max(pad, 0), PAD_MAX):
+        apps.append({"n": "", "g": "", "h": "", "s": "none", "t": "", "c": CLEAR, "b": CLEAR, "u": ""})
     n_down = len(d["down"])
     if not d["ok"]:
         head = d["error"] or "Ingen status"
