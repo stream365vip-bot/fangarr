@@ -218,7 +218,16 @@ def notify_ok():
             telegram("✅ Fangarr – forbindelsen til Sonarr/Radarr er i orden igen.")
 
 
+DOWN_ALARM_SECONDS = int(os.environ.get("DOWN_ALARM_SECONDS") or "300")   # så længe skal Sonarr/Radarr have været væk, før der kommer alarm
+_down_since = {}   # instansens navn -> tidspunkt for den første fejl i træk
+
+
 def arr(inst, method, path, **kw):
+    """Kald Sonarr/Radarr. Alarm i Telegram kommer kun ved rigtige fejl:
+    - Et opslag (…/lookup), der tager for lang tid eller giver 5xx, er ikke Sonarr/Radarr, der er nede, men TheTVDB/TMDb
+      (SkyHook), der er langsom. Det giver ingen alarm – titlen kommer på ventelisten og prøves igen (1.19.3).
+    - "Kan ikke nås" giver først alarm, når instansen ikke har svaret i DOWN_ALARM_SECONDS (5 min.). Ét langsomt svar er ikke nok."""
+    lookup = "/lookup" in path
     try:
         r = httpx.request(method, inst["url"] + "/api/v3" + path,
                           headers={"X-Api-Key": inst["apikey"]}, timeout=30, **kw)
@@ -227,11 +236,25 @@ def arr(inst, method, path, **kw):
         if e.response.status_code == 409 and method == "POST":
             # 409 ved tilføjelse = titlen er lige blevet lagt ind (samme udgivelse fra to trackere) – ingen alarm
             raise
+        if lookup and e.response.status_code >= 500:
+            log.warning("%s: opslag gav %s – TheTVDB/TMDb svarer ikke lige nu, prøves igen senere", inst["name"], e.response.status_code)
+            raise
         notify_error(f"{inst['name']}: {method} {path} gav {e.response.status_code}\n{e.response.text[:300]}")
         raise
     except httpx.HTTPError as e:
-        notify_error(f"{inst['name']}: kan ikke nås ({e.__class__.__name__})")
+        if lookup and isinstance(e, httpx.ReadTimeout):
+            log.warning("%s: opslag tog over 30 sekunder – TheTVDB/TMDb er langsom lige nu, prøves igen senere", inst["name"])
+            raise
+        with _err_lock:
+            first = _down_since.setdefault(inst["name"], time.time())
+        away = time.time() - first
+        if away >= DOWN_ALARM_SECONDS:
+            notify_error(f"{inst['name']}: har ikke svaret i {int(away // 60)} minutter ({e.__class__.__name__})")
+        else:
+            log.warning("%s: svarede ikke (%s) – alarm først efter %s minutter uden svar", inst["name"], e.__class__.__name__, DOWN_ALARM_SECONDS // 60)
         raise
+    with _err_lock:
+        _down_since.pop(inst["name"], None)
     notify_ok()
     return r.json() if r.content else None
 
