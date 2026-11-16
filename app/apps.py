@@ -245,22 +245,44 @@ def _key_ok(given):
 TILE = {"down": "#FF3A1C1B"}     # feltets baggrund i widgetten (AARRGGBB); alle andre tilstande: TILE_BG
 TILE_BG, CLEAR = "#FF1A1D23", "#00000000"
 PAD_MAX = 60
+# Gruppens farve i widgetten: (mærkets baggrund, mærkets tekst). Gruppe nr. 7 begynder forfra.
+GROUP_COLORS = [("#FF085041", "#FF9FE1CB"), ("#FF3C3489", "#FFCECBF6"), ("#FF712B13", "#FFF5C4B3"),
+                ("#FF0C447C", "#FFB5D4F4"), ("#FF72243E", "#FFF4C0D1"), ("#FF633806", "#FFFAC775")]
+EMPTY = {"n": "", "g": "", "h": "", "i": "", "s": "none", "t": "", "c": CLEAR, "b": CLEAR, "k": CLEAR, "kt": CLEAR, "u": ""}
+
+
+def initials(name):
+    """To bogstaver til appens mærke: "Sonarr2" → "So", "WUD feeder" → "Wf", "Qbit-manage" → "Qm"."""
+    words = [w for w in re.split(r"[^0-9A-Za-zÆØÅæøå]+", str(name or "")) if w]
+    if not words:
+        return ""
+    two = words[0][0] + words[1][0] if len(words) > 1 else words[0][:2]
+    return two[0].upper() + two[1:].lower()
 
 
 @router.get("/widget/{given}")
-def widget(given: str, req: Request, pad: int = 0):
+def widget(given: str, req: Request, pad: int = 0, cols: int = 0):
     """Til widgetten på telefonen. Flad liste, så KWGT kan slå felt nr. N op: .apps[N].n / .s / .c / .u
-    `h` er gruppens navn på gruppens første app (ellers tom) og `b` feltets baggrundsfarve.
-    Med ?pad=30 fyldes listen op til 30 med tomme, gennemsigtige felter, så en widget med et fast antal
+    `h` er gruppens navn på gruppens første app (ellers tom), `b` feltets baggrundsfarve, `i` to bogstaver til
+    appens mærke og `k`/`kt` gruppens farve (mærkets baggrund og tekst).
+    Med ?cols=4 begynder hver gruppe på en ny række (gruppen fyldes op med tomme felter til et helt antal rækker).
+    Med ?pad=32 fyldes hele listen op til 32 med tomme, gennemsigtige felter, så en widget med et fast antal
     felter aldrig slår op uden for listen."""
     if not _key_ok(given):
         raise HTTPException(404, "Not Found")     # samme svar, uanset om adressen er slået fra eller nøglen er forkert
     d = build(req)
-    apps = [{"n": a["name"], "g": g["name"], "h": g["name"].upper() if i == 0 else "", "s": a["state"],
-             "t": LABELS[a["state"]], "c": COLORS[a["state"]], "b": TILE.get(a["state"], TILE_BG), "u": a["url"]}
-            for g in d["groups"] for i, a in enumerate(g["apps"])]
+    cols = min(max(cols, 0), 12)
+    apps = []
+    for gi, g in enumerate(d["groups"]):
+        k, kt = GROUP_COLORS[gi % len(GROUP_COLORS)]
+        for i, a in enumerate(g["apps"]):
+            apps.append({"n": a["name"], "g": g["name"], "h": g["name"] if i == 0 else "", "i": initials(a["name"]),
+                         "s": a["state"], "t": LABELS[a["state"]], "c": COLORS[a["state"]],
+                         "b": TILE.get(a["state"], TILE_BG), "k": k, "kt": kt, "u": a["url"]})
+        while cols and len(apps) % cols:
+            apps.append(dict(EMPTY))
     while len(apps) < min(max(pad, 0), PAD_MAX):
-        apps.append({"n": "", "g": "", "h": "", "s": "none", "t": "", "c": CLEAR, "b": CLEAR, "u": ""})
+        apps.append(dict(EMPTY))
     n_down = len(d["down"])
     if not d["ok"]:
         head = d["error"] or "Ingen status"
