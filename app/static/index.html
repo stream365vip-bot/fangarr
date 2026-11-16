@@ -183,6 +183,16 @@
   .kpi .s { font-size: 13px; color: var(--muted); margin-top: 2px; }
   .conn { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--line); font-size: 13.5px; }
   .conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); } .conn.bad i { background: var(--bad); }
+  .apps { display: flex; flex-direction: column; gap: 14px; margin-top: 14px; }
+  .apps h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .appgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  a.app { display: flex; flex-direction: column; gap: 3px; min-height: 52px; justify-content: center; padding: 8px 12px; border-radius: 12px; background: var(--panel2); border: 1px solid var(--line); color: var(--text); text-decoration: none; }
+  a.app:hover, a.app:focus-visible { border-color: var(--accent); }
+  a.app b { font-weight: 500; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  a.app span { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ok); }
+  a.app span i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  a.app.down { border-color: var(--bad-line); background: var(--bad-bg); } a.app.down span { color: var(--bad); font-weight: 600; } a.app.down span i { border-radius: 0; }
+  a.app.pending span { color: var(--warn); } a.app.maint span { color: var(--info); } a.app.unknown span, a.app.none span { color: var(--muted); }
   .conn.bad { border-color: var(--bad-line); } .conn span { color: var(--muted); } .conn.bad span { color: var(--bad); }
   .tp { padding: 0; overflow-x: auto; }
   .tph { padding: 16px 20px 8px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
@@ -312,6 +322,12 @@
     <p class="hint">Det, du skal gøre noget ved, og hvad Fangarr har lavet i dag. Siden opdateres hvert minut.</p>
     <div id="homeWarn"></div>
     <div class="card todo" id="homeTodo"><div class="th"><h2>Kræver din handling</h2></div><div class="none">Henter …</div></div>
+    <div class="card" id="homeAppsCard" style="display:none">
+      <div class="row" style="justify-content:space-between"><div><h2 style="margin:0">Apps</h2>
+        <div class="small" id="homeAppsInfo">Tryk på en app for at åbne den. Lamperne kommer fra Uptime Kuma.</div></div>
+        <button class="b sm" onclick="loadApps(1)">Tjek igen</button></div>
+      <div class="apps" id="homeApps"><span class="small">Henter …</span></div>
+    </div>
     <div class="kpis" id="homeKpis"></div>
     <div class="card tp">
       <div class="tph"><div><h2>Senest sendt til Sonarr og Radarr</h2>
@@ -749,7 +765,19 @@
   <section id="settings">
     <h2>Indstillinger</h2>
     <p class="hint">Fangarrs egne indstillinger. Husk at trykke <b>Gem indstillinger</b>, når du har ændret noget.</p>
-    <div class="subs" role="tablist"><button data-sub="gen">Generelt</button><button data-sub="vente">Venteliste og Sonarr</button><button data-sub="eksport">Eksport og import</button><button data-sub="kob">Koblinger og fjernede titler</button></div>
+    <div class="subs" role="tablist"><button data-sub="gen">Generelt</button><button data-sub="vente">Venteliste og Sonarr</button><button data-sub="eksport">Eksport og import</button><button data-sub="kob">Koblinger og fjernede titler</button><button data-sub="apps">Apps og widget</button></div>
+    <div class="card" data-p="apps">
+      <h2>Apps og widget</h2>
+      <p class="hint">Apps på forsiden og i widgetten på telefonen kommer fra statussiden <b id="appsSlug">apps</b> i Uptime Kuma. En ny app: opret monitoren i Uptime Kuma, og læg den på statussiden – så dukker den selv op her. Grupper og rækkefølge styres også dér.</p>
+      <div id="appsState" class="small" style="margin-bottom:14px"></div>
+      <div class="field"><label for="appsLinks">Adresser, der skal rettes (én pr. linje: Navn = adresse)</label>
+        <textarea class="kta" id="appsLinks" spellcheck="false" placeholder="Dash = https://dash.stream365.vip/dashboard/"></textarea></div>
+      <div class="small" style="margin-bottom:14px">Fangarr gætter adressen ud fra monitorens navn (fx "WUD feeder" bliver til wud-feeder.dit-domæne). Skriv kun dem her, hvor gættet er forkert.</div>
+      <div class="field"><label for="appsExtra">Apps uden lampe (én pr. linje: Gruppe | Navn | adresse)</label>
+        <textarea class="kta" id="appsExtra" spellcheck="false" placeholder="Daglig | Uptime | https://uptime.stream365.vip"></textarea></div>
+      <div class="small" style="margin-bottom:14px">Til apps, Uptime Kuma ikke kan holde øje med. De får et felt uden lampe, som bare åbner appen. Skriv gruppens navn præcis som på statussiden.</div>
+      <button class="b pri" onclick="saveAppsCfg()">Gem</button>
+    </div>
     <div class="card" data-p="gen vente eksport">
       <div data-p="gen">
       <div id="dryWarn"></div>
@@ -1759,7 +1787,7 @@ const ICON = {
   log: "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01", share: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a3 3 0 0 0 0-6M21 20a6 6 0 0 0-3-5"};
 const SUBDEF = {tr: "status", settings: "gen", setup: "test", cust: "liste"};
 const TAB_IDS = ["home", "wait", "log", "rules", "prem", "tr", "pay", "cust", "iptv", "eco", "share", "guide", "stats", "settings", "setup", "search"];
-let TAB = "home", SUB = {...SUBDEF}, OV = null, CONN = null, VER = null, ADDED = null, logFirst = true;
+let TAB = "home", SUB = {...SUBDEF}, OV = null, CONN = null, APPS = null, VER = null, ADDED = null, logFirst = true;
 
 function showSub(tab) {
   const sec = $(tab), cur = SUB[tab];
@@ -1776,7 +1804,7 @@ function go(tab, sub) {
   if (tab !== "search") history.replaceState(null, "", "#" + tab + (SUBDEF[tab] ? "/" + SUB[tab] : ""));
   clearInterval(window._trTimer);
   if (!S) return;
-  if (tab === "home") { loadHome(); loadConn(0); }
+  if (tab === "home") { loadHome(); loadConn(0); loadApps(0); }
   if (tab === "log") loadLog();
   if (tab === "wait") loadWait();
   if (tab === "prem") loadPrem(0);
@@ -1788,7 +1816,7 @@ function go(tab, sub) {
   if (tab === "iptv") loadIptv();
   if (tab === "eco") loadEco();
   if (tab === "tr") { loadTr(); loadTrStats(0); window._trTimer = setInterval(() => loadTr(), 60000); }
-  if (tab === "settings") { loadBackups(); loadAliases(); loadIgnored(); }
+  if (tab === "settings") { loadBackups(); loadAliases(); loadIgnored(); loadAppsCfg(); }
   if (tab === "setup") { fillRuleSelect("sim_rule", null); if (SUB.setup === "autobrr") loadAutobrr(); }
   window.scrollTo(0, 0);
 }
@@ -1844,6 +1872,8 @@ function renderHome() {
   const add = (n, bad, title, text, action, fn) => todo.push({n, bad, title, text, action, fn});
   const down = ((CONN || {}).items || []).filter(c => !c.ok);
   if (down.length) add(down.length, true, down.length === 1 ? `${esc(down[0].name)} svarer ikke` : "Apps svarer ikke", down.length === 1 ? `Fangarr får ikke svar fra appen (${down[0].detail}). Se Forbindelser nederst på siden.` : down.map(c => `${c.name}: ${c.detail}`).join(" · "), "Se forbindelser", "document.getElementById('homeConnCard').scrollIntoView({behavior:'smooth'})");
+  const appsDown = (APPS || {}).down || [];
+  if (appsDown.length) add(appsDown.length, true, appsDown.length === 1 ? `${esc(appsDown[0])} er nede` : "Apps er nede", appsDown.length === 1 ? "Uptime Kuma får ikke svar fra appen." : appsDown.map(esc).join(" · "), "Se apps", "document.getElementById('homeAppsCard').scrollIntoView({behavior:'smooth'})");
   if (OV.errors_24h) add(OV.errors_24h, true, "Fejl det seneste døgn", "Fangarr kunne ikke slå en titel op eller tilføje den. Se detaljerne i loggen.", "Se fejlene", "logPick('fejl');go('log')");
   if (OV.suggestions) add(OV.suggestions, false, OV.suggestions === 1 ? "Forslag venter på godkendelse" : "Forslag venter på godkendelse", "Titler på ventelisten med et muligt match. Tryk Godkend ved det rigtige.", "Åbn ventelisten", "go('wait')");
   if (t.problems) add(t.problems, true, t.problems === 1 ? "Oversættelse er gået galt" : "Oversættelser er gået galt", "Prøv igen, eller opgiv dem, så de vises uden dansk tekst.", "Se problemer", "go('tr','problemer')");
@@ -1884,6 +1914,30 @@ async function loadConn(refresh) {
   $("homeConn").innerHTML = CONN.items.length ? CONN.items.map(c => `<span class="conn ${c.ok ? "" : "bad"}"><i></i>${esc(c.name)} <span>${c.ok ? "i orden" : esc(c.detail)}</span></span>`).join("")
     : '<span class="small">Ingen apps er sat op i fangarr.env.</span>';
   renderHome();
+}
+const APP_T = {up: "Oppe", down: "Nede", pending: "Tjekker igen", maint: "Vedligehold", unknown: "Ukendt", none: "Ingen lampe"};
+async function loadApps(refresh) {
+  if (!S || !(S.features || {}).apps) return;
+  $("homeAppsCard").style.display = "";
+  try { APPS = await api("/api/apps?refresh=" + (refresh ? 1 : 0)); } catch (e) { return; }
+  $("homeAppsInfo").innerHTML = APPS.ok ? "Tryk på en app for at åbne den. Lamperne kommer fra Uptime Kuma." : `<span style="color:var(--bad)">${esc(APPS.error || "Uptime Kuma svarer ikke")}</span>`;
+  $("homeApps").innerHTML = APPS.groups.length ? APPS.groups.map(g => `<div><h3>${esc(g.name)}</h3><div class="appgrid">` + g.apps.map(a =>
+    `<a class="app ${a.state}" ${a.url ? `href="${esc(a.url)}" target="_blank" rel="noopener"` : ""} title="${esc(a.name)}${a.uptime != null ? " – oppetid 24 timer: " + a.uptime + " %" : ""}"><b>${esc(a.name)}</b><span><i></i>${APP_T[a.state] || ""}</span></a>`).join("") + "</div></div>").join("")
+    : `<span class="small">Der er ingen apps på statussiden "${esc(APPS.slug)}" i Uptime Kuma endnu.</span>`;
+  renderHome();
+}
+async function loadAppsCfg() {
+  let c; try { c = await api("/api/apps/config"); } catch (e) { return; }
+  showAppsCfg(c);
+}
+function showAppsCfg(c) {
+  $("appsLinks").value = c.links || ""; $("appsExtra").value = c.extra || ""; $("appsSlug").textContent = c.slug || "apps";
+  $("appsState").innerHTML = !c.enabled ? '<span style="color:var(--warn)">Slået fra: UPTIME_URL mangler i fangarr.env.</span>'
+    : "Forsiden: slået til. Widget-adressen: " + (c.widget ? "<b>slået til</b>." : '<span style="color:var(--warn)">slået fra (WIDGET_KEY mangler i fangarr.env eller er kortere end 32 tegn)</span>.');
+}
+async function saveAppsCfg() {
+  try { showAppsCfg(await api("/api/apps/config", {method: "PUT", body: JSON.stringify({links: $("appsLinks").value, extra: $("appsExtra").value})})); toast("Gemt"); loadApps(1); }
+  catch (e) { toast(e.message, true); }
 }
 async function loadVersion() {
   try { VER = await api("/api/version"); } catch (e) { return; }
@@ -2475,8 +2529,8 @@ async function init() {
   const [tab, sub] = location.hash.replace("#", "").split("/");
   go(tab || "home", sub);
   loadVersion();
-  if (TAB !== "home") { loadHome(); loadConn(0); }
-  setInterval(() => { if (!document.hidden) { loadHome(); if (TAB === "home") loadConn(0); } }, 60000);
+  if (TAB !== "home") { loadHome(); loadConn(0); loadApps(0); }
+  setInterval(() => { if (!document.hidden) { loadHome(); if (TAB === "home") { loadConn(0); loadApps(0); } } }, 60000);
   setInterval(loadVersion, 3 * 3600 * 1000);
 }
 init();
