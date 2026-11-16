@@ -49,6 +49,9 @@ DEFAULTS = {
     "pay_revolut_text": "💳 Jeg har sendt dig en anmodning i Revolut-appen.",
     "pay_mobilepay_text": "💳 Jeg har sendt dig en anmodning i MobilePay.",
     "pay_other_text": "💳 Betales via: {metode}",
+    # Android-pakkenavn på dine apps (1.19.2) – kun nødvendigt for patchede/uofficielle udgaver. Tomt = Android vælger selv.
+    "app_tg_pkg": "",
+    "app_fb_pkg": "",
 }
 OLD_TEMPLATE = ("Hej {fornavn}! 👋\n\nHermed opkrævning for dine tjenester ({tjenester}):\n"
                 "💰 Beløb: {beløb} kr. ({frekvens} • Cyklus: {cyklus})\n💳 Betales via: {metode}\n\n"
@@ -546,6 +549,12 @@ async def put_settings(req: Request):
     for k in PAY_TEXTS:
         if not s[k].strip():
             s[k] = DEFAULTS[k]
+    for k in ("app_tg_pkg", "app_fb_pkg"):
+        if k in b:
+            v = str(b[k] or "").strip()
+            if v and not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+", v):
+                raise HTTPException(400, "pakkenavnet skal ligne com.noget.noget (kun bogstaver, tal og punktummer)")
+            s[k] = v
     if not s["template"].strip():
         s["template"] = DEFAULTS["template"]
     D["kv_set"]("kunder_settings", s)

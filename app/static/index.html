@@ -559,6 +559,11 @@
           <div class="field"><label>{betaling} – MobilePay, anmodet i appen</label><input type="text" id="ks_pay_mobilepay_text"></div>
           <div class="field"><label>{betaling} – anden betalingsmetode</label><input type="text" id="ks_pay_other_text"></div>
         </div>
+        <div class="grid" style="margin-top:14px">
+          <div class="field"><label>Telegram-appens pakkenavn på Android (valgfrit)</label><input type="text" id="ks_app_tg_pkg" placeholder="tomt = Android vælger selv" autocomplete="off" spellcheck="false"></div>
+          <div class="field"><label>Messenger-appens pakkenavn på Android (valgfrit)</label><input type="text" id="ks_app_fb_pkg" placeholder="tomt = Android vælger selv" autocomplete="off" spellcheck="false"></div>
+        </div>
+        <div class="small">Bruges af <b>Send besked</b> på telefonen. Lad felterne stå tomme, medmindre du bruger en patchet eller uofficiel udgave, og knappen åbner browseren eller Play Butik. Pakkenavnet ligner <code>com.noget.noget</code>. Uden pakkenavn åbner Messenger-knappen den app, der i Android har lov til at åbne m.me-links (telefonens Indstillinger › Apps › appen › Angiv som standard › Åbn understøttede links).</div>
         <div class="field" style="margin-top:14px"><label>Faste udgifter pr. måned (til Økonomi) – én pr. linje</label><textarea class="kta" id="ks_fixed_costs" style="min-height:90px" placeholder="Hetzner: 2813"></textarea></div>
         <div class="row" style="margin:14px 0 0"><button class="b pri" onclick="kSaveSettings()">Gem</button><a class="b" href="/api/kunder/export.csv">Hent kundelisten som CSV (uden koder)</a></div>
       </div>
@@ -2102,12 +2107,15 @@ function tgUrl(h, text) {
   let u = String(h || "").trim(), phone = false;
   if (/^\+?[\d ]+$/.test(u)) { u = u.replace(/\D/g, ""); if (u.length === 8) u = "45" + u; phone = true; }
   const t = encodeURIComponent(text);
+  const pkg = K && K.settings.app_tg_pkg;
+  if (ANDROID && pkg) return `intent://resolve?${phone ? "phone" : "domain"}=${u}&text=${t}#Intent;scheme=tg;package=${pkg};end`;
   if (ANDROID) return `tg://resolve?${phone ? "phone" : "domain"}=${u}&text=${t}`;
   return `https://t.me/${phone ? "+" : ""}${u}?text=${t}`;
 }
 function fbUrl(h) {
   const u = encodeURIComponent(String(h || "").trim()), web = "https://m.me/" + u;
-  return ANDROID ? `intent://m.me/${u}#Intent;scheme=https;package=com.facebook.orca;S.browser_fallback_url=${encodeURIComponent(web)};end` : web;
+  const pkg = K && K.settings.app_fb_pkg;      // uden pakkenavn vælger Android selv den app, der må åbne m.me-links – ellers browseren
+  return ANDROID ? `intent://m.me/${u}#Intent;scheme=https;action=android.intent.action.VIEW;${pkg ? "package=" + pkg + ";" : ""}S.browser_fallback_url=${encodeURIComponent(web)};end` : web;
 }
 function paySend(id) {
   const c = KP.charges.find(x => x.id === id); if (!c) return;
@@ -2435,7 +2443,7 @@ async function kImport(apply) {
 }
 
 // ---------- indstillinger for kunder
-const KS = ["remind_days", "remind_repeat_days", "inactive_days", "plex_price", "message_hour", "sync_hour", "template", "fixed_costs", "pay_link_text", "pay_revolut_text", "pay_mobilepay_text", "pay_other_text"];
+const KS = ["remind_days", "remind_repeat_days", "inactive_days", "plex_price", "message_hour", "sync_hour", "template", "fixed_costs", "pay_link_text", "pay_revolut_text", "pay_mobilepay_text", "pay_other_text", "app_tg_pkg", "app_fb_pkg"];
 function renderKSet() { if (K) { KS.forEach(k => $("ks_" + k).value = K.settings[k] ?? "");
     const miss = ["{betaling}", "{rabatter}", "{nyhed}"].filter(f => !String(K.settings.template || "").includes(f)), w = $("ks_tplWarn");
     w.style.display = miss.length ? "" : "none"; w.innerHTML = miss.length ? `Skabelonen mangler ${miss.map(esc).join(", ")}. Uden ${miss.length === 1 ? "det felt" : "de felter"} kommer ${miss.map(f => ({"{betaling}": "betalingslinket", "{rabatter}": "rabatter og tillæg", "{nyhed}": "nyheden"})[f]).join(", ")} ikke med i beskeden. Sæt ${miss.length === 1 ? "det" : "dem"} ind på hver sin linje, og tryk Gem.` : ""; if (!$("imp_period").value) $("imp_period").value = K.period; } }
