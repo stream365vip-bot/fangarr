@@ -156,8 +156,29 @@ Fanen **Guide** (under Kunder) viser, hvem der har været inde på guiden, hvorn
 - Mangler en titel stadig efter ca. en time, står den øverst under **Skjult for kunderne** med ⚠, og der sendes én Telegram-besked ("ikke kommet i Plex") – og én, når den er kommet ind ("i orden igen"). Fangarr husker, hvad der er meldt (tabellen `plex_missing_notified`).
 - **1.17.1:** "se listen" på kortene Problemer og Skjult for kunderne (Oversættelser › Status) åbner nu den rigtige underfane. Linkene pegede på lister, der siden 1.15.0 ligger på skjulte underfaner, så der skete ingenting.
 
+## Apps med lampe og widget på telefonen (1.20.0)
+Forsiden har fået kortet **Apps**: alle dine server-apps i grupper med lampe (Oppe · Tjekker igen · Nede · Vedligehold · Ingen lampe). Tryk på en app for at åbne den. Er en app nede, står den også under **Kræver din handling**. Koden ligger i `app/apps.py`.
+
+- **Listen kommer fra Uptime Kuma**, statussiden `apps` (hentes internt på `http://uptime:3001`, højst hvert 30. sekund). Grupper og rækkefølge på statussiden er grupper og rækkefølge i Fangarr. **Ny app:** opret monitoren i Uptime Kuma, og læg den på statussiden – så dukker den selv op. Fangarr ændrer intet i Uptime Kuma og sender ingen beskeder herfra.
+- **Appens adresse gættes ud fra monitorens navn** ("WUD feeder" → `https://wud-feeder.<domæne>`). Passer gættet ikke, rettes det under **Indstillinger › Apps og widget** (`Navn = adresse`). Samme sted tilføjes apps uden monitor (`Gruppe | Navn | adresse`); de får et felt uden lampe.
+- **"Tjekker igen"** betyder, at et tjek er fejlet, og Uptime Kuma prøver igen, før den melder appen nede.
+- Svarer Uptime Kuma ikke, bliver felterne stående med "Ukendt".
+
+### Widget-adressen `/widget/<nøgle>`
+Til en widget på telefonens hjemmeskærm (KWGT). Svarer med en flad liste: `.apps[N].n` (navn), `.g` (gruppe), `.s` (up/down/pending/maint/unknown/none), `.t` (tekst), `.c` (farve) og `.u` (appens adresse), plus `.head` ("Alt kører" / "Scrutiny er nede"), `.headc`, `.down`, `.total` og `.at` (klokkeslæt).
+
+- **Det er den eneste adresse i Fangarr, der åbnes uden om Authelia.** Den viser kun appnavne, grupper, oppe/nede og adresser – ingen kunder og ingen tal – og kan ikke ændre noget.
+- Den findes kun, når `WIDGET_KEY` i `fangarr.env` er på mindst 32 tegn. Forkert nøgle giver 404 (samme svar som en adresse, der ikke findes), og efter 20 forkerte forsøg på et minut lukkes der i et minut.
+- **Lav nøglen på feeder uden at vise den** (gør intet, hvis linjen findes i forvejen):
+  ```
+  grep -q '^WIDGET_KEY=' /opt/fangarr/fangarr.env || echo "WIDGET_KEY=$(openssl rand -hex 24)" >> /opt/fangarr/fangarr.env
+  ```
+- **Skift nøglen** (fx mistet telefon): slet linjen `WIDGET_KEY=…` i `fangarr.env`, kør kommandoen igen og `docker compose up -d --force-recreate`. Den gamle adresse virker ikke længere.
+- **Traefik:** `docker-compose.yml` på feeder skal have en ekstra regel (router) kun for stien `/widget/` uden Authelia; resten af Fangarr bliver bag Authelia. Linjerne afhænger af filen på serveren – se projektets `claude/hjemmeskaerm-widget.md`.
+- Nøglen må aldrig stå i chatten eller dokumentationen. Den ligger kun i `fangarr.env` og i widgetten.
+
 ## Filer
-- `app/main.py` – server (FastAPI) · `app/static/index.html` – interface · `app/VERSION`
+- `app/main.py` – server (FastAPI) · `app/apps.py` – Apps og widget · `app/static/index.html` – interface · `app/VERSION`
 - `fangarr.env.eksempel` – skabelon til `fangarr.env` (API-nøgler). `chmod 600`. **Kommer aldrig i git.**
 - Data: `/opt/fangarr/data/fangarr.db`. Natlige eksportfiler: `/opt/fangarr/data/backup/`.
 - `docker-compose.yml` laves af Saltbox og ligger kun på serveren.
