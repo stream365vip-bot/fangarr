@@ -138,6 +138,16 @@ Knappen **Send besked** ved hver kunde under Opkrævning afløser Kopiér besked
 - **Databasen:** nye kolonner `tg`, `fb`, `revolut` på `k_customers` og `pay_link`, `news_id`, `sent_at` på `k_charges` (oprettes selv ved start). Nyheden ligger i `kv` under `kunder_news`. Betalingslinket gemmes kun i databasen og skrives aldrig i loggen eller i Telegram.
 - Tilbage til 1.18.0: de nye kolonner gør ingen skade i den gamle version.
 
+### Frist, periode og næste opkrævning i beskeden (1.21.0)
+Fire nye felter til beskedskabelonen (Kunder › Indstillinger), så kunden kan se, hvornår der skal betales, hvad betalingen dækker, og hvornår den næste kommer:
+
+- `{frist}` – seneste betalingsdato: den dag, beskeden sendes, plus **Kundens frist for at betale (dage)** (ny indstilling, 7 som standard). Før beskeden er sendt, tælles der fra i dag; når den er sendt, står fristen fast, også ved Send igen. Fristen ligger aldrig før kundens faste betalingsdato. Årstallet skrives kun med, når fristen ligger i et andet år.
+- `{periode}` – hvad betalingen dækker: fra betalingsdatoen til dagen før næste betalingsdato. Kunder uden fast dato (den 1.) får hele måneder ("november 2026 – januar 2027"), kunder med fast dato får datoer ("25. november 2026 – 24. februar 2027").
+- `{næste}` – datoen for næste opkrævning (betalingsdatoen i den næste måned i kundens rul). Bliver beløbet et andet end denne gang – en rabat udløber, eller prisen er ændret på kundekortet – står det forventede beløb i parentes: "25. februar 2027 (forventet 600 kr.)". Det forventede beløb er kundens nuværende priser plus de fradrag/tillæg, der har gange tilbage.
+- `{antal_måneder}` – "1 måned", "3 måneder", "6 måneder" eller "12 måneder".
+- Standardskabelonen bruger de nye felter og skriver "540 kr. for 3 måneder" i stedet for "(Kvartal • Cyklus: 2/5/8/11)". Den gamle standardskabelon skiftes selv ud; en skabelon, du selv har rettet, bevares. `{frekvens}` og `{cyklus}` virker stadig.
+- Ingen ændring i databasen eller i `fangarr.env`.
+
 ## Guide – hvem har været inde på guide.stream365.vip? (1.18.0)
 Fanen **Guide** (under Kunder) viser, hvem der har været inde på guiden, hvornår, hvilke afsnit de har læst, og hvad de har søgt efter – med rigtige navne fra Kunder (Tautulli).
 - **Tallene kommer fra appen `nyt`** (mappen `nyt-login/`), som skriver én fil pr. dag i `/opt/nyt/data/statistik/`. Fangarr læser kun – den ændrer intet i guiden og sender ingen beskeder. Se `nyt-login/LÆSMIG.md` › Tæller.

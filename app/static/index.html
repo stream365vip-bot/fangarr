@@ -561,13 +561,15 @@
           <div class="field"><label>Besked om manglende betaling efter (dage)</label><input type="number" id="ks_remind_days" min="1">
             <div class="small">Tælles fra du trykker Anmodet.</div></div>
           <div class="field"><label>Derefter påmindelse hver (dage)</label><input type="number" id="ks_remind_repeat_days" min="1"></div>
+          <div class="field"><label>Kundens frist for at betale (dage)</label><input type="number" id="ks_pay_days" min="1">
+            <div class="small">Bruges til {frist} i beskeden til kunden. Tælles fra den dag, du sender beskeden, men er aldrig før kundens faste betalingsdato. Sæt den til det samme som "Besked om manglende betaling", så får du besked, når fristen er gået.</div></div>
           <div class="field"><label>Mærk kunden "Ikke set længe" efter (dage)</label><input type="number" id="ks_inactive_days" min="1"></div>
           <div class="field"><label>Pris pr. måned for en ny Plex-konto (kr.)</label><input type="text" inputmode="decimal" id="ks_plex_price"></div>
           <div class="field"><label>Beskeder på Stream365 Drift kl.</label><input type="number" id="ks_message_hour" min="0" max="23"></div>
           <div class="field"><label>Natlig synk fra Tautulli kl.</label><input type="number" id="ks_sync_hour" min="0" max="23"></div>
         </div>
         <div class="field" style="margin-top:14px"><label>Besked til kunden (kopieres fra Opkrævning)</label><textarea class="kta" id="ks_template" style="min-height:230px"></textarea>
-          <div class="small">Du kan bruge: {fornavn} {navn} {tjenester} {beløb} {frekvens} {cyklus} {metode} – og tre felter, der skal stå på <b>deres egen linje</b>: <b>{rabatter}</b> (kundens fradrag og tillæg, én linje pr. stk.), <b>{betaling}</b> (én af de fire tekster herunder) og <b>{nyhed}</b> (nyheden fra Opkrævning). Er et af de tre tomt for en kunde, forsvinder linjen.</div>
+          <div class="small">Du kan bruge: {fornavn} {navn} {tjenester} {beløb} {metode} · <b>{antal_måneder}</b> (hvor længe betalingen rækker, fx "3 måneder") · <b>{periode}</b> (hvad betalingen dækker, fx "november 2026 – januar 2027") · <b>{frist}</b> (seneste betalingsdato, fx "24. november") · <b>{næste}</b> (datoen for næste opkrævning – og det forventede beløb, når det bliver et andet end denne gang) · {frekvens} og {cyklus} (fx "Kvartal" og "2/5/8/11" – svære for kunden at læse). Og tre felter, der skal stå på <b>deres egen linje</b>: <b>{rabatter}</b> (kundens fradrag og tillæg, én linje pr. stk.), <b>{betaling}</b> (én af de fire tekster herunder) og <b>{nyhed}</b> (nyheden fra Opkrævning). Er et af de tre tomt for en kunde, forsvinder linjen.</div>
           <div class="warn" id="ks_tplWarn" style="display:none;margin:10px 0 0"></div></div>
         <div class="grid" style="margin-top:14px">
           <div class="field"><label>{betaling} – Revolut med betalingslink</label><input type="text" id="ks_pay_link_text"><div class="small">{link} bliver til det link, du indsætter, når du sender.</div></div>
@@ -2497,7 +2499,7 @@ async function kImport(apply) {
 }
 
 // ---------- indstillinger for kunder
-const KS = ["remind_days", "remind_repeat_days", "inactive_days", "plex_price", "message_hour", "sync_hour", "template", "fixed_costs", "pay_link_text", "pay_revolut_text", "pay_mobilepay_text", "pay_other_text", "app_tg_pkg", "app_fb_pkg"];
+const KS = ["remind_days", "remind_repeat_days", "pay_days", "inactive_days", "plex_price", "message_hour", "sync_hour", "template", "fixed_costs", "pay_link_text", "pay_revolut_text", "pay_mobilepay_text", "pay_other_text", "app_tg_pkg", "app_fb_pkg"];
 function renderKSet() { if (K) { KS.forEach(k => $("ks_" + k).value = K.settings[k] ?? "");
     const miss = ["{betaling}", "{rabatter}", "{nyhed}"].filter(f => !String(K.settings.template || "").includes(f)), w = $("ks_tplWarn");
     w.style.display = miss.length ? "" : "none"; w.innerHTML = miss.length ? `Skabelonen mangler ${miss.map(esc).join(", ")}. Uden ${miss.length === 1 ? "det felt" : "de felter"} kommer ${miss.map(f => ({"{betaling}": "betalingslinket", "{rabatter}": "rabatter og tillæg", "{nyhed}": "nyheden"})[f]).join(", ")} ikke med i beskeden. Sæt ${miss.length === 1 ? "det" : "dem"} ind på hver sin linje, og tryk Gem.` : ""; if (!$("imp_period").value) $("imp_period").value = K.period; } }

@@ -36,13 +36,15 @@ MONTHS_DA = ["januar", "februar", "marts", "april", "maj", "juni", "juli", "augu
 DEFAULTS = {
     "remind_days": 7,          # dage efter "Anmodet", før du får besked om manglende betaling
     "remind_repeat_days": 7,   # derefter én samlet påmindelse så ofte
+    "pay_days": 7,             # {frist} i beskeden til kunden: så mange dage har kunden til at betale, fra beskeden sendes
     "inactive_days": 60,       # mærket "ikke set længe" på kunden
     "plex_price": 120,         # pris pr. måned for en ny Plex-konto fra Tautulli
     "message_hour": 8,         # klokkeslæt for beskeder på Stream365 Drift
     "sync_hour": 3,            # natlig synk fra Tautulli
     "fixed_costs": "",         # faste udgifter pr. måned, én pr. linje: "Hetzner: 2813"
     "template": ("Hej {fornavn}! 👋\n\nHermed opkrævning for dine tjenester ({tjenester}):\n"
-                 "💰 Beløb: {beløb} kr. ({frekvens} • Cyklus: {cyklus})\n{rabatter}\n{betaling}\n\n{nyhed}\n\n"
+                 "💰 Beløb: {beløb} kr. for {antal_måneder}\n📆 Dækker: {periode}\n{rabatter}\n{betaling}\n"
+                 "⏰ Betales senest: {frist}\n\nNæste opkrævning: {næste}\n\n{nyhed}\n\n"
                  "Sig endelig til hvis der er noget. Rigtig god fornøjelse! 🍿"),
     # linjen {betaling} i beskeden – én tekst pr. måde, du anmoder på (1.19.0)
     "pay_link_text": "💳 Betal nemt med kort her: {link}",
@@ -56,6 +58,9 @@ DEFAULTS = {
 OLD_TEMPLATE = ("Hej {fornavn}! 👋\n\nHermed opkrævning for dine tjenester ({tjenester}):\n"
                 "💰 Beløb: {beløb} kr. ({frekvens} • Cyklus: {cyklus})\n💳 Betales via: {metode}\n\n"
                 "Sig endelig til hvis der er noget. Rigtig god fornøjelse! 🍿")   # standardteksten før 1.19.0
+OLD_TEMPLATE_119 = ("Hej {fornavn}! 👋\n\nHermed opkrævning for dine tjenester ({tjenester}):\n"
+                    "💰 Beløb: {beløb} kr. ({frekvens} • Cyklus: {cyklus})\n{rabatter}\n{betaling}\n\n{nyhed}\n\n"
+                    "Sig endelig til hvis der er noget. Rigtig god fornøjelse! 🍿")   # standardteksten 1.19.0 – 1.20.2
 PAY_TEXTS = ("pay_link_text", "pay_revolut_text", "pay_mobilepay_text", "pay_other_text")
 REVOLUT = ("", "link", "app")   # sådan anmoder du en Revolut-kunde: ikke valgt · betalingslink · direkte i appen
 _lock = threading.Lock()
@@ -166,7 +171,7 @@ def run(sql, args=()):
 def settings():
     s = dict(DEFAULTS)
     s.update(D["kv_get"]("kunder_settings", {}) or {})
-    if s["template"].strip() == OLD_TEMPLATE:      # den gamle standardtekst afløses af den nye med {rabatter} {betaling} {nyhed}
+    if s["template"].strip() in (OLD_TEMPLATE, OLD_TEMPLATE_119):      # en gammel standardtekst afløses af den nyeste
         s["template"] = DEFAULTS["template"]
     return s
 
@@ -249,10 +254,77 @@ def adjust_lines(adjust):
     return "\n".join(out)
 
 
+def _due_date(due_day, period):
+    """Betalingsdatoen som dato: kundens faste dato i måneden (ellers den 1.), aldrig senere end månedens sidste dag."""
+    y, m = int(period[:4]), int(period[5:7])
+    try:
+        d = int(due_day or 1)
+    except (TypeError, ValueError):
+        d = 1
+    return datetime.date(y, m, min(max(d, 1), calendar.monthrange(y, m)[1]))
+
+
+def _add_months(period, n):
+    i = int(period[:4]) * 12 + int(period[5:7]) - 1 + n
+    return f"{i // 12:04d}-{i % 12 + 1:02d}"
+
+
+def _day_text(d, year=None):
+    """24. november – med årstal, når det ikke er i år (eller når year=True)."""
+    show = year if isinstance(year, bool) else d.year != now().year
+    return f"{d.day}. {MONTHS_DA[d.month - 1]}" + (f" {d.year}" if show else "")
+
+
+def covers_text(start, end):
+    """Hvad betalingen dækker: fra betalingsdatoen til dagen før den næste. Hele måneder skrives uden dage."""
+    whole = start.day == 1 and end.day == calendar.monthrange(end.year, end.month)[1]
+    if whole:
+        a, b = MONTHS_DA[start.month - 1], MONTHS_DA[end.month - 1]
+        if (start.year, start.month) == (end.year, end.month):
+            return f"{a} {start.year}"
+        return f"{a} – {b} {end.year}" if start.year == end.year else f"{a} {start.year} – {b} {end.year}"
+    return f"{_day_text(start, start.year != end.year)} – {_day_text(end, True)}"
+
+
+def next_amount(c, months):
+    """Forventet beløb ved næste opkrævning: kundens nuværende priser + de fradrag/tillæg, der stadig har gange tilbage."""
+    sv = rows("SELECT * FROM k_services WHERE customer_id=?", (c["id"],))
+    adj = rows("SELECT amount FROM k_adjust WHERE customer_id=? AND remaining>0", (c["id"],))
+    return max(0.0, monthly(sv) * months + sum(float(a["amount"] or 0) for a in adj))
+
+
+def months_text(n):
+    return "1 måned" if n == 1 else f"{n} måneder"
+
+
+def date_fields(c, ch, det):
+    """Felterne {frist}, {periode}, {næste} og {antal_måneder} for én opkrævning.
+    Fristen tælles fra den dag, beskeden blev sendt – er den ikke sendt endnu, fra i dag – men ligger aldrig før
+    kundens betalingsdato (sendes beskeden den 17. til en kunde med fast dato den 25., er fristen den 25.)."""
+    n = int(det.get("months") or FREQ.get(c["freq"]) or 0)
+    period = ch["period"][:7]
+    try:
+        base = datetime.datetime.fromisoformat(ch["sent_at"]).date() if ch["sent_at"] else now().date()
+    except (TypeError, ValueError):
+        base = now().date()
+    frist = base + datetime.timedelta(days=int(settings()["pay_days"]))
+    out = {"frist": _day_text(frist), "antal_måneder": months_text(n) if n else "–", "periode": "–", "næste": "–"}
+    if n:
+        start, nxt = _due_date(c["due_day"], period), _due_date(c["due_day"], _add_months(period, n))
+        out["frist"] = _day_text(max(frist, start))      # aldrig før kundens egen betalingsdato
+        out["periode"] = covers_text(start, nxt - datetime.timedelta(days=1))
+        out["næste"] = _day_text(nxt, True)
+        if c["status"] == "aktiv" and FREQ.get(c["freq"]):
+            exp = next_amount(c, FREQ[c["freq"]])
+            if abs(exp - float(ch["amount"] or 0)) >= 0.005:      # kun når beløbet bliver et andet end denne gang
+                out["næste"] += f" (forventet {_amount(exp)} kr.)"
+    return out
+
+
 _OPTIONAL = ("rabatter", "betaling", "nyhed")
 
 
-def message_for(c, amount, lines, adjust=None, variant="other", news_text=""):
+def message_for(c, amount, lines, adjust=None, variant="other", news_text="", extra=None):
     """Beskeden til kunden. {link} bliver stående – det sættes ind i browseren, når du har indsat betalingslinket.
     En linje, der kun består af {rabatter}, {betaling} eller {nyhed}, forsvinder, når feltet er tomt."""
     s = settings()
@@ -260,6 +332,8 @@ def message_for(c, amount, lines, adjust=None, variant="other", news_text=""):
     vals = {"fornavn": (c["name"] or "").split(" ")[0], "navn": c["name"] or "", "tjenester": service_names(lines) or "–",
             "beløb": _amount(amount), "frekvens": FREQ_DA.get(c["freq"], "–"),
             "cyklus": cycle_text(c["freq"], c["cycle"]), "metode": c["method"] or "–"}
+    vals.update({"frist": "–", "periode": "–", "næste": "–", "antal_måneder": months_text(FREQ[c["freq"]]) if FREQ.get(c["freq"]) else "–"})
+    vals.update(extra or {})
     vals.update({"rabatter": adjust_lines(adjust), "betaling": str(s.get(key) or "").strip(), "nyhed": str(news_text or "").strip()})
     out = []
     for line in s["template"].split("\n"):
@@ -281,7 +355,8 @@ def message_for(c, amount, lines, adjust=None, variant="other", news_text=""):
 def messages_for(c, ch, det, nw=None):
     """Alle udgaver af beskeden for én opkrævning – én pr. måde at anmode på."""
     txt = nw["text"] if nw and news_due(c["id"], ch["id"], nw) else ""
-    return {v: message_for(c, ch["amount"], det.get("lines", []), det.get("adjust", []), v, txt) for v in pay_variants(c)}, bool(txt)
+    extra = date_fields(c, ch, det)
+    return {v: message_for(c, ch["amount"], det.get("lines", []), det.get("adjust", []), v, txt, extra) for v in pay_variants(c)}, bool(txt)
 
 
 def handle(v, kind):
@@ -535,7 +610,7 @@ def state():
 async def put_settings(req: Request):
     b = await req.json()
     s = settings()
-    for k in ("remind_days", "remind_repeat_days", "inactive_days", "message_hour", "sync_hour"):
+    for k in ("remind_days", "remind_repeat_days", "pay_days", "inactive_days", "message_hour", "sync_hour"):
         if k in b:
             try:
                 s[k] = max(0, int(b[k]))
