@@ -6,7 +6,7 @@ Fanger nye serier og film fra autobrr og lægger dem i Sonarr/Radarr ud fra dine
 - Fangarr slår titlen op (genrer, originalsprog, kanal, år, rating) og tjekker reglerne oppefra.
 - Mangler TheTVDB/TMDb titlen endnu, kan den komme på **ventelisten** og prøves igen automatisk.
 
-Faner: Regler · Kunder (Opkrævning, Kunder, Seerr-ønsker, IPTV-linjer, Økonomi) · Test en titel (+ prøv en regel på autobrr-historikken) · Venteliste · Premierer (kommende serier fra TMDb via Seerr – tilføj eller følg) · Statistik (størrelse og afspilninger fra Tracearr pr. regel) · Guide (hvem har været inde på guide.stream365.vip, læste afsnit og søgeord) · Kontodeling (konti, hvor to tv afspiller samtidig fra hver sin adresse – fra Tautulli) · Oversættelser (Oversætterens tilstand, forbrug og prognose, skjult for kunderne, på vej, problemer, færdige oversættelser, statistik og indstillinger) · Log · autobrr (opret/opdatér filtre) · Indstillinger (Seerr-tjek, eksport/import, natlig eksport).
+Faner: Regler · Kunder (Opkrævning, Kunder, Seerr-ønsker, IPTV-linjer, Økonomi) · Test en titel (+ prøv en regel på autobrr-historikken) · Venteliste · Premierer (kommende serier fra TMDb via Seerr – tilføj eller følg) · Statistik (størrelse og afspilninger fra Tracearr pr. regel) · Guide (Besøg: hvem har været inde på guide.stream365.vip, læste afsnit og søgeord · Nyheder: kortet øverst i guiden og nyhedens pop-up) · Kontodeling (konti, hvor to tv afspiller samtidig fra hver sin adresse – fra Tautulli) · Oversættelser (Oversætterens tilstand, forbrug og prognose, skjult for kunderne, på vej, problemer, færdige oversættelser, statistik og indstillinger) · Log · autobrr (opret/opdatér filtre) · Indstillinger (Seerr-tjek, eksport/import, natlig eksport).
 
 Sikringer: prøvetilstand, loft pr. døgn, pladsgrænse, kun præcise titelmatch, Seerr-tjek, Telegram ved fejl og "i orden igen", dagligt resumé.
 
@@ -103,6 +103,20 @@ Det, der gemmes på disken, er kun dine egne afgørelser og sager. Historikken o
 - **Statistik:** tryk på en kolonne for at sortere.
 - **Oversættelser, Indstillinger og Opsætning** er delt i underfaner. *Test en titel*, *Prøv en regel* og *Filtre i autobrr* ligger under Opsætning.
 - **Versionsnummer** nederst i menuen. Ligger der en nyere version på GitHub, står det der og på Overblik (tjekkes hver 3. time).
+
+## Nyheder i guiden (1.24.0)
+Det farvede kort øverst på **guide.stream365.vip** – til tilbud, nyheder og vigtige beskeder – og nyhedens pop-up. Skrives under **Guide › Nyheder**. Koden ligger i `app/nyheder.py` (data i tabellen `g_news`) og `app/static/nyhed-vis.js` (tegningen af kort og pop-up).
+
+- **Sådan kommer nyhederne ud:** guiden (appen `nyt`) henter selv de udgivne nyheder hos Fangarr hvert 30. sekund inde i Docker-netværket (`POST http://fangarr:8080/api/nyheder/guide`). **Ingen ændringer i docker-compose-filerne.** Guiden gemmer seneste svar i `/opt/nyt/data/nyheder.json`, så kortet vises, selv om Fangarr genstarter. Guidens `index.html` røres ikke.
+- **Samme tegning to steder:** Fangarr sender `nyhed-vis.js` med til guiden. Forhåndsvisningen i Fangarr bruger den samme fil, så det, du ser, er præcis det, kunderne ser. Ændres udseendet, er det nok at opdatere Fangarr.
+- **Skabeloner:** Tilbud, Nyhed, Jul og Vigtig besked (farver + en eksempeltekst, der kun skiftes, hvis du ikke har skrevet din egen). **Illustrationer:** billet med din egen tekst, gave, julekalender, ny række, Seerr-ønske, danske tekster, download, film og vigtig besked – tegnet af Fangarr i skabelonens farver. Upload af egne billeder findes ikke endnu.
+- **Kortet:** mærkat, overskrift, kort tekst, illustration, nedtælling til slutdatoen (valgfri), kryds til at lukke (huskes på enheden), "Gælder til …" ved Tilbud. Flere aktive nyheder: kunden bladrer med pile, prikker eller ved at stryge.
+- **Knappen:** åbner nyhedens pop-up · fører til et afsnit i guiden (siden glider derned, og afsnittet lyser kort op) · ingen knap. Listen over afsnit sender guiden selv med (`<section id>` + overskriften). Forsvinder et afsnit fra guiden, står der en advarsel i nyhedslisten.
+- **Pop-up'en:** overskrift, pris med tekst under, indledning, op til 8 trin (med valgfri illustration), "Læs også"-link til et afsnit, knappen nederst (lukker) og **Skriv til os på Messenger/Telegram**. Kontaktknapperne vises kun, når der står links under Guide › Nyheder › Indstillinger. Telefon: glider op nedefra (luk med kryds, knappen, ved at trække ned eller med telefonens tilbage-knap). Computer: vindue i midten (også Escape).
+- **Hvornår:** "Vises fra" og "Vises til" (dansk tid). Guiden viser selv nyheden fra start til slut, også hvis Fangarr er nede. **Kun for nye brugere:** de første 14 dage (kan rettes) efter kunden accepterede reglerne i guiden.
+- **Status i listen:** Kladde · Planlagt · Aktiv · Udløbet. **Udgiv** kræver overskrift, knaptekst, afsnit (hvis knappen fører til et), startdato, slutdato ved nedtælling og indhold i pop-up'en. **Skjul for kunderne** gør nyheden til en kladde igen. Rækkefølgen (pilene) er den rækkefølge, kunderne bladrer i.
+- **Set og tryk:** guidens tæller gemmer hændelsen `news` (set i 1 sek., tryk på knappen, pop-up åbnet, Skriv til os, lukket) med Plex-id – samme filer og regler som fanen Guide (ingen IP-adresser, slettes efter 90 dage, din egen konto tælles ikke). Listen viser antal forskellige brugere. Kræver `/guide-stat` som fanen Besøg.
+- **Sikkerhed:** adressen `/api/nyheder/guide` svarer kun med udgivne nyheder og ingen kundedata. Udefra ligger den bag Authelia som resten af Fangarr. Tekster escapes altid; der kan ikke skrives HTML i nyhederne. Kontaktlinks skal begynde med `https://`.
 
 ## Seerr-ønsker: pakker, enkeltkøb og hvem der må ønske (1.23.0)
 Ingen gratis ønsker i Seerr fra 21. nov. 2026: kun kunder med en **pakke** eller **købte ønsker** – og **familie** (type Egen på kundekortet) – må ønske. Fangarr styrer det selv ud fra Kunder. Koden ligger i `app/oensker.py`, data i tabellerne `s_*` i `data/fangarr.db`. Kræver `SEERR_URL`/`SEERR_APIKEY` (de samme som Seerr-tjekket) – ingen nye linjer i `fangarr.env`.
@@ -218,7 +232,7 @@ Til en widget på telefonens hjemmeskærm (KWGT). Svarer med en flad liste: `.ap
 - Nøglen må aldrig stå i chatten eller dokumentationen. Den ligger kun i `fangarr.env` og i widgetten.
 
 ## Filer
-- `app/main.py` – server (FastAPI) · `app/apps.py` – Apps og widget · `app/hentegraense.py` – afviste afsnit søges igen · `app/kunder.py` – Kunder og betalinger · `app/oensker.py` – Seerr-ønsker · `app/static/index.html` – interface · `app/VERSION`
+- `app/main.py` – server (FastAPI) · `app/apps.py` – Apps og widget · `app/hentegraense.py` – afviste afsnit søges igen · `app/kunder.py` – Kunder og betalinger · `app/oensker.py` – Seerr-ønsker · `app/nyheder.py` + `app/static/nyhed-vis.js` – Nyheder i guiden · `app/static/index.html` – interface · `app/VERSION`
 - `fangarr.env.eksempel` – skabelon til `fangarr.env` (API-nøgler). `chmod 600`. **Kommer aldrig i git.**
 - Data: `/opt/fangarr/data/fangarr.db`. Natlige eksportfiler: `/opt/fangarr/data/backup/`.
 - `docker-compose.yml` laves af Saltbox og ligger kun på serveren.

@@ -41,7 +41,7 @@ def _read_day(path):
                     r = json.loads(line)
                 except ValueError:
                     continue
-                if isinstance(r, dict) and r.get("t") and r.get("uid") and r.get("e") in ("login", "visit", "section", "search"):
+                if isinstance(r, dict) and r.get("t") and r.get("uid") and r.get("e") in ("login", "visit", "section", "search", "news"):
                     out.append(r)
     except OSError:
         pass
@@ -154,6 +154,8 @@ def summary(days=30):
             t = sec_tot.setdefault(key, {"id": key, "title": title, "views": 0, "users": set(), "last": r["t"]})
             t.update(views=t["views"] + 1, last=r["t"], title=title)
             t["users"].add(uid)
+        elif r["e"] == "news":   # nyheder (1.24.0) – tælles under Guide › Nyheder
+            continue
         elif r["e"] == "search" and r.get("q"):
             u["searches"].append({"q": str(r["q"]), "t": r["t"]})
 

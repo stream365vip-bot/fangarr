@@ -19,12 +19,12 @@ En lille app, der viser en statisk side (nyhedsbrevet på `nyt.stream365.vip`), 
 - `/opt/nyt/data/` – `secret` (underskriver cookies) og `client_id` (appens id hos Plex). Monteres som `/config`.
 
 ## Indstillinger (miljøvariabler, alle valgfri)
-`PUBLIC_URL` (standard `https://nyt.stream365.vip`), `PLEX_URL` (`https://plex.stream365.vip`), `PLEX_MACHINE_ID` (hvis serverens id ikke skal hentes automatisk), `SESSION_DAYS` (90), `CONTACT_TEXT`, `UPTIME_URL`, `UPTIME_SLUG` (kunder), `STATUS_LINKS` (se Driftstatus), `STAT` (1; 0 slår tælleren fra), `STAT_EXCLUDE` (Stream365), `STAT_DAYS` (90), `STAT_DIR` (se Tæller).
+`PUBLIC_URL` (standard `https://nyt.stream365.vip`), `PLEX_URL` (`https://plex.stream365.vip`), `PLEX_MACHINE_ID` (hvis serverens id ikke skal hentes automatisk), `SESSION_DAYS` (90), `CONTACT_TEXT`, `UPTIME_URL`, `UPTIME_SLUG` (kunder), `STATUS_LINKS` (se Driftstatus), `STAT` (1; 0 slår tælleren fra), `STAT_EXCLUDE` (Stream365), `STAT_DAYS` (90), `STAT_DIR` (se Tæller), `NEWS` (1; 0 slår nyhederne fra), `NEWS_URL` (`http://fangarr:8080/api/nyheder/guide`).
 
 ## Opdatering
 - Ny udgave af siden: læg filerne i `/opt/nyt/site/` – ingen genstart.
 - Ny udgave af appen: `cd /opt/fangarr && git pull` og derefter `cd /opt/nyt && docker compose up -d --build`.
-- Kontrol: `docker exec nyt python -c "import urllib.request as u;print(u.urlopen('http://127.0.0.1:8080/health').read().decode())"` → `"ok":true,"site":true,"server_id":true`.
+- Kontrol: `docker exec nyt python -c "import urllib.request as u;print(u.urlopen('http://127.0.0.1:8080/health').read().decode())"` → `"ok":true,"site":true,"server_id":true` (og `"news":true`, når nyhederne er hentet hos Fangarr).
 
 ## Regler ved første login (fra 12. nov. 2026)
 - Ligger filen `/opt/nyt/site/_regler.json` der, møder en bruger reglerne og tre spørgsmål, **første gang** de logger ind. Guiden (og billederne) vises først, når alle tre svar er rigtige. Forkerte svar markeres med rødt, uden at det rigtige svar afsløres.
@@ -63,3 +63,11 @@ Guidens søgefelt lå kun inde i menuen, så det var gemt væk på telefon og sm
 - Kør (feeder): `python3 /opt/fangarr/nyt-login/soeg-i-toppen.py /opt/nyt/site/index.html` – ingen genstart. Scriptet tilføjer kun en blok før `</body>` og gemmer først en kopi som `/opt/nyt/index.html.før-soeg-<dato>`.
 - Fortryd: samme kommando med `--fjern` til sidst.
 - **Skal køres igen, hver gang en ny udgave af guiden er pakket ud i `/opt/nyt/site/`** – indtil ændringen er kommet med i guidens byggescript.
+
+## Nyheder øverst i guiden (fra 21. nov. 2026)
+Skrives i **Fangarr › Guide › Nyheder** (se Fangarrs LÆSMIG › Nyheder i guiden). Appen her viser dem bare.
+- Hvert 30. sekund spørger appen Fangarr inde i Docker-netværket (`NEWS_URL`, standard `http://fangarr:8080/api/nyheder/guide`) og sender guidens afsnit med (`<section id>` + første overskrift i afsnittet, læst fra `/site/index.html`). Svaret – nyhederne, kontaktlinks og tegningen (JavaScript) – gemmes i `/opt/nyt/data/nyheder.json`, så nyhederne vises, også mens Fangarr genstarter.
+- Alle HTML-sider får `<script src="/api/nyheder.js">` før `</body>` (ligesom driftlinjen). Scriptet henter `/api/nyheder` og sætter kortet ind under toppen og over guidens overskrift (`h1`), i sin egen skygge (shadow DOM). Pop-up'en lægges oven på siden. Ingen aktive nyheder = intet kort.
+- Kun for brugere, der er logget ind og har accepteret reglerne (401 ellers). Appen vælger selv, hvem der ser hvad: nyhedens periode og "kun for nye brugere" (ud fra datoen i `accepteret.json`). Lukkede nyheder huskes i browseren (`localStorage`).
+- Tælleren får hændelsen `news` med nyhedens id og `a` = `seen`, `click`, `popup`, `contact` eller `close`.
+- Svarer Fangarr ikke, står der én linje i loggen ("Nyhederne kunne ikke hentes hos Fangarr …") og "Nyhederne hentes igen hos Fangarr", når det virker igen. Slå nyhederne fra: `NEWS: "0"` under `environment:` i `/opt/nyt/docker-compose.yml` og `cd /opt/nyt && docker compose up -d`.
