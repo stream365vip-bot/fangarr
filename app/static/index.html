@@ -807,6 +807,9 @@
       <h2 style="margin-top:22px">Seerr</h2>
       <label class="check"><input type="checkbox" id="s_seerr_check"> Spring titler over, som er afvist eller venter på godkendelse i Seerr</label>
       <div class="small" id="seerrInfo"></div>
+      <h2 style="margin-top:22px">Hentegrænse hos trackeren</h2>
+      <div class="small">Henter sonarr2 mange enkeltafsnit på én gang (fx når en bruger ønsker flere sæsoner i Seerr), kan trackeren afvise resten ("API Grab Limit reached"). sonarr2 prøver ikke selv igen. Fangarr læser sonarr2's log hvert 2. minut, sender én besked til Telegram og beder sonarr2 søge de afviste afsnit igen i små portioner. Du får besked, når alle er hjemme – eller hvis nogle stadig mangler, så du selv kan søge dem. Kun overvågede afsnit uden fil. Tallene kan ændres i fangarr.env (GRAB_RETRY_BATCH, GRAB_RETRY_MINUTES, GRAB_RETRY_HOURS).</div>
+      <div id="grabInfo" class="small" style="margin-top:8px"></div>
       </div>
       <div data-p="eksport">
       <h2>Natlig eksport</h2>
@@ -968,6 +971,26 @@ function toast(msg, bad) {
   const t = $("toast"); t.textContent = msg; t.style.color = bad ? "var(--bad)" : "var(--text)";
   t.style.display = "block"; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 3500);
 }
+// Hentegrænse (1.22.0): hvad Fangarr søger igen lige nu, og hvad der er sket de sidste 30 dage
+async function loadGrab() {
+  const el = $("grabInfo");
+  if (!el) return;
+  try {
+    const d = await api("/api/hentegraense");
+    if (!d.enabled) { el.textContent = "Slået fra (GRAB_RETRY=false i fangarr.env, eller sonarr2 er ikke forbundet)."; return; }
+    const group = rows => { const g = {}; rows.forEach(r => (g[r.series] = g[r.series] || []).push(r)); return g; };
+    const word = {hentet: "hentet", opgivet: "opgivet – søg selv", droppet: "ikke længere overvåget"};
+    const w = group(d.waiting), r = group(d.recent);
+    let h = `<b>Slået til:</b> ${d.batch} afsnit hvert ${d.minutes}. minut, giver op efter ${d.hours} timer.`;
+    h += Object.keys(w).length
+      ? "<br><b>Søges igen lige nu:</b><br>" + Object.entries(w).map(([t, x]) => `${esc(t)}: ${x.map(e => esc(e.label)).join(", ")}`).join("<br>")
+      : "<br>Intet venter lige nu.";
+    if (Object.keys(r).length) h += "<br><b>Seneste 30 dage:</b><br>" + Object.entries(r).map(([t, x]) =>
+      `${esc(t)}: ${x.map(e => esc(e.label) + " (" + (word[e.status] || esc(e.status)) + ")").join(", ")}`).join("<br>");
+    el.innerHTML = h;
+  } catch (e) { el.textContent = "Kunne ikke hente status for hentegrænsen."; }
+}
+
 async function api(path, opts = {}) {
   const r = await fetch(path, {headers: {"Content-Type": "application/json"}, ...opts});
   let data = null; try { data = await r.json(); } catch (e) {}
@@ -1145,6 +1168,7 @@ function renderSettings() {
   $("s_seerr_check").checked = !!s.seerr_check;
   $("s_rescue_grab").checked = !!s.rescue_grab;
   $("seerrInfo").textContent = S.features.seerr ? "Seerr er forbundet." : "Seerr er ikke forbundet – tilføj SEERR_URL og SEERR_APIKEY i fangarr.env for at bruge det.";
+  loadGrab();
   $("version").textContent = "Fangarr " + S.features.version;
   $("dryWarn").innerHTML = s.dry_run ? "" :
     '<div class="warn">Prøvetilstand er slået fra – titler bliver tilføjet til Sonarr/Radarr for alvor.</div>';

@@ -27,6 +27,18 @@ Sikringer: prøvetilstand, loft pr. døgn, pladsgrænse, kun præcise titelmatch
 - **Seerr-ønsker** (hvert 2. minut): ønsker på en serie, der allerede findes i sonarr2, får mærket `seerr-straks`, og Fangarr søger efter de ønskede sæsoner, så første download kommer uden ventetid. Serier med `seerr-straks` mister mærket, når første afsnit efter mærket er kommet hjem. Kræver at `seerr-straks` står i delay-profilen uden ventetid i sonarr2, og at Seerr giver nye serier mærket `seerr-straks`.
 - Alt logges i Fangarrs log (`oversæt nu`, `ingen ventetid`, `seerr uden ventetid`, `seerr-straks fjernet`).
 
+## Hentegrænse: afviste afsnit søges igen (1.22.0)
+Superbits afviser hentninger, når der hentes mange torrents på kort tid. Det sker, når sonarr2 henter mange enkeltafsnit på én gang – fx når en bruger ønsker flere sæsoner i Seerr (Hell's Kitchen 20. nov. 2026: fem afsnit gik igennem, resten blev afvist). sonarr2 skriver "API Grab Limit reached" og "Couldn't add release … to download queue" i sin log og prøver aldrig igen, så afsnittene bliver stående som manglende.
+
+- **Hvert 2. minut** læser Fangarr sonarr2's log (advarsler og fejl), finder de afviste udgivelser og slår serie og afsnit op ud fra navnet. Kun afsnit, der er overvågede og mangler en fil, kommer med (tabellen `grab_retry`).
+- **Én besked pr. serie** til Telegram: hvilke afsnit der blev afvist, og at Fangarr søger dem igen.
+- **Ny søgning i portioner:** 3 afsnit hvert 10. minut (`EpisodeSearch` i sonarr2). Fangarr henter ikke selv noget – sonarr2's egne regler (profil, ventetid, point) gælder. Afsnit, der er kommet hjem, ligger i køen eller ikke længere er overvågede, røres ikke.
+- **"I orden igen"**, når alle afsnit er hjemme. Mangler nogle stadig efter 24 timer, giver Fangarr op og skriver, hvilke der skal søges i hånden.
+- Første gang læses loggen 48 timer tilbage, så afvisninger fra før opdateringen kommer med. Derefter kun nye linjer (`grab_seen` i `kv`).
+- Status og samme forklaring står under **Indstillinger › Hentegrænse hos trackeren**. Alt står også i Fangarrs log (`hentegrænse`).
+- Valgfrit i `fangarr.env`: `GRAB_RETRY=false` (slå fra), `GRAB_RETRY_BATCH`, `GRAB_RETRY_MINUTES`, `GRAB_RETRY_HOURS`, `GRAB_LOOKBACK_HOURS`. Kun sonarr2 – ikke Radarr.
+- Tilbage til 1.21.0: tabellen `grab_retry` gør ingen skade i den gamle version.
+
 ## Kontodeling (1.12.0 – 1.13.0)
 Fanen **Kontodeling** finder konti, hvor **to tv afspiller samtidig fra hver sin adresse** (kontoreglen), og viser, hvilke enheder der er kundens egne. Telefoner, tablets og computere tæller ikke som tv. Intet kører af sig selv, intet sendes til Telegram, og Fangarr blokerer ingen. Samme forklaring står i selve fanen under **Sådan læser du fanen**.
 
@@ -188,7 +200,7 @@ Til en widget på telefonens hjemmeskærm (KWGT). Svarer med en flad liste: `.ap
 - Nøglen må aldrig stå i chatten eller dokumentationen. Den ligger kun i `fangarr.env` og i widgetten.
 
 ## Filer
-- `app/main.py` – server (FastAPI) · `app/apps.py` – Apps og widget · `app/static/index.html` – interface · `app/VERSION`
+- `app/main.py` – server (FastAPI) · `app/apps.py` – Apps og widget · `app/hentegraense.py` – afviste afsnit søges igen · `app/static/index.html` – interface · `app/VERSION`
 - `fangarr.env.eksempel` – skabelon til `fangarr.env` (API-nøgler). `chmod 600`. **Kommer aldrig i git.**
 - Data: `/opt/fangarr/data/fangarr.db`. Natlige eksportfiler: `/opt/fangarr/data/backup/`.
 - `docker-compose.yml` laves af Saltbox og ligger kun på serveren.

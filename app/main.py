@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import apps
 from . import guide
+from . import hentegraense
 from . import kunder
 
 DATA_DIR = os.environ.get("DATA_DIR", "/config")
@@ -1321,6 +1322,7 @@ def background_loop():
             if time.time() - last_ss_check >= 120:
                 last_ss_check = time.time()
                 check_seerr_straks()
+                hentegraense.tick()   # trackeren afviste hentninger – søg afsnittene igen i små portioner (1.22.0)
             refresh_premieres_bg()
             kunder.tick()
         except Exception as e:  # baggrundsjobbet må aldrig stoppe appen
@@ -1428,6 +1430,7 @@ def filter_fields(media, opts):
 app = FastAPI(title="Fangarr", docs_url=None, redoc_url=None)
 app.include_router(kunder.router)   # Kunder og betalinger (1.16.0) – se app/kunder.py
 app.include_router(guide.router)    # Guide: besøg på guide.stream365.vip (1.18.0) – se app/guide.py
+app.include_router(hentegraense.router)   # Hentegrænse: søg afviste afsnit igen (1.22.0) – se app/hentegraense.py
 app.include_router(apps.router)     # Apps med lampe på forsiden og /widget/<nøgle> til telefonen (1.20.0) – se app/apps.py
 
 
@@ -2981,6 +2984,8 @@ kunder.setup(db=db, telegram=telegram, tautulli=tautulli, tautulli_enabled=tautu
              kv_get=kv_get, kv_set=kv_set, log=log)
 guide.setup(db=db, now=now, log=log)
 apps.setup(kv_get=kv_get, kv_set=kv_set, now=now, log=log)
+hentegraense.setup(arr=arr, sonarr=lambda: _arr_of("sonarr"), db=db, telegram=telegram, write_log=write_log,
+                   kv_get=kv_get, kv_set=kv_set, log=log)
 
 
 def device_kind(platform, product, player):
