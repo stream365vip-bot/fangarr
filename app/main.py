@@ -28,6 +28,7 @@ from . import guide
 from . import hentegraense
 from . import kunder
 from . import oensker
+from . import nyheder
 
 DATA_DIR = os.environ.get("DATA_DIR", "/config")
 DB_PATH = os.path.join(DATA_DIR, "fangarr.db")
@@ -1435,6 +1436,7 @@ app.include_router(guide.router)    # Guide: besøg på guide.stream365.vip (1.1
 app.include_router(hentegraense.router)   # Hentegrænse: søg afviste afsnit igen (1.22.0) – se app/hentegraense.py
 app.include_router(apps.router)     # Apps med lampe på forsiden og /widget/<nøgle> til telefonen (1.20.0) – se app/apps.py
 app.include_router(oensker.router)  # Seerr-ønsker: pakker, enkeltkøb og hvem der må ønske i Seerr (1.23.0) – se app/oensker.py
+app.include_router(nyheder.router)  # Nyheder i guiden: kortet øverst og nyhedens pop-up (1.24.0) – se app/nyheder.py
 
 
 @app.on_event("startup")
@@ -1442,6 +1444,7 @@ def startup():
     init_db()
     kunder.init()
     oensker.init()
+    nyheder.init()
     threading.Thread(target=background_loop, daemon=True).start()
     log.info("Fangarr startet. Instanser: %s", ", ".join(INSTANCES) or "ingen")
 
@@ -2987,6 +2990,7 @@ def tautulli(cmd, **params):
 kunder.setup(db=db, telegram=telegram, tautulli=tautulli, tautulli_enabled=tautulli_enabled, now=now,
              kv_get=kv_get, kv_set=kv_set, log=log, before_charge=oensker.before_charge)
 oensker.setup(db=db, telegram=telegram, now=now, kv_get=kv_get, kv_set=kv_set, log=log)
+nyheder.setup(db=db, now=now, kv_get=kv_get, kv_set=kv_set, log=log, stat_events=guide.events, stat_enabled=guide.enabled)
 guide.setup(db=db, now=now, log=log)
 apps.setup(kv_get=kv_get, kv_set=kv_set, now=now, log=log)
 hentegraense.setup(arr=arr, sonarr=lambda: _arr_of("sonarr"), db=db, telegram=telegram, write_log=write_log,

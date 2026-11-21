@@ -57,6 +57,11 @@ STAT_DAYS = int(os.environ.get("STAT_DAYS") or "90")           # ældre dage sle
 STAT_VISIT_GAP = 30 * 60                                        # pause på 30 min. = et nyt besøg
 # Konti, der ikke tælles med (Plex-brugernavn eller Plex-id, adskilt med komma) – fx din egen
 STAT_EXCLUDE = {x.strip().lower() for x in (os.environ.get("STAT_EXCLUDE") or "Stream365").split(",") if x.strip()}
+# Nyheder øverst i guiden (fra 21. nov. 2026). Hentes hos Fangarr inde i Docker-netværket – NEWS=0 slår dem fra.
+NEWS_ON = (os.environ.get("NEWS") or "1").strip() != "0"
+NEWS_URL = (os.environ.get("NEWS_URL") or "http://fangarr:8080/api/nyheder/guide").strip()
+NEWS_EVERY = 30                                                   # sekunder mellem hver hentning
+NEWS_FILE = os.path.join(DATA_DIR, "nyheder.json")                # seneste svar – så nyhederne vises, selv om Fangarr genstarter
 RULES_FILE = os.path.join(SITE_DIR, "_regler.json")      # regler + spørgsmål ved første login (ligger sammen med siden)
 ACCEPT_FILE = os.path.join(DATA_DIR, "accepteret.json")  # hvem har accepteret reglerne, og hvornår
 COOKIE, PIN_COOKIE = "s365_nyt", "s365_pin"
@@ -308,6 +313,8 @@ body:JSON.stringify({id:p.id,code:p.code})})}).then(function(r){if(!r.ok)throw 0
 @app.on_event("startup")
 def startup():
     stat_copy_accepted()
+    if NEWS_ON:
+        threading.Thread(target=news_loop, daemon=True, name="nyheder").start()
 
 
 @app.middleware("http")
@@ -322,7 +329,8 @@ async def old_hosts(req: Request, call_next):
 @app.get("/health")
 def health():
     return {"ok": True, "site": os.path.isfile(os.path.join(SITE_DIR, "index.html")), "server_id": bool(machine_id()),
-            "rules": bool(rules()), "status": (status_data()["ok"] if UPTIME_URL else None)}
+            "rules": bool(rules()), "status": (status_data()["ok"] if UPTIME_URL else None),
+            "news": (_news["ok"] if NEWS_ON else None)}
 
 
 @app.post("/regler")
@@ -603,6 +611,136 @@ def api_status_js(req: Request):
     return HTMLResponse(STATUS_JS, media_type="application/javascript", headers={"Cache-Control": "private, max-age=300"})
 
 
+# ---------------------------------------------------------------- nyheder (skrives i Fangarr › Guide › Nyheder)
+# Fangarr laver alt: teksterne, farverne, illustrationerne og selve tegningen (JavaScript). Appen her henter det hvert
+# 30. sekund, gemmer seneste svar i NEWS_FILE og viser det kun for kunder, der er logget ind og har accepteret reglerne.
+# Fangarr får guidens afsnit (<section id> + overskrift) med, så knappen kan føre til et afsnit. Ingen kundedata sendes.
+_news_lock = threading.Lock()
+_news = {"data": None, "ok": False, "fails": 0, "sections": None, "site_mtime": None}
+
+
+def site_sections():
+    """Guidens afsnit: [{"id": …, "title": …}] fra <section id="…"> og den første overskrift i afsnittet."""
+    path = os.path.join(SITE_DIR, "index.html")
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return []
+    if _news["sections"] is not None and _news["site_mtime"] == mtime:
+        return _news["sections"]
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            doc = f.read()
+    except OSError:
+        return []
+    out, seen = [], set()
+    for m in re.finditer(r"<section\b[^>]*\bid=[\"']([\w\-:.]{1,80})[\"'][^>]*>(.*?)(?=<section\b|</main>|</body>|$)", doc, flags=re.S | re.I):
+        sid = m.group(1)
+        if sid in seen:
+            continue
+        seen.add(sid)
+        h = re.search(r"<h[1-4]\b[^>]*>(.*?)</h[1-4]>", m.group(2), flags=re.S | re.I)
+        title = html.unescape(re.sub(r"<[^>]+>", " ", h.group(1))) if h else sid
+        out.append({"id": sid, "title": _clean_text(title, 80) or sid})
+        if len(out) >= 80:
+            break
+    _news.update(sections=out, site_mtime=mtime)
+    return out
+
+
+def news_fetch():
+    try:
+        r = httpx.post(NEWS_URL, json={"sections": site_sections()}, timeout=6)
+        r.raise_for_status()
+        data = r.json()
+        if not isinstance(data, dict) or not isinstance(data.get("news"), list):
+            raise ValueError("uventet svar")
+    except Exception as e:
+        with _news_lock:
+            _news["fails"] += 1
+            first = _news["fails"] == 1
+            _news["ok"] = False
+        if first:
+            log.warning("Nyhederne kunne ikke hentes hos Fangarr (%s) – viser de senest hentede", e.__class__.__name__)
+        return
+    with _news_lock:
+        if _news["fails"]:
+            log.info("Nyhederne hentes igen hos Fangarr")
+        changed = data.get("news") != (_news["data"] or {}).get("news") or data.get("js_v") != (_news["data"] or {}).get("js_v") \
+            or data.get("contact") != (_news["data"] or {}).get("contact")
+        _news.update(data=data, ok=True, fails=0)
+    if changed:
+        try:
+            tmp = NEWS_FILE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+            os.replace(tmp, NEWS_FILE)
+        except OSError as e:
+            log.warning("Nyhederne kunne ikke gemmes (%s)", e.__class__.__name__)
+
+
+def news_loop():
+    try:
+        with open(NEWS_FILE, encoding="utf-8") as f:
+            d = json.load(f)
+        if isinstance(d, dict):
+            _news["data"] = d
+    except (OSError, ValueError):
+        pass
+    while True:
+        news_fetch()
+        time.sleep(NEWS_EVERY)
+
+
+def news_for(uid):
+    """De nyheder, denne kunde skal se lige nu (periode og "kun for nye brugere")."""
+    d = _news["data"] or {}
+    now = time.time()
+    acc = None
+    out = []
+    for n in d.get("news") or []:
+        if not isinstance(n, dict):
+            continue
+        if n.get("start_ts") and n["start_ts"] > now:
+            continue
+        if n.get("end_ts") and n["end_ts"] <= now:
+            continue
+        if n.get("only_new"):
+            if acc is None:
+                with _accept_lock:
+                    acc = (_accepted_all().get(str(uid)) or {}).get("at") or ""
+            try:
+                days = (datetime.datetime.now() - datetime.datetime.fromisoformat(acc)).days if acc else 10 ** 6
+            except ValueError:
+                days = 10 ** 6
+            if days >= int(d.get("new_days") or 14):
+                continue
+        out.append(n)
+    return out
+
+
+def news_allowed(req: Request):
+    s = session(req)
+    return s if NEWS_ON and s is not None and has_accepted(s[0]) else None
+
+
+@app.get("/api/nyheder")
+def api_news(req: Request):
+    s = news_allowed(req)
+    if not s:
+        return JSONResponse({"detail": "log ind først"}, status_code=401)
+    return JSONResponse({"news": news_for(s[0]), "contact": (_news["data"] or {}).get("contact")}, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/nyheder.js")
+def api_news_js(req: Request):
+    if not news_allowed(req):
+        return HTMLResponse("", status_code=401, media_type="application/javascript")
+    js = (_news["data"] or {}).get("js") or ""
+    body = (js + "\n;window.S365News&&window.S365News.guide();") if js else ""
+    return HTMLResponse(body, media_type="application/javascript", headers={"Cache-Control": "private, no-cache"})
+
+
 # ---------------------------------------------------------------- tæller (læses af Fangarr, fanen Guide)
 # Én fil pr. dag i STAT_DIR (fx 2026-11-15.jsonl), én linje pr. hændelse: login, besøg, afsnit, søgning.
 # Der gemmes Plex-id, brugernavn og tidspunkt – ingen IP-adresser. Filer ældre end STAT_DAYS dage slettes.
@@ -740,6 +878,8 @@ async def api_stat(req: Request):
     for e in events:
         if e.get("e") == "section" and re.fullmatch(r"[\w\-:.]{1,80}", str(e.get("id") or "")):
             stat_log(s[0], s[1], "section", id=str(e["id"]), title=_clean_text(e.get("title"), 80))
+        elif e.get("e") == "news" and str(e.get("id") or "").isdigit() and e.get("a") in ("seen", "click", "popup", "contact", "close"):
+            stat_log(s[0], s[1], "news", id=int(e["id"]), a=e["a"])
         elif e.get("e") == "search":
             term = _clean_text(e.get("q"), 60).lower()
             if len(term) >= 3:
@@ -791,6 +931,7 @@ def site(path: str, req: Request):
     if is_html:
         stat_visit(s[0], s[1])
     tags = ('<script src="/api/status.js" defer></script>' if UPTIME_URL else "") + \
+           ('<script src="/api/nyheder.js" defer></script>' if NEWS_ON else "") + \
            ('<script src="/api/stat.js" defer></script>' if not stat_excluded(s[0], s[1]) else "")
     if is_html and tags:
         with open(full, encoding="utf-8", errors="replace") as f:
