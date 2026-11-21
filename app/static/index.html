@@ -301,6 +301,7 @@
     <div class="grp">Kunder</div>
     <button class="nv" data-tab="pay"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v11H3zM3 11h18M7 15h3"/></svg><span class="t">Opkrævning</span><span class="bdg" data-bdg="pay"></span></button>
     <button class="nv" data-tab="cust"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20a8 8 0 0 1 16 0"/></svg><span class="t">Kunder</span><span class="bdg" data-bdg="cust"></span></button>
+    <button class="nv" data-tab="oensker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4zM14 6v12"/></svg><span class="t">Seerr-ønsker</span><span class="bdg" data-bdg="oensker"></span></button>
     <button class="nv" data-tab="iptv"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18v11H3zM8 21h8M12 17v4"/></svg><span class="t">IPTV-linjer</span><span class="bdg" data-bdg="iptv"></span></button>
     <button class="nv" data-tab="eco"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16l4-5 3 3 5-7"/></svg><span class="t">Økonomi</span></button>
     <button class="nv" data-tab="share"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a3 3 0 0 0 0-6M21 20a6 6 0 0 0-3-5"/></svg><span class="t">Kontodeling</span><span class="bdg" data-bdg="share"></span></button>
@@ -586,6 +587,41 @@
         <div class="row" style="margin:14px 0 0"><button class="b pri" onclick="kSaveSettings()">Gem</button><a class="b" href="/api/kunder/export.csv">Hent kundelisten som CSV (uden koder)</a></div>
       </div>
     </div>
+  </section>
+
+  <section id="oensker">
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">Seerr-ønsker</h2>
+      <div class="btns"><button class="b" id="oeSyncBtn" onclick="oeSync()">Gennemgå Seerr nu</button></div></div>
+    <p class="hint">Fangarr bestemmer, hvem der må ønske i Seerr: kunder med en <b>pakke</b> eller <b>købte ønsker</b> – og <b>familie</b> (type Egen på kundekortet), som kan ønske ubegrænset og gratis. Alle andre kan ikke ønske. Pakker og enkeltkøb vælger du på kundekortet under <b>Seerr-ønsker</b>, og beløbet lægges selv på kundens næste betaling. Fangarr gennemgår Seerr hvert 5. minut og lige efter en ændring. Admin og konti under <b>Rør ikke</b> røres aldrig.</p>
+    <div id="oeHead"><div class="empty">Henter …</div></div>
+    <div id="oeWarn"></div>
+    <h3 style="margin:18px 0 8px" id="oePlanTitle">Ændringer i Seerr</h3>
+    <div id="oePlan"></div>
+    <h3 style="margin:18px 0 8px">Kan ønske nu</h3>
+    <div class="card" style="padding:0; overflow-x:auto"><table>
+      <thead><tr><th>Seerr-bruger</th><th>Kan ønske</th><th class="hs">Grundlag</th><th class="hs">Brugt (30 dage)</th></tr></thead>
+      <tbody id="oeCan"></tbody></table></div>
+    <h3 style="margin:18px 0 8px">Pakker og købte ønsker</h3>
+    <div class="card" style="padding:0; overflow-x:auto"><table>
+      <thead><tr><th>Kunde</th><th>Plex-konto</th><th>Pakke</th><th class="hs">Købte ønsker tilbage</th></tr></thead>
+      <tbody id="oeAcc"></tbody></table></div>
+    <h3 style="margin:18px 0 8px">Familie – ubegrænset</h3>
+    <div id="oeFam"></div>
+    <details class="card" style="margin-top:18px"><summary><b>Indstillinger</b> <span class="small">(tryk for at folde ud)</span></summary>
+      <div class="grid" style="margin-top:12px">
+        <div class="field"><label for="oe_untouchable">Rør ikke (Seerr-bruger-id'er)</label><input type="text" id="oe_untouchable" placeholder="fx 30,76" autocomplete="off">
+          <div class="small">Dine egne konti og andre, Fangarr aldrig må ændre. Id'et står i adressen, når du åbner brugeren i Seerr (…/users/<b>30</b>). Admin røres aldrig.</div></div>
+        <div class="field"><label for="oe_price_film">Enkeltkøb – pris pr. film (kr.)</label><input type="text" inputmode="decimal" id="oe_price_film"></div>
+        <div class="field"><label for="oe_price_tv">Enkeltkøb – pris pr. sæson (kr.)</label><input type="text" inputmode="decimal" id="oe_price_tv"></div>
+        <div class="field"><label for="oe_brake">Bremse: stop, hvis flere end så mange mister retten på én gang</label><input type="number" id="oe_brake" min="1"></div>
+      </div>
+      <h3 style="margin:16px 0 8px">Pakker (pr. 30 dage)</h3>
+      <div style="overflow-x:auto"><table><thead><tr><th>Pakke</th><th class="num">Film</th><th class="num">Sæsoner</th><th class="num">Pris pr. måned (kr.)</th></tr></thead><tbody id="oePkgs"></tbody></table></div>
+      <div class="small" style="margin-top:6px">En ændret pris gælder for nye pakker og skift. Kunder, der allerede har pakken, beholder prisen på kundekortet, indtil du retter den dér.</div>
+      <div class="row" style="margin:14px 0 0"><button class="b pri" onclick="oeSave()">Gem indstillinger</button></div>
+    </details>
+    <h3 style="margin:18px 0 8px">Seneste ændringer</h3>
+    <div class="card" style="padding:0; overflow-x:auto"><table><tbody id="oeLog"></tbody></table></div>
   </section>
 
   <section id="iptv">
@@ -1812,7 +1848,7 @@ const ICON = {
   home: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z", wait: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
   log: "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01", share: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a3 3 0 0 0 0-6M21 20a6 6 0 0 0-3-5"};
 const SUBDEF = {tr: "status", settings: "gen", setup: "test", cust: "liste"};
-const TAB_IDS = ["home", "wait", "log", "rules", "prem", "tr", "pay", "cust", "iptv", "eco", "share", "guide", "stats", "settings", "setup", "search"];
+const TAB_IDS = ["home", "wait", "log", "rules", "prem", "tr", "pay", "cust", "oensker", "iptv", "eco", "share", "guide", "stats", "settings", "setup", "search"];
 let TAB = "home", SUB = {...SUBDEF}, OV = null, CONN = null, APPS = null, VER = null, ADDED = null, logFirst = true;
 
 function showSub(tab) {
@@ -1840,6 +1876,7 @@ function go(tab, sub) {
   if (tab === "pay") loadPay();
   if (tab === "cust") { loadCust().then(renderKSet); if (SUB.cust === "logins") loadLogins(); }
   if (tab === "iptv") loadIptv();
+  if (tab === "oensker") loadOensker();
   if (tab === "eco") loadEco();
   if (tab === "tr") { loadTr(); loadTrStats(0); window._trTimer = setInterval(() => loadTr(), 60000); }
   if (tab === "settings") { loadBackups(); loadAliases(); loadIgnored(); loadAppsCfg(); }
@@ -1887,6 +1924,7 @@ async function loadHome() {
   try { OV = await api("/api/overview"); } catch (e) { return; }
   const t = OV.translator || {}, sh = (OV.sharing || {}).buckets || {};
   setBadge("wait", OV.suggestions, false); setBadge("tr", t.problems, true); setBadge("share", sh.bloker, true); setBadge("prem", OV.premieres_new, false);
+  setBadge("oensker", (OV.oensker || {}).problems, true);
   const kb = OV.kunder || {}; setBadge("pay", kb.overdue, true); setBadge("cust", kb.setup, false); setBadge("iptv", (kb.iptv_due || 0) + (kb.iptv_expired || 0), !!kb.iptv_expired);
   if ($("trProbN")) $("trProbN").textContent = t.problems ? ` (${t.problems})` : "";
   S.disk_pct = OV.disk_pct; S.today = OV.today; renderStatus();
@@ -1910,6 +1948,9 @@ function renderHome() {
   if (kb.unrequested) add(kb.unrequested, false, kb.unrequested === 1 ? "Kunde er ikke anmodet endnu" : "Kunder er ikke anmodet endnu", `Opkrævningen for ${kb.label} er klar. Kopiér beskeden, send den, og tryk Anmodet.`, "Åbn opkrævning", "KPF='ny';go('pay')");
   if (kb.iptv_due) add(kb.iptv_due, false, kb.iptv_due === 1 ? "IPTV-linje skal fornyes i denne måned" : "IPTV-linjer skal fornyes i denne måned", "Tryk Fornyet på linjen, når den er fornyet hos leverandøren.", "Se linjerne", "KIF='maaned';go('iptv')");
   if (kb.iptv_expired) add(kb.iptv_expired, true, kb.iptv_expired === 1 ? "IPTV-linje står som udløbet" : "IPTV-linjer står som udløbet", "Udløbsdatoen er overskredet. Forny linjen, eller ret datoen, hvis den allerede er fornyet.", "Se linjerne", "KIF='udloebet';go('iptv')");
+  const oe = OV.oensker || {};
+  if (oe.enabled && oe.problems) add(oe.problems, true, "Seerr-ønsker kræver et kig", oe.braked ? "Bremsen er slået til: for mange ville miste retten til at ønske på én gang. Intet er fjernet." : oe.error ? "Seerr svarer ikke, så Fangarr kan ikke styre, hvem der må ønske." : "Der er noget, Fangarr ikke kan afgøre selv – se listen øverst på siden.", "Åbn Seerr-ønsker", "go('oensker')");
+  if (oe.enabled && oe.mode === "prove" && oe.plan) add(oe.plan, false, oe.plan === 1 ? "Ændring i Seerr venter (prøvetilstand)" : "Ændringer i Seerr venter (prøvetilstand)", "Fangarr viser kun, hvad den ville ændre. Se listen igennem, og slå styringen til, når den ser rigtig ud.", "Se ændringerne", "go('oensker')");
   if (kb.setup) add(kb.setup, false, kb.setup === 1 ? "Kunde mangler opsætning" : "Kunder mangler opsætning", "Der mangler cyklus, betalingsmetode eller pris, så de bliver ikke opkrævet endnu.", "Åbn kunder", "KCF='opsaet';go('cust')");
   if (OV.premieres_new) add(OV.premieres_new, false, OV.premieres_new === 1 ? "Ny premiere" : "Nye premierer", "Kommende danske serier, du ikke har set på listen endnu.", "Se premierer", "go('prem')");
   if (VER && VER.update) add("↑", false, `Version ${esc(VER.latest)} er klar`, "Kør ./opdater.sh i /opt/fangarr på feeder. Fangarr er væk i få sekunder, og streaming påvirkes ikke.", "", "");
@@ -2077,7 +2118,7 @@ async function kNeed() { if (!K) await kState(); }
 
 // ---------- lille formular til at rette én ting (tjeneste, linje, fradrag, login)
 function kForm(title, fields, vals, onSave, saveText) {
-  $("edTitle").textContent = title; $("edErr").textContent = ""; $("edSave").textContent = saveText || "Gem";
+  $("edTitle").textContent = title; $("edErr").textContent = ""; $("edSave").textContent = saveText || "Gem"; $("edSave").disabled = false;
   $("edBody").innerHTML = fields.map(f => {
     const v = vals[f.k] ?? "", id = "ef_" + f.k, hint = f.hint ? `<div class="small">${f.hint}</div>` : "";
     if (f.type === "check") return `<div class="field" style="margin-bottom:12px"><label class="check"><input type="checkbox" id="${id}" ${v ? "checked" : ""}> ${esc(f.label)}</label>${hint}</div>`;
@@ -2379,6 +2420,8 @@ function renderCard() {
       <div class="amt">${kkr(s.price)}<span class="small"> /md.</span></div>
       <div class="btns">${s.has_password ? `<button class="b sm" onclick="kShow('service', ${s.id}, this)">Vis kode</button>` : ""}<button class="b sm" onclick="kSvcEdit(${s.id})">Ret</button></div></div>`).join("") : '<div class="small">Ingen tjenester endnu.</div>'}
 
+    <div id="kSeerr"></div>
+
     <div class="ksec"><h3>Fradrag og tillæg</h3><button class="b sm" onclick="kAdjAdd()">Tilføj</button></div>
     ${c.adjust.length ? c.adjust.map(a => `<div class="kitem" style="${a.remaining ? "" : "opacity:.55"}"><div class="who"><b>${esc(a.text || (a.amount < 0 ? "Fradrag" : "Tillæg"))}</b>
         <div class="small">${a.remaining ? `regnes med på ${a.remaining === 1 ? "næste opkrævning" : "de næste " + a.remaining + " opkrævninger"}` : "er brugt"}</div></div>
@@ -2394,6 +2437,7 @@ function renderCard() {
     ${c.charges.length ? `<table><tbody>${c.charges.map(h => `<tr><td>${K_MONTH[Number(h.period.slice(5, 7)) - 1]} ${h.period.slice(0, 4)}</td><td class="num">${kkr(h.amount)}</td>
       <td><span class="pill ${h.late ? "bad" : K_ST[h.status][1]}">${h.late ? "Mangler betaling" : K_ST[h.status][0]}</span></td><td class="small hs">${h.paid_at ? "betalt " + kDay(h.paid_at) : h.requested_at ? "anmodet " + kDay(h.requested_at) : ""}</td></tr>`).join("")}</tbody></table>` : '<div class="small">Ingen opkrævninger endnu.</div>'}`;
   $("kdFoot").innerHTML = `<button class="b danger" onclick="kDelete()">Slet</button><button class="b" onclick="kMerge()">Flet ind i anden kunde</button><button class="b pri" onclick="kSaveCard()">Gem</button>`;
+  kSeerrLoad(c.id);
 }
 function kCardVals() { const o = {}; ["name", "status", "kind", "method", "revolut", "freq", "cycle", "due_day", "phone", "email", "contact", "tg", "fb", "notes"].forEach(k => o[k] = $("kc_" + k).value.trim()); return o; }
 async function kSaveCard(quiet) {
@@ -2438,6 +2482,143 @@ function kAdjAdd() {
     async v => { KCUR = await api("/api/kunder/adjust", {method: "POST", body: JSON.stringify({...v, customer_id: KCUR.id})}); renderCard(); });
 }
 async function kAdjDel(id) { try { KCUR = await api("/api/kunder/adjust/" + id, {method: "DELETE"}); renderCard(); } catch (e) { toast(e.message, true); } }
+
+// ---------- Seerr-ønsker på kundekortet (1.23.0)
+let KSE = null;
+const ksUnits = (f, t) => [f ? `${f} film` : "", t ? `${t} ${t === 1 ? "sæson" : "sæsoner"}` : ""].filter(Boolean).join(" og ");
+async function kSeerrLoad(cid) {
+  const box = $("kSeerr"); if (!box) return;
+  if (!(S && S.features && S.features.oensker)) { box.innerHTML = ""; return; }
+  box.innerHTML = '<div class="ksec"><h3>Seerr-ønsker</h3></div><div class="small">Henter …</div>';
+  try { const r = await api("/api/oensker/customer/" + cid); if (!KCUR || KCUR.id !== cid) return; KSE = r; }
+  catch (e) { box.innerHTML = `<div class="ksec"><h3>Seerr-ønsker</h3></div><div class="small">${esc(e.message)}</div>`; return; }
+  kSeerrRender();
+}
+function kSeerrRender() {
+  const box = $("kSeerr"); if (!box || !KSE || !KCUR || KSE.customer_id !== KCUR.id) return;
+  const fam = KSE.kind === "egen";
+  let h = `<div class="ksec"><h3>Seerr-ønsker${KSE.next && !fam ? ` <span class="small">· næste betaling ${esc(KSE.next.text)}</span>` : ""}</h3></div>`;
+  if (KSE.mode !== "til") h += `<div class="small" style="margin:0 0 8px;color:var(--info)">${KSE.mode === "prove" ? "Prøvetilstand: Fangarr ændrer endnu ikke noget i Seerr. Se Kunder › Seerr-ønsker." : "Styringen af Seerr er slået fra under Kunder › Seerr-ønsker."}</div>`;
+  if (!KSE.accounts.length) { box.innerHTML = h + '<div class="small">Kunden har ingen Plex-konto, der er koblet til en Plex-bruger. Koble kontoen under Tjenester, så kan Fangarr styre ønskerne i Seerr.</div>'; return; }
+  if (fam) h += '<div class="small" style="margin:0 0 8px">Familie (type Egen): kan ønske ubegrænset i Seerr og opkræves ikke.</div>';
+  else if (!KSE.next) h += '<div class="small" style="margin:0 0 8px;color:var(--warn)">Kunden har ingen næste betaling (tjek status og cyklus), så der kan ikke vælges pakke eller købes ønsker.</div>';
+  h += KSE.accounts.map(a => {
+    const p = a.package, cr = a.credits, left = ksUnits(cr.film.unused, cr.tv.unused);
+    const nowTxt = a.seerr ? esc(a.seerr.limits) : a.in_seerr === false ? '<span style="color:var(--warn)">findes ikke i Seerr (har ikke logget ind i Seerr endnu)</span>' : "kan ikke ønske";
+    const use = a.usage ? ` · brugt de sidste 30 dage: ${ksUnits(a.usage.film, a.usage.tv) || "intet"}` : "";
+    const pend = a.pending ? `<div class="small" style="color:var(--info)">${a.pending.to ? "Skifter til " + esc(a.pending.name) : "Pakken stopper"} fra ${kDay(a.pending.date)}</div>` : "";
+    const buys = a.buys.length ? `<div class="small">Køb: ${a.buys.slice(0, 5).map(b => `${kDay(b.created)} ${ksUnits(b.film, b.tv)} (${kkr(b.amount)}) <a href="#" onclick="kSeerrUndo(${b.id});return false">fortryd</a>`).join(" · ")}</div>` : "";
+    return `<div class="kitem"><div class="who"><b>${esc(a.name)}</b>${p ? ` · ${esc(p.name)} <span class="small">(${ksUnits(p.film, p.tv)} pr. 30 dage)</span>` : fam ? "" : ' · <span class="small">ingen pakke</span>'}
+        <div class="small">I Seerr nu: ${nowTxt}${use}</div>${pend}${left ? `<div class="small">Købte ønsker tilbage: ${left}</div>` : ""}${buys}</div>
+      ${p ? `<div class="amt">${kkr(p.price)}<span class="small"> /md.</span></div>` : ""}
+      ${fam || !KSE.next ? "" : `<div class="btns"><button class="b sm" onclick="kSeerrPkg(${a.plex_user_id})">${p ? "Skift pakke" : "Vælg pakke"}</button><button class="b sm" onclick="kSeerrBuy(${a.plex_user_id})">Køb ønsker</button></div>`}</div>`;
+  }).join("");
+  box.innerHTML = h;
+}
+function kSeerrDlg(title, body, saveText, onSave, quoteFn) {
+  $("edTitle").textContent = title; $("edErr").textContent = ""; $("edSave").textContent = saveText; $("edSave").disabled = true;
+  $("edBody").innerHTML = body + '<div class="card" id="ksq" style="margin:12px 0 0"><div class="small">Beregner …</div></div>';
+  let t = null, n = 0;
+  const refresh = async () => {
+    const me = ++n;
+    try {
+      const q = await quoteFn(); if (me !== n) return;
+      $("ksq").innerHTML = q.lines.map(l => `<div style="margin:2px 0">${esc(l)}</div>`).join("") + `<div style="margin-top:8px"><b>Næste betaling ${esc(q.next_text)}: ${kkr(q.next_amount)}</b></div>`;
+      $("edErr").textContent = ""; $("edSave").disabled = q.kind === "samme";
+    } catch (e) { if (me !== n) return; $("ksq").innerHTML = `<div class="small">${esc(e.message)}</div>`; $("edSave").disabled = true; }
+  };
+  $("edBody").querySelectorAll("select,input").forEach(el => el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => { clearTimeout(t); $("edSave").disabled = true; t = setTimeout(refresh, 250); }));
+  $("edSave").onclick = async () => {
+    try { $("edSave").disabled = true; await onSave(); edlg.close(); }
+    catch (e) { $("edErr").textContent = e.message; $("edSave").disabled = false; }
+  };
+  edlg.showModal(); refresh();
+}
+async function kAfterSeerr() { try { KCUR = await api("/api/kunder/customers/" + KCUR.id); renderCard(); kAfter(); } catch (e) { toast(e.message, true); } }
+function kSeerrPkg(pid) {
+  const a = KSE.accounts.find(x => x.plex_user_id === pid), cur = a.package ? a.package.key : "";
+  const opts = [["", "Ingen pakke"], ...KSE.packages.map(p => [p.key, `${p.name} – ${ksUnits(p.film, p.tv)} pr. 30 dage – ${kkr(p.price)} pr. måned`])];
+  const note = a.pending ? `<div class="small" style="color:var(--info);margin-top:6px">Planlagt: ${a.pending.to ? "skifter til " + esc(a.pending.name) : "pakken stopper"} fra ${kDay(a.pending.date)}. Vælg ${esc(a.package ? a.package.name : "Ingen pakke")} for at fortryde.</div>` : "";
+  kSeerrDlg(`Pakke til ${a.name}`, `<div class="field"><label for="ksp">Pakke</label><select id="ksp">${opts.map(([v, l]) => `<option value="${v}" ${v === cur ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+      <div class="small">En ny eller større pakke virker med det samme – næste betaling får et tillæg for dagene indtil da. En mindre pakke eller stop gælder fra næste betaling.</div>${note}</div>`, "Gem",
+    async () => { const r = await api("/api/oensker/package", {method: "POST", body: JSON.stringify({customer_id: KCUR.id, plex_user_id: pid, package: $("ksp").value})}); toast(r.message); await kAfterSeerr(); },
+    () => api("/api/oensker/quote", {method: "POST", body: JSON.stringify({customer_id: KCUR.id, plex_user_id: pid, package: $("ksp").value})}));
+}
+function kSeerrBuy(pid) {
+  const a = KSE.accounts.find(x => x.plex_user_id === pid);
+  kSeerrDlg(`Køb ønsker til ${a.name}`, `<div class="grid">
+      <div class="field"><label for="ksf">Film (${kkr(KSE.price_film)} pr. stk.)</label><input type="number" id="ksf" min="0" max="999" value="1" inputmode="numeric"></div>
+      <div class="field"><label for="kst">Sæsoner (${kkr(KSE.price_tv)} pr. stk.)</label><input type="number" id="kst" min="0" max="999" value="0" inputmode="numeric"></div></div>
+      <div class="small">Købte ønsker kommer oveni en evt. pakke, virker med det samme og udløber aldrig. Beløbet lægges på næste betaling.</div>`, "Køb",
+    async () => { const r = await api("/api/oensker/buy", {method: "POST", body: JSON.stringify({customer_id: KCUR.id, plex_user_id: pid, film: $("ksf").value, tv: $("kst").value})}); toast(r.message); await kAfterSeerr(); },
+    () => api("/api/oensker/quote", {method: "POST", body: JSON.stringify({what: "buy", customer_id: KCUR.id, plex_user_id: pid, film: $("ksf").value, tv: $("kst").value})}));
+}
+async function kSeerrUndo(bid) {
+  if (!confirm("Fortryd købet?\n\nØnskerne fjernes, og beløbet tages af næste betaling. Det kan kun lade sig gøre, når ønskerne ikke er brugt, og beløbet ikke er anmodet.")) return;
+  try { const r = await api("/api/oensker/buy/" + bid, {method: "DELETE"}); toast(r.message); await kAfterSeerr(); } catch (e) { toast(e.message, true); }
+}
+
+// ---------- siden Seerr-ønsker (1.23.0)
+let OE = null;
+const OE_MODES = [["fra", "Fra", "Fangarr rører ikke Seerr."], ["prove", "Prøvetilstand", "Fangarr viser kun, hvad den ville ændre i Seerr."], ["til", "Til", "Fangarr retter Seerr for alvor."]];
+async function loadOensker() { try { OE = await api("/api/oensker/state"); } catch (e) { toast(e.message, true); return; } renderOensker(); }
+function renderOensker() {
+  const d = OE, st = d.state || {}, s = d.settings, mode = s.mode;
+  if (!d.enabled) {
+    $("oeHead").innerHTML = '<div class="warn">Seerr er ikke sat op. Tilføj SEERR_URL og SEERR_APIKEY i fangarr.env (se LÆSMIG).</div>';
+    ["oeWarn", "oePlan", "oeFam"].forEach(i => $(i).innerHTML = ""); $("oeCan").innerHTML = $("oeAcc").innerHTML = $("oeLog").innerHTML = ""; return;
+  }
+  $("oeHead").innerHTML = `<div class="card"><div class="row" style="justify-content:space-between;align-items:flex-start">
+      <div><b>Styring af Seerr</b><div class="small">${OE_MODES.find(m => m[0] === mode)[2]} ${st.at ? "Senest gennemgået " + fmt(st.at) + "." : "Ikke gennemgået endnu."}${mode === "til" && st.at ? ` ${st.applied || 0} ${st.applied === 1 ? "ændring" : "ændringer"} lavet ved seneste gennemgang.` : ""}</div></div>
+      <div class="pills" style="margin:0">${OE_MODES.map(([k, l]) => `<button class="${mode === k ? "on" : ""}" onclick="oeMode('${k}')">${l}</button>`).join("")}</div></div></div>`;
+  const w = [];
+  if (st.error) w.push(`<div class="warn"><b>Seerr svarer ikke.</b> ${esc(st.error)}</div>`);
+  if (st.braked) w.push('<div class="warn"><b>Bremsen er slået til.</b> For mange ville miste retten til at ønske på én gang, så Fangarr har ikke fjernet nogen. Tjek listen herunder. Er den rigtig, kan du hæve bremsen under Indstillinger.</div>');
+  (st.problems || []).forEach(x => w.push(`<div class="warn">${esc(x)}</div>`));
+  (st.unclear || []).forEach(x => w.push(`<div class="warn"><a href="#" onclick="kOpen(${x.customer_id});return false">${esc(x.name)}</a> har tjenesten Ekstra ønsker (${kkr(x.price)}/md.), men Fangarr kan ikke se, hvilken pakke og konto det er: ${esc(x.why)}. Vælg pakken på kundekortet under Seerr-ønsker, og slet den gamle tjeneste.</div>`));
+  (st.errors || []).forEach(x => w.push(`<div class="warn">${esc(x)}</div>`));
+  $("oeWarn").innerHTML = w.join("");
+  const plan = st.plan || [];
+  $("oePlanTitle").textContent = mode === "prove" ? `Det ville Fangarr ændre i Seerr (${plan.length})` : mode === "til" ? "Ændringer ved seneste gennemgang" : "Ændringer i Seerr";
+  $("oePlan").innerHTML = mode === "fra" ? '<div class="small">Styringen er slået fra.</div>' : plan.length ? `<div class="card" style="padding:0;overflow-x:auto"><table>
+      <thead><tr><th>Seerr-bruger</th><th>Nu</th><th>Bliver</th><th class="hs">Grundlag</th></tr></thead><tbody>${plan.map(x => `<tr>
+        <td><b>${x.customer_id ? `<a href="#" onclick="kOpen(${x.customer_id});return false" style="color:inherit">${esc(x.name)}</a>` : esc(x.name)}</b></td>
+        <td class="small">${esc(x.from)}</td><td>${x.remove ? '<span class="pill bad">kan ikke ønske</span>' : esc(x.to)}${x.auto_off ? ' <span class="small">· Auto-anmod slås fra</span>' : ""}</td><td class="small hs">${esc(x.basis)}</td></tr>`).join("")}</tbody></table></div>`
+    : '<div class="small">Seerr passer med Fangarr – der er intet at ændre.</div>';
+  const can = st.can || [];
+  $("oeCan").innerHTML = can.length ? can.map(x => `<tr><td><b>${x.customer_id ? `<a href="#" onclick="kOpen(${x.customer_id});return false" style="color:inherit">${esc(x.name)}</a>` : esc(x.name)}</b></td>
+      <td>${esc(x.limits)}</td><td class="small hs">${esc(x.basis)}</td><td class="small hs">${x.usage ? ksUnits(x.usage.film, x.usage.tv) || "intet" : "–"}</td></tr>`).join("")
+    : '<tr><td colspan="4" class="empty">Ingen.</td></tr>';
+  $("oeAcc").innerHTML = d.accounts.length ? d.accounts.map(x => `<tr><td><a href="#" onclick="kOpen(${x.customer_id});return false" style="color:inherit"><b>${esc(x.customer)}</b></a></td><td>${esc(x.account)}</td>
+      <td>${x.package ? `${esc(x.package)} <span class="small">${kkr(x.price)}/md.</span>` : '<span class="small">ingen</span>'}${x.pending ? `<div class="small" style="color:var(--info)">${x.pending.name ? "skifter til " + esc(x.pending.name) : "stopper"} ${kDay(x.pending.date)}</div>` : ""}</td>
+      <td class="hs">${ksUnits(x.film_left, x.tv_left) || '<span class="small">–</span>'}</td></tr>`).join("")
+    : '<tr><td colspan="4" class="empty">Ingen kunder har en pakke eller købte ønsker endnu. Vælg det på kundekortet.</td></tr>';
+  $("oeFam").innerHTML = d.family.length ? `<div class="card">${d.family.map(f => `<div style="margin:2px 0"><a href="#" onclick="kOpen(${f.customer_id});return false">${esc(f.name)}</a> <span class="small">${f.accounts.length ? esc(f.accounts.join(", ")) : "ingen Plex-konto koblet"}</span></div>`).join("")}</div>`
+    : '<div class="small">Ingen kunder er mærket Egen (familie). Sæt Type til Egen på kundekortet, så kan de ønske ubegrænset.</div>';
+  $("oe_untouchable").value = s.untouchable || ""; $("oe_price_film").value = s.price_film; $("oe_price_tv").value = s.price_tv; $("oe_brake").value = s.brake;
+  $("oePkgs").innerHTML = s.packages.map(p => `<tr><td><b>${esc(p.name)}</b></td><td class="num"><input type="number" min="0" id="oep_${p.key}_film" value="${p.film}" style="width:80px"></td>
+      <td class="num"><input type="number" min="0" id="oep_${p.key}_tv" value="${p.tv}" style="width:80px"></td><td class="num"><input type="text" inputmode="decimal" id="oep_${p.key}_price" value="${p.price}" style="width:90px"></td></tr>`).join("");
+  $("oeLog").innerHTML = d.log.length ? d.log.map(l => `<tr><td style="white-space:nowrap;color:var(--muted)">${fmt(l.ts)}</td><td>${l.customer_id ? `<a href="#" onclick="kOpen(${l.customer_id});return false" style="color:inherit">${esc(l.text)}</a>` : esc(l.text)}</td></tr>`).join("")
+    : '<tr><td class="empty">Intet endnu.</td></tr>';
+}
+async function oeMode(m) {
+  const plan = ((OE.state || {}).plan || []).length;
+  if (m === "til" && !confirm(`Slå styringen af Seerr til?\n\nFangarr retter nu Seerr for alvor${plan ? ` – de ${plan} ændringer på listen bliver lavet med det samme` : ""}. Admin og konti under Rør ikke røres aldrig.`)) return;
+  try { await api("/api/oensker/settings", {method: "PUT", body: JSON.stringify({mode: m})}); toast(m === "til" ? "Styringen er slået til" : m === "prove" ? "Prøvetilstand" : "Styringen er slået fra"); await oeSync(true); }
+  catch (e) { toast(e.message, true); }
+}
+async function oeSave() {
+  const packages = OE.settings.packages.map(p => ({key: p.key, film: $(`oep_${p.key}_film`).value, tv: $(`oep_${p.key}_tv`).value, price: $(`oep_${p.key}_price`).value}));
+  try { await api("/api/oensker/settings", {method: "PUT", body: JSON.stringify({untouchable: $("oe_untouchable").value, price_film: $("oe_price_film").value,
+      price_tv: $("oe_price_tv").value, brake: $("oe_brake").value, packages})}); toast("Gemt"); await oeSync(true); }
+  catch (e) { toast(e.message, true); }
+}
+async function oeSync(quiet) {
+  const b = $("oeSyncBtn"); b.disabled = true; b.textContent = "Gennemgår …";
+  try { OE = await api("/api/oensker/sync", {method: "POST"}); renderOensker(); if (!quiet) toast("Seerr er gennemgået"); loadHome(); }
+  catch (e) { toast(e.message, true); }
+  finally { b.disabled = false; b.textContent = "Gennemgå Seerr nu"; }
+}
 
 // ---------- IPTV-linjer
 async function loadIptv() { try { await kNeed(); if (!KC.length) KC = await api("/api/kunder/customers"); KI = await api("/api/kunder/iptv"); } catch (e) { toast(e.message, true); return; } renderIptv(); }

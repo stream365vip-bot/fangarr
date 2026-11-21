@@ -22,7 +22,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
 router = APIRouter(prefix="/api/kunder")
-D = {}   # udfyldes af main.py: db, telegram, tautulli, tautulli_enabled, now, kv_get, kv_set, log
+D = {}   # udfyldes af main.py: db, telegram, tautulli, tautulli_enabled, now, kv_get, kv_set, log, before_charge
 
 SERVICES = [("plex", "Plex"), ("iptv", "IPTV"), ("spotify", "Spotify"), ("youtube", "YouTube"), ("mofibo", "Mofibo"),
             ("hbo", "HBO Max"), ("seerr", "Ekstra ønsker"), ("andet", "Andet")]
@@ -416,6 +416,8 @@ def ensure_charges(period):
                 for c in con.execute("SELECT * FROM k_customers WHERE status='aktiv' AND kind='kunde' AND freq IS NOT NULL").fetchall():
                     if c["id"] in have or month not in due_months(c["freq"], c["cycle"]):
                         continue
+                    if D.get("before_charge"):      # Seerr-ønsker (1.23.0): planlagt skift til mindre pakke eller stop
+                        D["before_charge"](con, dict(c), period)
                     sv = [dict(r) for r in con.execute("SELECT * FROM k_services WHERE customer_id=?", (c["id"],)).fetchall()]
                     if _create_charge(con, dict(c), sv, period):
                         made += 1
