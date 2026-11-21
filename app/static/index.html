@@ -681,6 +681,11 @@
         <div class="field"><label for="oe_price_tv">Enkeltkøb – pris pr. sæson (kr.)</label><input type="text" inputmode="decimal" id="oe_price_tv"></div>
         <div class="field"><label for="oe_brake">Bremse: stop, hvis flere end så mange mister retten på én gang</label><input type="number" id="oe_brake" min="1"></div>
       </div>
+      <h3 style="margin:16px 0 8px">Køb i guiden ("Få flere ønsker")</h3>
+      <div id="oeShopInfo" style="margin:0 0 10px"></div>
+      <label class="check"><input type="checkbox" id="oe_shop"> Kunderne kan selv vælge, skifte og stoppe pakke og købe film og sæsoner i guiden</label>
+      <div class="grid" style="margin-top:10px"><div class="field"><label for="oe_shop_section">Afsnittet i guiden med knappen "Få flere ønsker"</label><select id="oe_shop_section"></select></div></div>
+      <div class="small" style="margin-top:6px">Samme regler som på kundekortet: større pakke virker med det samme med tillæg pr. dag, mindre pakke eller stop fra næste betaling, enkeltkøb på næste betaling. Du får besked i Stream365 Drift ved hvert valg. Knappen kan også sættes på en nyhed (Guide › Nyheder › Knappen › Åbner "Få flere ønsker").</div>
       <h3 style="margin:16px 0 8px">Pakker (pr. 30 dage)</h3>
       <div style="overflow-x:auto"><table><thead><tr><th>Pakke</th><th class="num">Film</th><th class="num">Sæsoner</th><th class="num">Pris pr. måned (kr.)</th></tr></thead><tbody id="oePkgs"></tbody></table></div>
       <div class="small" style="margin-top:6px">En ændret pris gælder for nye pakker og skift. Kunder, der allerede har pakken, beholder prisen på kundekortet, indtil du retter den dér.</div>
@@ -1526,7 +1531,7 @@ function renderGuide() {
 // ---------- Guide › Nyheder (1.24.0) – kortet øverst i guiden og nyhedens pop-up
 let NW = null, NE = null, nwCard = null, nwPrevItem = null, nwPrevContact = null, nwT = null, nwDev = "phone", NWG = {theme: "", svg: {}};
 const NW_ST = {kladde: "Kladde", planlagt: "Planlagt", aktiv: "Aktiv", udloebet: "Udløbet"};
-const NW_ACT = {popup: "Åbner pop-up", section: "Fører til afsnit", none: "Ingen knap"};
+const NW_ACT = {popup: "Åbner pop-up", section: "Fører til afsnit", shop: "Åbner Få flere ønsker", none: "Ingen knap"};
 function nwLocal(d) { const p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
 function nwDay(v) { if (!v) return ""; const m = /^(\d{4})-(\d\d)-(\d\d)T(\d\d:\d\d)/.exec(v); if (!m) return esc(v); const t = m[4] === "23:59" || m[4] === "00:00" ? "" : " kl. " + m[4]; return `${Number(m[3])}. ${G_MON[Number(m[2]) - 1]}${t}`; }
 function nwPeriod(d) { return d.start ? (d.end ? `${nwDay(d.start)} – ${nwDay(d.end)}` : `fra ${nwDay(d.start)} – ingen slutdato`) : "ingen periode"; }
@@ -1639,9 +1644,10 @@ function nwForm() {
     </fieldset>
     <fieldset><legend>Knappen</legend>
       <div class="grid"><div class="field"><label for="nwf_action">Knappen</label><select id="nwf_action" onchange="nwSet('action', this.value, true)">
-          <option value="popup" ${d.action === "popup" ? "selected" : ""}>Åbner nyhedens pop-up</option><option value="section" ${d.action === "section" ? "selected" : ""}>Fører til et afsnit i guiden</option>
+          <option value="popup" ${d.action === "popup" ? "selected" : ""}>Åbner nyhedens pop-up</option><option value="section" ${d.action === "section" ? "selected" : ""}>Fører til et afsnit i guiden</option><option value="shop" ${d.action === "shop" ? "selected" : ""}>Åbner "Få flere ønsker" (køb i guiden)</option>
           <option value="none" ${d.action === "none" ? "selected" : ""}>Ingen knap</option></select></div>
         ${d.action !== "none" ? `<div class="field"><label for="nwf_btn">Tekst på knappen</label><input type="text" id="nwf_btn" data-k="btn" maxlength="40" value="${esc(d.btn)}"></div>` : ""}
+        ${d.action === "shop" ? `<div class="small" style="grid-column:1/-1;${(NW.shop || {}).open ? "" : "color:var(--warn)"}">${(NW.shop || {}).open ? 'Knappen åbner arket, hvor kunden selv vælger pakke eller køber film og sæsoner.' : 'Køb i guiden er ikke åbent endnu – slå det til under Kunder › Seerr-ønsker › Indstillinger. Indtil da vises kortet uden knap.'}</div>` : ""}
         ${d.action === "section" ? `<div class="field" style="grid-column:1/-1"><label for="nwf_sec">Afsnit i guiden</label>${secs ? `<select id="nwf_sec" data-k="section">${nwSecOpts(d.section, "Vælg afsnit …")}</select>` : `<input type="text" id="nwf_sec" data-k="section" value="${esc(d.section)}" placeholder="afsnittets id">`}${secHint}</div>` : ""}</div>
     </fieldset>
     <fieldset><legend>Hvornår</legend>
@@ -2894,6 +2900,16 @@ function renderOensker() {
   $("oeFam").innerHTML = d.family.length ? `<div class="card">${d.family.map(f => `<div style="margin:2px 0"><a href="#" onclick="kOpen(${f.customer_id});return false">${esc(f.name)}</a> <span class="small">${f.accounts.length ? esc(f.accounts.join(", ")) : "ingen Plex-konto koblet"}</span></div>`).join("")}</div>`
     : '<div class="small">Ingen kunder er mærket Egen (familie). Sæt Type til Egen på kundekortet, så kan de ønske ubegrænset.</div>';
   $("oe_untouchable").value = s.untouchable || ""; $("oe_price_film").value = s.price_film; $("oe_price_tv").value = s.price_tv; $("oe_brake").value = s.brake;
+  const sh = d.shop || {};
+  $("oe_shop").checked = !!s.shop;
+  $("oeShopInfo").innerHTML = !sh.token ? '<div class="warn"><b>Nøglen mangler.</b> Køb i guiden kræver <code>NYT_TOKEN</code> i fangarr.env og samme nøgle hos guiden – se LÆSMIG › Køb i guiden.</div>'
+    : sh.open ? '<div class="small" style="color:var(--ok)">Åbent – kunderne kan vælge pakke og købe ønsker i guiden.</div>'
+    : !s.shop ? '<div class="small">Lukket – slå det til herunder.</div>'
+    : '<div class="small" style="color:var(--warn)">Slået til, men lukket, fordi styringen af Seerr ikke står på Til.</div>';
+  const secs = d.sections || [];
+  $("oe_shop_section").innerHTML = '<option value="">Find selv afsnittet om Seerr</option>' +
+    (s.shop_section && !secs.some(x => x.id === s.shop_section) ? `<option value="${esc(s.shop_section)}" selected>${esc(s.shop_section)} (findes ikke i guiden)</option>` : "") +
+    secs.map(x => `<option value="${esc(x.id)}" ${x.id === s.shop_section ? "selected" : ""}>${esc(x.title)}</option>`).join("");
   $("oePkgs").innerHTML = s.packages.map(p => `<tr><td><b>${esc(p.name)}</b></td><td class="num"><input type="number" min="0" id="oep_${p.key}_film" value="${p.film}" style="width:80px"></td>
       <td class="num"><input type="number" min="0" id="oep_${p.key}_tv" value="${p.tv}" style="width:80px"></td><td class="num"><input type="text" inputmode="decimal" id="oep_${p.key}_price" value="${p.price}" style="width:90px"></td></tr>`).join("");
   $("oeLog").innerHTML = d.log.length ? d.log.map(l => `<tr><td style="white-space:nowrap;color:var(--muted)">${fmt(l.ts)}</td><td>${l.customer_id ? `<a href="#" onclick="kOpen(${l.customer_id});return false" style="color:inherit">${esc(l.text)}</a>` : esc(l.text)}</td></tr>`).join("")
@@ -2908,7 +2924,7 @@ async function oeMode(m) {
 async function oeSave() {
   const packages = OE.settings.packages.map(p => ({key: p.key, film: $(`oep_${p.key}_film`).value, tv: $(`oep_${p.key}_tv`).value, price: $(`oep_${p.key}_price`).value}));
   try { await api("/api/oensker/settings", {method: "PUT", body: JSON.stringify({untouchable: $("oe_untouchable").value, price_film: $("oe_price_film").value,
-      price_tv: $("oe_price_tv").value, brake: $("oe_brake").value, packages})}); toast("Gemt"); await oeSync(true); }
+      price_tv: $("oe_price_tv").value, brake: $("oe_brake").value, packages, shop: $("oe_shop").checked, shop_section: $("oe_shop_section").value})}); toast("Gemt"); await oeSync(true); }
   catch (e) { toast(e.message, true); }
 }
 async function oeSync(quiet) {
