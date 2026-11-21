@@ -289,6 +289,15 @@ def _set_service(con, row, target, cid, acc):
 
 # ---------------------------------------------------------------- pakker og enkeltkøb
 
+def _unlinked_service(cid):
+    """Kundens tjeneste "Ekstra ønsker", som endnu ikke hører til en pakke (fx fra regnearket), eller None."""
+    linked = {r["service_id"] for r in rows("SELECT service_id FROM s_pkg WHERE service_id IS NOT NULL")}
+    for r in rows("SELECT * FROM k_services WHERE customer_id=? AND service='seerr' AND active=1 ORDER BY id", (cid,)):
+        if r["id"] not in linked:
+            return dict(r)
+    return None
+
+
 def _price(key):
     p = packages().get(key or "")
     return float(p["price"]) if p else 0.0
@@ -328,7 +337,20 @@ def quote_package(cid, pid, target):
     exp = _expected_next(c, nxt)
     lines, kind = [], ""
     pending = row["pending"] if row else None
-    if target == cur:
+    old_svc = _unlinked_service(cid) if not row and target else None
+    if old_svc:      # kunden betaler allerede for ønsker (gammel tjeneste) – kobl den til kontoen
+        kind = "kobl"
+        was = float(old_svc["price"] or 0)
+        add = _prorata(_price(target) - was, nxt) if _price(target) > was else 0
+        lines.append(f"Kunden har allerede tjenesten Ekstra ønsker ({_kr(was)} pr. måned) på kundekortet. "
+                     f"Den bliver til pakken {pk[target]['name']} og virker med det samme i Seerr.")
+        if add:
+            lines.append(f"Tillæg for {_days_to(nxt)} dage indtil næste betaling: {_kr(add)}")
+        else:
+            lines.append("Intet tillæg – kunden har allerede betalt for perioden.")
+        lines.append(f"{pk[target]['name']} fra {_day(nxt['date'])}: {_kr(_price(target) * n)} for {kunder.months_text(n)}")
+        exp += add + (_price(target) - was) * n
+    elif target == cur:
         kind = "fortryd" if pending is not None else "samme"
         if pending is not None:
             lines.append(f"Det planlagte skift fortrydes – {pk[cur]['name'] if cur else 'ingen pakke'} fortsætter.")
@@ -372,7 +394,24 @@ def set_package(cid, pid, target, source="Fangarr"):
                 row = dict(row) if row else None
                 cur = row["package"] if row else ""
                 nxt = next_payment(c)
-                if q["kind"] in ("samme", "fortryd"):
+                old_svc = _unlinked_service(cid) if q["kind"] == "kobl" else None
+                if q["kind"] == "kobl" and old_svc and not row:
+                    was = float(old_svc["price"] or 0)
+                    sid = _set_service(con, {"service_id": old_svc["id"]}, target, cid, acc)
+                    con.execute("INSERT INTO s_pkg (plex_user_id, customer_id, package, service_id, started, updated) VALUES (?,?,?,?,?,?)",
+                                (p_id, cid, target, sid, iso(now()), iso(now())))
+                    if nxt and _open_charge(con, nxt["charge_id"]):
+                        _recalc(con, nxt["charge_id"])
+                    add = _prorata(_price(target) - was, nxt) if _price(target) > was else 0
+                    if add:
+                        end = nxt["date"] - datetime.timedelta(days=1)
+                        _add_adjust(con, cid, f"Ekstra Seerr-ønsker – {pk[target]['name']}, {_day(now().date())} – {_day(end)}", add, nxt)
+                    _log(f"{acc['name']}: tjenesten Ekstra ønsker ({kunder.num(was)} kr./md.) er koblet til kontoen som pakken "
+                         f"{pk[target]['name']}{' – tillæg ' + _kr(add) if add else ''} ({source})", cid, p_id, con)
+                    msg = f"{pk[target]['name']} virker nu."
+                elif q["kind"] == "kobl":
+                    raise HTTPException(409, "kundekortet er ændret imens – prøv igen")
+                elif q["kind"] in ("samme", "fortryd"):
                     if row and row["pending"] is not None:
                         _set_service(con, row, cur, cid, acc)
                         con.execute("UPDATE s_pkg SET pending=NULL, pending_date=NULL, pending_period=NULL, pending_billed=0, updated=? WHERE plex_user_id=?",

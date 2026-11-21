@@ -117,7 +117,7 @@ Ingen gratis ønsker i Seerr fra 21. nov. 2026: kun kunder med en **pakke** elle
 - **Rør aldrig:** admin, brugere med "Administrer brugere" og Seerr-bruger-id'erne under Indstillinger › **Rør ikke** (fx dine egne konti).
 - **Tilstand** (Kunder › Seerr-ønsker): **Fra**, **Prøvetilstand** (standard – viser kun, hvad Fangarr ville ændre) og **Til**. Fangarr gennemgår Seerr hvert 5. minut og lige efter en ændring på kundekortet.
 - **Bremse:** mister flere end 5 (Indstillinger) retten til at ønske på én gang, fjerner Fangarr ingen og giver besked.
-- **Gamle tjenester "Ekstra ønsker"** uden pakke genkendes automatisk, når prisen passer til én pakke, og kunden har én Plex-konto. Ellers står de på siden som noget, du skal afgøre. Slettes eller slås tjenesten fra på kundekortet, er pakken stoppet.
+- **Gamle tjenester "Ekstra ønsker"** uden pakke genkendes automatisk, når prisen passer til én pakke, og kunden har én Plex-konto. Ellers står de på siden som noget, du skal afgøre: vælg pakken på kundekortet ud for den rigtige konto – den gamle tjeneste bliver til pakken (ingen ny tjeneste, intet tillæg, når pakken ikke koster mere end tjenesten). Slettes eller slås tjenesten fra på kundekortet, er pakken stoppet.
 - **Siden Kunder › Seerr-ønsker:** tilstand, ændringerne (i prøvetilstand: det, Fangarr ville gøre), hvem der kan ønske nu og hvorfor, pakker og købte ønsker, familie, indstillinger og log. Forsiden viser problemer og ventende ændringer i prøvetilstand.
 - **Telegram (Stream365 Drift):** kun ved problemer og "i orden igen": Seerr svarer ikke (3 gange i træk), bremsen, ændringer Seerr ikke ville gemme.
 

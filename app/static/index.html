@@ -2575,7 +2575,7 @@ function renderOensker() {
   if (st.error) w.push(`<div class="warn"><b>Seerr svarer ikke.</b> ${esc(st.error)}</div>`);
   if (st.braked) w.push('<div class="warn"><b>Bremsen er slået til.</b> For mange ville miste retten til at ønske på én gang, så Fangarr har ikke fjernet nogen. Tjek listen herunder. Er den rigtig, kan du hæve bremsen under Indstillinger.</div>');
   (st.problems || []).forEach(x => w.push(`<div class="warn">${esc(x)}</div>`));
-  (st.unclear || []).forEach(x => w.push(`<div class="warn"><a href="#" onclick="kOpen(${x.customer_id});return false">${esc(x.name)}</a> har tjenesten Ekstra ønsker (${kkr(x.price)}/md.), men Fangarr kan ikke se, hvilken pakke og konto det er: ${esc(x.why)}. Vælg pakken på kundekortet under Seerr-ønsker, og slet den gamle tjeneste.</div>`));
+  (st.unclear || []).forEach(x => w.push(`<div class="warn"><a href="#" onclick="kOpen(${x.customer_id});return false">${esc(x.name)}</a> har tjenesten Ekstra ønsker (${kkr(x.price)}/md.), men Fangarr kan ikke se, hvilken pakke og konto det er: ${esc(x.why)}. Vælg pakken på kundekortet under Seerr-ønsker ud for den rigtige konto – den gamle tjeneste bliver til pakken, uden tillæg, når prisen passer.</div>`));
   (st.errors || []).forEach(x => w.push(`<div class="warn">${esc(x)}</div>`));
   $("oeWarn").innerHTML = w.join("");
   const plan = st.plan || [];
