@@ -6,7 +6,7 @@ Fanger nye serier og film fra autobrr og lægger dem i Sonarr/Radarr ud fra dine
 - Fangarr slår titlen op (genrer, originalsprog, kanal, år, rating) og tjekker reglerne oppefra.
 - Mangler TheTVDB/TMDb titlen endnu, kan den komme på **ventelisten** og prøves igen automatisk.
 
-Faner: Regler · Test en titel (+ prøv en regel på autobrr-historikken) · Venteliste · Premierer (kommende serier fra TMDb via Seerr – tilføj eller følg) · Statistik (størrelse og afspilninger fra Tracearr pr. regel) · Guide (hvem har været inde på guide.stream365.vip, læste afsnit og søgeord) · Kontodeling (konti, hvor to tv afspiller samtidig fra hver sin adresse – fra Tautulli) · Oversættelser (Oversætterens tilstand, forbrug og prognose, skjult for kunderne, på vej, problemer, færdige oversættelser, statistik og indstillinger) · Log · autobrr (opret/opdatér filtre) · Indstillinger (Seerr-tjek, eksport/import, natlig eksport).
+Faner: Regler · Kunder (Opkrævning, Kunder, Seerr-ønsker, IPTV-linjer, Økonomi) · Test en titel (+ prøv en regel på autobrr-historikken) · Venteliste · Premierer (kommende serier fra TMDb via Seerr – tilføj eller følg) · Statistik (størrelse og afspilninger fra Tracearr pr. regel) · Guide (hvem har været inde på guide.stream365.vip, læste afsnit og søgeord) · Kontodeling (konti, hvor to tv afspiller samtidig fra hver sin adresse – fra Tautulli) · Oversættelser (Oversætterens tilstand, forbrug og prognose, skjult for kunderne, på vej, problemer, færdige oversættelser, statistik og indstillinger) · Log · autobrr (opret/opdatér filtre) · Indstillinger (Seerr-tjek, eksport/import, natlig eksport).
 
 Sikringer: prøvetilstand, loft pr. døgn, pladsgrænse, kun præcise titelmatch, Seerr-tjek, Telegram ved fejl og "i orden igen", dagligt resumé.
 
@@ -103,6 +103,23 @@ Det, der gemmes på disken, er kun dine egne afgørelser og sager. Historikken o
 - **Statistik:** tryk på en kolonne for at sortere.
 - **Oversættelser, Indstillinger og Opsætning** er delt i underfaner. *Test en titel*, *Prøv en regel* og *Filtre i autobrr* ligger under Opsætning.
 - **Versionsnummer** nederst i menuen. Ligger der en nyere version på GitHub, står det der og på Overblik (tjekkes hver 3. time).
+
+## Seerr-ønsker: pakker, enkeltkøb og hvem der må ønske (1.23.0)
+Ingen gratis ønsker i Seerr fra 21. nov. 2026: kun kunder med en **pakke** eller **købte ønsker** – og **familie** (type Egen på kundekortet) – må ønske. Fangarr styrer det selv ud fra Kunder. Koden ligger i `app/oensker.py`, data i tabellerne `s_*` i `data/fangarr.db`. Kræver `SEERR_URL`/`SEERR_APIKEY` (de samme som Seerr-tjekket) – ingen nye linjer i `fangarr.env`.
+
+- **Kundekortet › Seerr-ønsker:** pr. Plex-konto: pakke, købte ønsker tilbage, hvad kontoen kan i Seerr nu og har brugt de sidste 30 dage. Knapperne **Vælg/Skift pakke** og **Køb ønsker** viser, hvad der lægges på næste betaling, før der gemmes. Et køb kan fortrydes, så længe ønskerne ikke er brugt, og beløbet ikke er anmodet.
+- **Pakker** (pr. 30 dage, kan rettes under Indstillinger): Lille 9 kr. = 3 film · Populær 19 kr. = 5 film + 2 sæsoner · Stor 39 kr. = 17 + 9 · Maks 59 kr. = 29 + 13. Pakken er tjenesten **Ekstra ønsker** på kundekortet og betales med kundens egen cyklus.
+  - **Ny eller større pakke:** virker med det samme. Næste betaling får et tillæg for dagene indtil da (forskellen i månedspris × dage ÷ 30, rundet til hele kroner).
+  - **Mindre pakke eller stop:** gælder fra næste betaling. Er næste opkrævning allerede lavet (og ikke anmodet), rettes den med det samme; ellers kommer ændringen med, når den laves. Seerr beholder den gamle pakke til betalingsdatoen. Vælg den nuværende pakke igen for at fortryde.
+- **Enkeltkøb:** 5 kr. pr. film og 10 kr. pr. sæson (Indstillinger). Et tillæg på næste betaling. Købte ønsker kommer oveni pakken og **udløber aldrig**. Fangarr ser i Seerr, hvornår de bruges: et ønske, pakken ikke dækker, bruger et købt ønske, og grænsen holdes oppe, til ønsket er 30 dage gammelt (ellers ville pakkens ønsker blive spærret bagefter). Ønsker fra før første køb bruger aldrig købte ønsker.
+- **Tillæg og ændringer på opkrævningen:** "Næste betaling" er den første opkrævning, der hverken er anmodet, betalt eller sprunget over og har betalingsdato i dag eller senere – ellers den næste måned i kundens cyklus. Findes den, lægges tillægget direkte på den (og den regnes om); ellers venter tillægget i Fradrag og tillæg til næste opkrævning. Teksten står i beskeden til kunden, fx "Enkeltkøb i Seerr: 2 film og 1 sæson: +20 kr.".
+- **Seerr:** Fangarr giver rettigheden **Anmod** (eller kun "Anmod film"/"Anmod serier", fx ved Lille) og sætter brugerens egen grænse pr. 30 dage = pakke + købte ønsker i brug. Uden ønsker fjernes rettigheden. **Grænsen 0 betyder "ubegrænset" i Seerr** – Fangarr giver derfor aldrig en kunde 0; kun familie får ubegrænset. Auto-anmod (huskelisten ønsker automatisk) fjernes for kunder. Seerr-brugere uden kunde i Fangarr, og stoppede kunder, kan ikke ønske. Brugernavne og øvrige indstillinger i Seerr bevares (Fangarr henter brugerens indstillinger og sender dem tilbage med de nye grænser).
+- **Rør aldrig:** admin, brugere med "Administrer brugere" og Seerr-bruger-id'erne under Indstillinger › **Rør ikke** (fx dine egne konti).
+- **Tilstand** (Kunder › Seerr-ønsker): **Fra**, **Prøvetilstand** (standard – viser kun, hvad Fangarr ville ændre) og **Til**. Fangarr gennemgår Seerr hvert 5. minut og lige efter en ændring på kundekortet.
+- **Bremse:** mister flere end 5 (Indstillinger) retten til at ønske på én gang, fjerner Fangarr ingen og giver besked.
+- **Gamle tjenester "Ekstra ønsker"** uden pakke genkendes automatisk, når prisen passer til én pakke, og kunden har én Plex-konto. Ellers står de på siden som noget, du skal afgøre: vælg pakken på kundekortet ud for den rigtige konto – den gamle tjeneste bliver til pakken (ingen ny tjeneste, intet tillæg, når pakken ikke koster mere end tjenesten). Slettes eller slås tjenesten fra på kundekortet, er pakken stoppet.
+- **Siden Kunder › Seerr-ønsker:** tilstand, ændringerne (i prøvetilstand: det, Fangarr ville gøre), hvem der kan ønske nu og hvorfor, pakker og købte ønsker, familie, indstillinger og log. Forsiden viser problemer og ventende ændringer i prøvetilstand.
+- **Telegram (Stream365 Drift):** kun ved problemer og "i orden igen": Seerr svarer ikke (3 gange i træk), bremsen, ændringer Seerr ikke ville gemme.
 
 ## Kunder og betalinger (1.16.0)
 Fire nye sider under **Kunder** i menuen. Koden ligger i `app/kunder.py`, data i de nye tabeller `k_*` i `data/fangarr.db`.
@@ -201,7 +218,7 @@ Til en widget på telefonens hjemmeskærm (KWGT). Svarer med en flad liste: `.ap
 - Nøglen må aldrig stå i chatten eller dokumentationen. Den ligger kun i `fangarr.env` og i widgetten.
 
 ## Filer
-- `app/main.py` – server (FastAPI) · `app/apps.py` – Apps og widget · `app/hentegraense.py` – afviste afsnit søges igen · `app/static/index.html` – interface · `app/VERSION`
+- `app/main.py` – server (FastAPI) · `app/apps.py` – Apps og widget · `app/hentegraense.py` – afviste afsnit søges igen · `app/kunder.py` – Kunder og betalinger · `app/oensker.py` – Seerr-ønsker · `app/static/index.html` – interface · `app/VERSION`
 - `fangarr.env.eksempel` – skabelon til `fangarr.env` (API-nøgler). `chmod 600`. **Kommer aldrig i git.**
 - Data: `/opt/fangarr/data/fangarr.db`. Natlige eksportfiler: `/opt/fangarr/data/backup/`.
 - `docker-compose.yml` laves af Saltbox og ligger kun på serveren.

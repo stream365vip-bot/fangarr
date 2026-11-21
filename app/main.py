@@ -27,6 +27,7 @@ from . import apps
 from . import guide
 from . import hentegraense
 from . import kunder
+from . import oensker
 
 DATA_DIR = os.environ.get("DATA_DIR", "/config")
 DB_PATH = os.path.join(DATA_DIR, "fangarr.db")
@@ -1325,6 +1326,7 @@ def background_loop():
                 hentegraense.tick()   # trackeren afviste hentninger – søg afsnittene igen i små portioner (1.22.0)
             refresh_premieres_bg()
             kunder.tick()
+            oensker.tick()   # Seerr-ønsker: hvem må ønske i Seerr – hvert 5. minut (1.23.0)
         except Exception as e:  # baggrundsjobbet må aldrig stoppe appen
             log.warning("Baggrundsjob fejlede: %s", e)
         time.sleep(LOOP_SECONDS)
@@ -1432,12 +1434,14 @@ app.include_router(kunder.router)   # Kunder og betalinger (1.16.0) – se app/k
 app.include_router(guide.router)    # Guide: besøg på guide.stream365.vip (1.18.0) – se app/guide.py
 app.include_router(hentegraense.router)   # Hentegrænse: søg afviste afsnit igen (1.22.0) – se app/hentegraense.py
 app.include_router(apps.router)     # Apps med lampe på forsiden og /widget/<nøgle> til telefonen (1.20.0) – se app/apps.py
+app.include_router(oensker.router)  # Seerr-ønsker: pakker, enkeltkøb og hvem der må ønske i Seerr (1.23.0) – se app/oensker.py
 
 
 @app.on_event("startup")
 def startup():
     init_db()
     kunder.init()
+    oensker.init()
     threading.Thread(target=background_loop, daemon=True).start()
     log.info("Fangarr startet. Instanser: %s", ", ".join(INSTANCES) or "ingen")
 
@@ -1484,7 +1488,7 @@ def state():
         "waiting": venter,
         "features": {"tracearr": bool(TRACEARR_URL and TRACEARR_APIKEY), "seerr": bool(SEERR_URL and SEERR_APIKEY),
                      "autobrr": bool(AUTOBRR_URL and AUTOBRR_APIKEY), "translator": ov_enabled(),
-                     "plex": bool(PLEX_URL and PLEX_TOKEN), "tautulli": tautulli_enabled(), "guide": guide.enabled(), "apps": apps.enabled(), "version": VERSION},
+                     "plex": bool(PLEX_URL and PLEX_TOKEN), "tautulli": tautulli_enabled(), "guide": guide.enabled(), "apps": apps.enabled(), "oensker": oensker.enabled(), "version": VERSION},
     }
 
 
@@ -2981,7 +2985,8 @@ def tautulli(cmd, **params):
 
 
 kunder.setup(db=db, telegram=telegram, tautulli=tautulli, tautulli_enabled=tautulli_enabled, now=now,
-             kv_get=kv_get, kv_set=kv_set, log=log)
+             kv_get=kv_get, kv_set=kv_set, log=log, before_charge=oensker.before_charge)
+oensker.setup(db=db, telegram=telegram, now=now, kv_get=kv_get, kv_set=kv_set, log=log)
 guide.setup(db=db, now=now, log=log)
 apps.setup(kv_get=kv_get, kv_set=kv_set, now=now, log=log)
 hentegraense.setup(arr=arr, sonarr=lambda: _arr_of("sonarr"), db=db, telegram=telegram, write_log=write_log,
@@ -4193,6 +4198,14 @@ def _kunder_brief():
         return {"enabled": False}
 
 
+def _oensker_brief():
+    try:
+        return oensker.brief()
+    except Exception as e:
+        log.warning("Seerr-ønsker-overblik fejlede: %s", e)
+        return {"enabled": False}
+
+
 @app.get("/api/overview")
 def overview():
     """Forsiden: det, der kræver handling, dagens tal og det seneste, der er sendt til Sonarr/Radarr."""
@@ -4218,7 +4231,7 @@ def overview():
         "today": {"series": added_today("series"), "movie": added_today("movie")},
         "waiting": waiting, "suggestions": sugg, "errors_24h": errors, "rescued_24h": rescued,
         "translator": tr, "sharing": kv_get("sharing_summary") if tautulli_enabled() else None,
-        "premieres_new": prem_new, "recent": recent, "kunder": _kunder_brief(),
+        "premieres_new": prem_new, "recent": recent, "kunder": _kunder_brief(), "oensker": _oensker_brief(),
     }
 
 
