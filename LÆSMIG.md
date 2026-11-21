@@ -27,10 +27,11 @@ Sikringer: prøvetilstand, loft pr. døgn, pladsgrænse, kun præcise titelmatch
 - **Seerr-ønsker** (hvert 2. minut): ønsker på en serie, der allerede findes i sonarr2, får mærket `seerr-straks`, og Fangarr søger efter de ønskede sæsoner, så første download kommer uden ventetid. Serier med `seerr-straks` mister mærket, når første afsnit efter mærket er kommet hjem. Kræver at `seerr-straks` står i delay-profilen uden ventetid i sonarr2, og at Seerr giver nye serier mærket `seerr-straks`.
 - Alt logges i Fangarrs log (`oversæt nu`, `ingen ventetid`, `seerr uden ventetid`, `seerr-straks fjernet`).
 
-## Hentegrænse: afviste afsnit søges igen (1.22.0)
+## Hentegrænse: afviste afsnit søges igen (1.22.0 – 1.22.1)
 Superbits afviser hentninger, når der hentes mange torrents på kort tid. Det sker, når sonarr2 henter mange enkeltafsnit på én gang – fx når en bruger ønsker flere sæsoner i Seerr (Hell's Kitchen 20. nov. 2026: fem afsnit gik igennem, resten blev afvist). sonarr2 skriver "API Grab Limit reached" og "Couldn't add release … to download queue" i sin log og prøver aldrig igen, så afsnittene bliver stående som manglende.
 
 - **Hvert 2. minut** læser Fangarr sonarr2's log (advarsler og fejl), finder de afviste udgivelser og slår serie og afsnit op ud fra navnet. Kun afsnit, der er overvågede og mangler en fil, kommer med (tabellen `grab_retry`).
+- **Seriens øvrige manglende afsnit tages med (1.22.1):** efter en afvisning sætter sonarr2 trackeren på pause og søger resten af serien uden den ("1 active indexers" i loggen). De afsnit bliver hverken fundet eller afvist, og der står ingen fejl – sådan forsvandt Hell's Kitchen sæson 25. Derfor lægger Fangarr også seriens andre afsnit på listen, når de er overvågede, mangler en fil og allerede er sendt (ikke specials). Sker én gang pr. sag; kolonnen `kind` i `grab_retry` viser `afvist` eller `ekstra`.
 - **Én besked pr. serie** til Telegram: hvilke afsnit der blev afvist, og at Fangarr søger dem igen.
 - **Ny søgning i portioner:** 3 afsnit hvert 10. minut (`EpisodeSearch` i sonarr2). Fangarr henter ikke selv noget – sonarr2's egne regler (profil, ventetid, point) gælder. Afsnit, der er kommet hjem, ligger i køen eller ikke længere er overvågede, røres ikke.
 - **"I orden igen"**, når alle afsnit er hjemme. Mangler nogle stadig efter 24 timer, giver Fangarr op og skriver, hvilke der skal søges i hånden.

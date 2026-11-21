@@ -1,4 +1,4 @@
-"""Hentegrænse (Fangarr 1.22.0) – når trackeren afviser hentninger, søger Fangarr afsnittene igen senere.
+"""Hentegrænse (Fangarr 1.22.0, udvidet i 1.22.1) – når trackeren afviser hentninger, søger Fangarr afsnittene igen senere.
 
 Baggrund: Superbits afviser hentninger, når der hentes mange torrents på kort tid (set 20. nov. 2026: fem gik
 igennem på otte sekunder, resten blev afvist). Det sker, når sonarr2 henter mange enkeltafsnit på én gang, fx
@@ -9,6 +9,10 @@ Det gør Fangarr (hvert 2. minut, kun sonarr2):
 1. Læser sonarr2's log og finder de udgivelser, der blev afvist på grund af grænsen.
 2. Finder serien og afsnittene ud fra udgivelsens navn og husker dem (tabellen `grab_retry`). Kun afsnit, der
    er overvågede og mangler en fil, kommer med.
+   Fra 1.22.1 kommer seriens ØVRIGE manglende afsnit også med (overvågede, uden fil, allerede sendt, ikke
+   specials). Grunden: efter en afvisning sætter sonarr2 trackeren på pause og søger resten af serien uden
+   den ("1 active indexers" i loggen) – de afsnit bliver hverken fundet eller afvist, og der står ingen fejl.
+   Sådan forsvandt Hell's Kitchen sæson 25 den 20. nov. 2026.
 3. Sender ÉN besked pr. serie til Telegram (Stream365 Drift).
 4. Beder sonarr2 søge afsnittene igen i små portioner: GRAB_RETRY_BATCH afsnit (3) hvert GRAB_RETRY_MINUTES
    minut (10). Afsnit, der er kommet hjem, ligger i køen eller ikke længere er overvågede, røres ikke.
@@ -66,6 +70,9 @@ def _table():
         con.execute("CREATE TABLE IF NOT EXISTS grab_retry (episode_id INTEGER PRIMARY KEY, series_id INTEGER,"
                     " series TEXT, label TEXT, release TEXT, indexer TEXT, found_at TEXT, tries INTEGER DEFAULT 0,"
                     " last_try TEXT, status TEXT DEFAULT 'venter', notified INTEGER DEFAULT 0)")
+        if "kind" not in [r[1] for r in con.execute("PRAGMA table_info(grab_retry)").fetchall()]:
+            # 1.22.1: 'afvist' = trackeren afviste hentningen, 'ekstra' = seriens øvrige manglende afsnit
+            con.execute("ALTER TABLE grab_retry ADD COLUMN kind TEXT DEFAULT 'afvist'")
     return con
 
 
@@ -173,25 +180,77 @@ def scan(inst, con):
             g = new.setdefault(series["id"], {"title": series.get("title") or "", "labels": [], "indexer": indexer})
             g["labels"].append(ep_label(ep))
             g["indexer"] = g["indexer"] or indexer
-    for g in new.values():
-        who = (g["indexer"] or "Trackeren").replace(" (Prowlarr)", "")
-        _d["telegram"](f"⚠️ Fangarr – hentegrænse\n\n{who} afviste {_n(len(g['labels']))} af {g['title']}, fordi der "
-                       f"blev hentet for meget på én gang: {short_list(g['labels'])}.\n\nFangarr beder sonarr2 søge "
-                       f"dem igen, {BATCH} ad gangen hvert {MINUTES}. minut. Du skal ikke gøre noget.")
-        _d["log"].info("Hentegrænse: %s – %s afvist (%s), søges igen i portioner", g["title"], _n(len(g["labels"])),
-                       short_list(g["labels"]))
-        _d["write_log"]("series", "", g["title"], None, "hentegrænse", "",
-                        f"{who} afviste {_n(len(g['labels']))} ({short_list(g['labels'])}) – søges igen i portioner", False)
     if newest is not None:
         _d["kv_set"]("grab_seen", newest.isoformat())
     elif _d["kv_get"]("grab_seen") is None:
         _d["kv_set"]("grab_seen", utc.isoformat())
+    return new
+
+
+def expand(inst, con):
+    """1.22.1: tag seriens øvrige manglende afsnit med. Køres én gang pr. sag (pr. serie, pr. ny afvisning).
+    Returnerer {series_id: {"title":…, "labels":[…]}} med de afsnit, der blev lagt til."""
+    utc = _utcnow()
+    seen = _d["kv_get"]("grab_expanded") or {}
+    out = {}
+    # også når de afviste afsnit allerede er kommet hjem – resten af serien kan stadig mangle
+    rows = con.execute("SELECT series_id, series, MAX(found_at) AS latest FROM grab_retry"
+                       " WHERE kind='afvist' AND found_at > ? GROUP BY series_id",
+                       ((utc - datetime.timedelta(hours=HOURS)).isoformat(),)).fetchall()
+    for r in rows:
+        key = str(r["series_id"])
+        if seen.get(key) and seen[key] >= r["latest"]:
+            continue   # denne sag er allerede udvidet
+        have = {x["episode_id"] for x in con.execute("SELECT episode_id FROM grab_retry WHERE series_id=? AND"
+                                                     " status='venter'", (r["series_id"],)).fetchall()}
+        labels = []
+        for ep in _d["arr"](inst, "GET", "/episode", params={"seriesId": r["series_id"]}) or []:
+            aired = _parse_time(ep.get("airDateUtc"))
+            if (ep.get("id") in have or ep.get("hasFile") or not ep.get("monitored")
+                    or not ep.get("seasonNumber") or aired is None or aired > utc):
+                continue
+            with con:
+                con.execute("INSERT OR REPLACE INTO grab_retry (episode_id, series_id, series, label, release, indexer,"
+                            " found_at, tries, last_try, status, notified, kind) VALUES (?,?,?,?,'','',?,0,NULL,'venter',0,'ekstra')",
+                            (ep["id"], r["series_id"], r["series"], ep_label(ep), utc.isoformat()))
+            labels.append(ep_label(ep))
+        seen[key] = utc.isoformat()
+        if labels:
+            out[r["series_id"]] = {"title": r["series"], "labels": labels}
+    _d["kv_set"]("grab_expanded", seen)
+    return out
+
+
+def announce(new, extra):
+    """Én besked pr. serie: de afviste afsnit og (1.22.1) seriens øvrige manglende afsnit."""
+    for sid in list(new) + [x for x in extra if x not in new]:
+        g, e = new.get(sid), extra.get(sid)
+        title = (g or e)["title"]
+        tail = f"Fangarr beder sonarr2 søge dem igen, {BATCH} ad gangen hvert {MINUTES}. minut. Du skal ikke gøre noget."
+        more = (f"\n\nSeriens øvrige manglende afsnit tages også med ({_n(len(e['labels']))}: {short_list(e['labels'])}) – "
+                "de kan være sprunget over, fordi sonarr2 sætter trackeren på pause efter en afvisning.") if e else ""
+        if g:
+            who = (g["indexer"] or "Trackeren").replace(" (Prowlarr)", "")
+            text = (f"⚠️ Fangarr – hentegrænse\n\n{who} afviste {_n(len(g['labels']))} af {title}, fordi der blev hentet "
+                    f"for meget på én gang: {short_list(g['labels'])}.{more}\n\n{tail}")
+            detail = f"{who} afviste {_n(len(g['labels']))} ({short_list(g['labels'])})"
+            if e:
+                detail += f" + {_n(len(e['labels']))} øvrige manglende ({short_list(e['labels'])})"
+            detail += " – søges igen i portioner"
+        else:
+            text = (f"⚠️ Fangarr – hentegrænse\n\n{title}: Fangarr tager også seriens øvrige manglende afsnit med "
+                    f"({_n(len(e['labels']))}: {short_list(e['labels'])}). De kan være sprunget over, fordi sonarr2 sætter "
+                    f"trackeren på pause efter en afvisning.\n\n{tail}")
+            detail = f"{_n(len(e['labels']))} øvrige manglende tages med ({short_list(e['labels'])}) – søges igen i portioner"
+        _d["telegram"](text)
+        _d["log"].info("Hentegrænse: %s – %s", title, detail)
+        _d["write_log"]("series", "", title, None, "hentegrænse", "", detail, False)
 
 
 def retry(inst, con):
     """Trin 4-5: opdatér status, søg næste portion, og meld færdig."""
     utc = _utcnow()
-    rows = con.execute("SELECT * FROM grab_retry WHERE status='venter' ORDER BY tries, found_at, episode_id").fetchall()
+    rows = con.execute("SELECT * FROM grab_retry WHERE status='venter' ORDER BY tries, kind, found_at, label, episode_id").fetchall()
     if rows:
         queued = set()
         q = _d["arr"](inst, "GET", "/queue", params={"page": 1, "pageSize": 1000}) or {}
@@ -270,7 +329,9 @@ def tick():
         return
     con = _table()
     try:
-        scan(inst, con)
+        new = scan(inst, con)
+        extra = expand(inst, con)
+        announce(new, extra)
         retry(inst, con)
     finally:
         con.close()
