@@ -808,7 +808,7 @@
       <label class="check"><input type="checkbox" id="s_seerr_check"> Spring titler over, som er afvist eller venter på godkendelse i Seerr</label>
       <div class="small" id="seerrInfo"></div>
       <h2 style="margin-top:22px">Hentegrænse hos trackeren</h2>
-      <div class="small">Henter sonarr2 mange enkeltafsnit på én gang (fx når en bruger ønsker flere sæsoner i Seerr), kan trackeren afvise resten ("API Grab Limit reached"). sonarr2 prøver ikke selv igen. Fangarr læser sonarr2's log hvert 2. minut, sender én besked til Telegram og beder sonarr2 søge de afviste afsnit igen i små portioner. Du får besked, når alle er hjemme – eller hvis nogle stadig mangler, så du selv kan søge dem. Kun overvågede afsnit uden fil. Tallene kan ændres i fangarr.env (GRAB_RETRY_BATCH, GRAB_RETRY_MINUTES, GRAB_RETRY_HOURS).</div>
+      <div class="small">Henter sonarr2 mange enkeltafsnit på én gang (fx når en bruger ønsker flere sæsoner i Seerr), kan trackeren afvise resten ("API Grab Limit reached"). sonarr2 prøver ikke selv igen. Fangarr læser sonarr2's log hvert 2. minut, sender én besked til Telegram og beder sonarr2 søge de afviste afsnit igen i små portioner. Du får besked, når alle er hjemme – eller hvis nogle stadig mangler, så du selv kan søge dem. Seriens øvrige manglende afsnit tages også med, fordi sonarr2 sætter trackeren på pause efter en afvisning og derfor kan springe resten af serien over. Kun overvågede afsnit uden fil, som allerede er sendt. Tallene kan ændres i fangarr.env (GRAB_RETRY_BATCH, GRAB_RETRY_MINUTES, GRAB_RETRY_HOURS).</div>
       <div id="grabInfo" class="small" style="margin-top:8px"></div>
       </div>
       <div data-p="eksport">
