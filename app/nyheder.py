@@ -318,7 +318,7 @@ def clean(d):
     """Det, der må gemmes – alt andet smides væk. Rejser fejl med en dansk forklaring."""
     d = d if isinstance(d, dict) else {}
     theme = d.get("theme") if d.get("theme") in THEMES else "tilbud"
-    action = d.get("action") if d.get("action") in ("popup", "section", "none") else "popup"
+    action = d.get("action") if d.get("action") in ("popup", "section", "shop", "none") else "popup"
     art = d.get("art") if d.get("art") in ARTS else ""
     p = d.get("popup") if isinstance(d.get("popup"), dict) else {}
     steps = []
@@ -362,6 +362,8 @@ def problems(d, for_publish=True):
         out.append("Slutdatoen er allerede passeret.")
     if d["action"] == "popup" and not (d["popup"]["intro"] or d["popup"]["steps"] or d["popup"]["price"]):
         out.append("Pop-up'en er tom – skriv en indledning, en pris eller mindst ét trin.")
+    if d["action"] == "shop" and not shop().get("open"):
+        out.append("Knappen åbner \"Få flere ønsker\", men køb i guiden er ikke åbent – slå det til under Kunder › Seerr-ønsker › Indstillinger.")
     return out
 
 
@@ -406,6 +408,14 @@ def build(d, nid=0):
     return item
 
 
+def shop():
+    """Køb i guiden (app/kob.py): er det åbent, og hvor står knappen?"""
+    try:
+        return D["shop_info"]() if D.get("shop_info") else {}
+    except Exception:
+        return {}
+
+
 def contact():
     s = settings()
     links = {k: s[k] for k in ("messenger", "telegram") if str(s.get(k) or "").startswith("https://")}
@@ -421,6 +431,7 @@ def live():
     """Udgivne nyheder, der ikke er udløbet – guiden viser selv hver nyhed fra start til slut."""
     now = D["now"]()
     out = []
+    shop_open = bool(shop().get("open"))
     for r in _rows():
         if not r["published"]:
             continue
@@ -428,7 +439,10 @@ def live():
         e = _parse_dt(d["end"])
         if e and e <= now:
             continue
-        out.append(build(d, r["id"]))
+        item = build(d, r["id"])
+        if item["action"] == "shop" and not shop_open:   # køb er lukket – kortet vises uden knap
+            item.update(action="none", btn="")
+        out.append(item)
     return out
 
 
@@ -491,7 +505,7 @@ def list_news():
             "arts": [{"key": k, "name": v[0]} for k, v in ARTS.items()],
             "sections": [{"id": k, "title": v} for k, v in secs.items()],
             "guide": {"seen": seen, "age": age, "ok": age is not None and age < 300, "site": bool(g.get("sections"))},
-            "settings": settings(), "contact": contact(), "stat_ok": stat_ok}
+            "settings": settings(), "contact": contact(), "stat_ok": stat_ok, "shop": shop()}
 
 
 @router.get("/gallery")
@@ -630,7 +644,9 @@ async def guide_pull(req: Request):
     if changed or stale:   # skriv kun til databasen, når noget er ændret, eller højst hvert 2. minut
         D["kv_set"](GUIDE_KEY, {"sections": secs or g.get("sections") or [], "seen": now.isoformat(timespec="seconds")})
     js = renderer()
+    sh = shop()
     return {"ok": True, "news": live(), "contact": contact(), "new_days": settings()["new_days"],
+            "shop": {"open": bool(sh.get("open")), "section": sh.get("section") or "", "label": sh.get("label") or "Få flere ønsker"},
             "js": js, "js_v": hashlib.sha1(js.encode()).hexdigest()[:10], "generated": now.isoformat(timespec="seconds")}
 
 

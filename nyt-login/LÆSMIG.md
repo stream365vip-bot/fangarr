@@ -19,7 +19,7 @@ En lille app, der viser en statisk side (nyhedsbrevet på `nyt.stream365.vip`), 
 - `/opt/nyt/data/` – `secret` (underskriver cookies) og `client_id` (appens id hos Plex). Monteres som `/config`.
 
 ## Indstillinger (miljøvariabler, alle valgfri)
-`PUBLIC_URL` (standard `https://nyt.stream365.vip`), `PLEX_URL` (`https://plex.stream365.vip`), `PLEX_MACHINE_ID` (hvis serverens id ikke skal hentes automatisk), `SESSION_DAYS` (90), `CONTACT_TEXT`, `UPTIME_URL`, `UPTIME_SLUG` (kunder), `STATUS_LINKS` (se Driftstatus), `STAT` (1; 0 slår tælleren fra), `STAT_EXCLUDE` (Stream365), `STAT_DAYS` (90), `STAT_DIR` (se Tæller), `NEWS` (1; 0 slår nyhederne fra), `NEWS_URL` (`http://fangarr:8080/api/nyheder/guide`).
+`PUBLIC_URL` (standard `https://nyt.stream365.vip`), `PLEX_URL` (`https://plex.stream365.vip`), `PLEX_MACHINE_ID` (hvis serverens id ikke skal hentes automatisk), `SESSION_DAYS` (90), `CONTACT_TEXT`, `UPTIME_URL`, `UPTIME_SLUG` (kunder), `STATUS_LINKS` (se Driftstatus), `STAT` (1; 0 slår tælleren fra), `STAT_EXCLUDE` (Stream365), `STAT_DAYS` (90), `STAT_DIR` (se Tæller), `NEWS` (1; 0 slår nyhederne fra), `NEWS_URL` (`http://fangarr:8080/api/nyheder/guide`), `KOB_URL` (`http://fangarr:8080/api/kob`), `NYT_TOKEN` (i stedet for filen `fangarr_token`).
 
 ## Opdatering
 - Ny udgave af siden: læg filerne i `/opt/nyt/site/` – ingen genstart.
@@ -71,3 +71,9 @@ Skrives i **Fangarr › Guide › Nyheder** (se Fangarrs LÆSMIG › Nyheder i g
 - Kun for brugere, der er logget ind og har accepteret reglerne (401 ellers). Appen vælger selv, hvem der ser hvad: nyhedens periode og "kun for nye brugere" (ud fra datoen i `accepteret.json`). Lukkede nyheder huskes i browseren (`localStorage`).
 - Tælleren får hændelsen `news` med nyhedens id og `a` = `seen`, `click`, `popup`, `contact` eller `close`.
 - Svarer Fangarr ikke, står der én linje i loggen ("Nyhederne kunne ikke hentes hos Fangarr …") og "Nyhederne hentes igen hos Fangarr", når det virker igen. Slå nyhederne fra: `NEWS: "0"` under `environment:` i `/opt/nyt/docker-compose.yml` og `cd /opt/nyt && docker compose up -d`.
+
+## Køb i guiden – "Få flere ønsker" (fra 21. nov. 2026)
+Kunden vælger selv pakke eller køber film og sæsoner. Fangarr regner beløbet ud, lægger det på næste betaling og retter Seerr (se Fangarrs LÆSMIG › Køb i guiden). Appen her viser bare arket og sender videre.
+- Adresser for indloggede kunder: `GET /api/kob` (kundens pakke, købte ønsker og næste betaling), `POST /api/kob/tilbud` (hvad koster det) og `POST /api/kob/vaelg` (gem valget – kun fra guidens egen side). Appen sender **kun** Plex-id og brugernavn fra cookien til Fangarr (`KOB_URL`, standard `http://fangarr:8080/api/kob`) med headeren `X-Nyt-Token`.
+- **Nøglen** står i filen `/opt/nyt/data/fangarr_token` (samme værdi som `NYT_TOKEN` i `/opt/fangarr/fangarr.env`, chmod 600). Uden filen er køb lukket: ingen knap i guiden, og `/api/kob` svarer 404. Filen læses igen, når den ændres – ingen genstart.
+- Knappen "Se dine ønsker" sættes ind i guidens afsnit om Seerr af nyhedsscriptet, når Fangarr siger, at køb er åbent.

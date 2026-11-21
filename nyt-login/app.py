@@ -62,6 +62,10 @@ NEWS_ON = (os.environ.get("NEWS") or "1").strip() != "0"
 NEWS_URL = (os.environ.get("NEWS_URL") or "http://fangarr:8080/api/nyheder/guide").strip()
 NEWS_EVERY = 30                                                   # sekunder mellem hver hentning
 NEWS_FILE = os.path.join(DATA_DIR, "nyheder.json")                # seneste svar – så nyhederne vises, selv om Fangarr genstarter
+# Køb i guiden ("Få flere ønsker", fra 21. nov. 2026): spørger Fangarr internt med en hemmelig nøgle (samme som NYT_TOKEN
+# i /opt/fangarr/fangarr.env). Nøglen ligger i filen /opt/nyt/data/fangarr_token (eller miljøvariablen NYT_TOKEN).
+KOB_URL = (os.environ.get("KOB_URL") or "http://fangarr:8080/api/kob").rstrip("/")
+KOB_TOKEN_FILE = os.path.join(DATA_DIR, "fangarr_token")
 RULES_FILE = os.path.join(SITE_DIR, "_regler.json")      # regler + spørgsmål ved første login (ligger sammen med siden)
 ACCEPT_FILE = os.path.join(DATA_DIR, "accepteret.json")  # hvem har accepteret reglerne, og hvornår
 COOKIE, PIN_COOKIE = "s365_nyt", "s365_pin"
@@ -729,7 +733,104 @@ def api_news(req: Request):
     s = news_allowed(req)
     if not s:
         return JSONResponse({"detail": "log ind først"}, status_code=401)
-    return JSONResponse({"news": news_for(s[0]), "contact": (_news["data"] or {}).get("contact")}, headers={"Cache-Control": "no-store"})
+    d = _news["data"] or {}
+    shop = d.get("shop") if isinstance(d.get("shop"), dict) and d["shop"].get("open") and kob_token() else None
+    return JSONResponse({"news": news_for(s[0]), "contact": d.get("contact"), "shop": shop}, headers={"Cache-Control": "no-store"})
+
+
+# ---------------------------------------------------------------- køb i guiden ("Få flere ønsker")
+# Appen her sender kun Plex-id og brugernavn på den indloggede kunde til Fangarr (aldrig hvad browseren påstår) og
+# viser svaret. Fangarr finder kunden, regner beløbet ud, lægger det på næste betaling og retter Seerr.
+_kob = {"token": None, "mtime": None}
+
+
+def kob_token():
+    t = (os.environ.get("NYT_TOKEN") or "").strip()
+    if t:
+        return t
+    try:
+        m = os.path.getmtime(KOB_TOKEN_FILE)
+    except OSError:
+        return ""
+    if _kob["mtime"] != m:
+        try:
+            with open(KOB_TOKEN_FILE, encoding="utf-8") as f:
+                _kob.update(token=f.read().strip(), mtime=m)
+        except OSError:
+            return ""
+    return _kob["token"] if len(_kob["token"] or "") >= 32 else ""
+
+
+def kob_call(path, body):
+    t = kob_token()
+    if not t:
+        return JSONResponse({"detail": "Køb i guiden er ikke sat op."}, status_code=404)
+    try:
+        r = httpx.post(KOB_URL + path, json=body, headers={"X-Nyt-Token": t}, timeout=12)
+    except Exception as e:
+        log.warning("Køb i guiden: Fangarr svarer ikke (%s)", e.__class__.__name__)
+        return JSONResponse({"detail": "Det kan ikke lade sig gøre lige nu. Prøv igen om lidt."}, status_code=503)
+    try:
+        data = r.json()
+    except ValueError:
+        data = {}
+    if r.status_code == 404:
+        return JSONResponse({"detail": "Køb i guiden er ikke åbent."}, status_code=404)
+    if r.status_code >= 400:
+        detail = data.get("detail") if isinstance(data.get("detail"), str) else "Det kan ikke lade sig gøre lige nu."
+        return JSONResponse({"detail": detail}, status_code=r.status_code if r.status_code in (400, 409, 429) else 502)
+    return JSONResponse(data, headers={"Cache-Control": "no-store"})
+
+
+async def kob_body(req: Request, s):
+    origin = (req.headers.get("origin") or "").rstrip("/")
+    if origin and origin != PUBLIC_URL:
+        return None
+    try:
+        raw = await req.body()
+        b = json.loads(raw) if len(raw) <= 2000 else None
+    except Exception:
+        b = None
+    if not isinstance(b, dict):
+        return None
+    out = {"uid": s[0], "name": s[1], "what": "buy" if b.get("what") == "buy" else "package"}
+    for k in ("package", "film", "tv", "expect"):
+        if k in b and isinstance(b[k], (str, int, float)) and not isinstance(b[k], bool):
+            out[k] = b[k]
+    return out
+
+
+@app.get("/api/kob")
+def api_kob(req: Request):
+    s = news_allowed(req)
+    if not s:
+        return JSONResponse({"detail": "Log ind først."}, status_code=401)
+    return kob_call("/mig", {"uid": s[0], "name": s[1]})
+
+
+@app.post("/api/kob/tilbud")
+async def api_kob_quote(req: Request):
+    s = news_allowed(req)
+    if not s:
+        return JSONResponse({"detail": "Log ind først."}, status_code=401)
+    b = await kob_body(req, s)
+    if b is None:
+        return JSONResponse({"detail": "Ugyldig forespørgsel."}, status_code=400)
+    return kob_call("/tilbud", b)
+
+
+@app.post("/api/kob/vaelg")
+async def api_kob_choose(req: Request):
+    s = news_allowed(req)
+    if not s:
+        return JSONResponse({"detail": "Log ind først."}, status_code=401)
+    b = await kob_body(req, s)
+    if b is None:
+        return JSONResponse({"detail": "Ugyldig forespørgsel."}, status_code=400)
+    res = kob_call("/vaelg", b)
+    if res.status_code == 200:
+        log.info("Køb i guiden: Plex-kontoen %s har valgt (%s)", s[1] or s[0], b.get("what"))
+    return res
 
 
 @app.get("/api/nyheder.js")

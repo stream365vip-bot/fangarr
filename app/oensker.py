@@ -16,6 +16,7 @@ import datetime
 import json
 import math
 import os
+import re
 import threading
 import time
 
@@ -47,6 +48,8 @@ DEFAULTS = {
     "price_film": 5,        # enkeltkøb pr. film
     "price_tv": 10,         # enkeltkøb pr. sæson
     "brake": 5,             # mister flere end så mange retten til at ønske på én gang, stopper Fangarr og giver besked
+    "shop": False,          # kunderne kan selv vælge pakke og købe ønsker i guiden (1.25.0) – kræver NYT_TOKEN og tilstand Til
+    "shop_section": "",     # afsnittet i guiden, hvor knappen "Få flere ønsker" står (tom = find selv afsnittet om Seerr)
 }
 MODES = ("fra", "prove", "til")
 
@@ -335,7 +338,7 @@ def quote_package(cid, pid, target):
         raise HTTPException(400, "kunden har ingen næste betaling – tjek status, type og cyklus på kundekortet")
     n = _months(c)
     exp = _expected_next(c, nxt)
-    lines, kind = [], ""
+    lines, kind, add = [], "", 0
     pending = row["pending"] if row else None
     old_svc = _unlinked_service(cid) if not row and target else None
     if old_svc:      # kunden betaler allerede for ønsker (gammel tjeneste) – kobl den til kontoen
@@ -375,7 +378,9 @@ def quote_package(cid, pid, target):
         base_cur = _price(pending if (pending is not None and row["pending_billed"]) else cur)
         exp += (_price(target) - base_cur) * n
     return {"kind": kind, "lines": lines, "next_date": nxt["date"].isoformat(), "next_text": _day(nxt["date"]),
-            "next_amount": kunder.num(max(0.0, exp)), "from": cur, "to": target}
+            "next_amount": kunder.num(max(0.0, exp)), "from": cur, "to": target, "pending": pending,
+            # tallene bag teksten (bruges af Køb i guiden, 1.25.0)
+            "add": kunder.num(add), "days": _days_to(nxt), "months": n, "period_amount": kunder.num(_price(target) * n)}
 
 
 def set_package(cid, pid, target, source="Fangarr"):
@@ -1000,8 +1005,14 @@ def brief():
 @router.get("/state")
 def state():
     out, fam = overview()
+    extra = {}
+    for k in ("shop_info", "sections"):   # Køb i guiden (1.25.0) – sat af main.py
+        try:
+            extra[k.replace("_info", "")] = D[k]() if D.get(k) else None
+        except Exception:
+            extra[k.replace("_info", "")] = None
     return {"enabled": enabled(), "settings": settings(), "state": D["kv_get"]("oensker_state", {}) or {}, "accounts": out, "family": fam,
-            "log": rows("SELECT * FROM s_log ORDER BY id DESC LIMIT 80")}
+            "log": rows("SELECT * FROM s_log ORDER BY id DESC LIMIT 80"), **extra}
 
 
 @router.get("/customer/{cid}")
@@ -1068,6 +1079,13 @@ async def settings_put(req: Request):
             if v <= 0:
                 raise HTTPException(400, "prisen for enkeltkøb skal være over 0")
             s[k] = kunder.num(v)
+    if "shop" in b:
+        s["shop"] = bool(b["shop"])
+    if "shop_section" in b:
+        v = str(b["shop_section"] or "").strip()
+        if v and not re.fullmatch(r"[\w\-:.]{1,80}", v):
+            raise HTTPException(400, "ugyldigt afsnit")
+        s["shop_section"] = v
     if "brake" in b:
         try:
             s["brake"] = max(1, int(b["brake"]))

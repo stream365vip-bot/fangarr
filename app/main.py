@@ -29,6 +29,7 @@ from . import hentegraense
 from . import kunder
 from . import oensker
 from . import nyheder
+from . import kob
 
 DATA_DIR = os.environ.get("DATA_DIR", "/config")
 DB_PATH = os.path.join(DATA_DIR, "fangarr.db")
@@ -1437,6 +1438,7 @@ app.include_router(hentegraense.router)   # Hentegrænse: søg afviste afsnit ig
 app.include_router(apps.router)     # Apps med lampe på forsiden og /widget/<nøgle> til telefonen (1.20.0) – se app/apps.py
 app.include_router(oensker.router)  # Seerr-ønsker: pakker, enkeltkøb og hvem der må ønske i Seerr (1.23.0) – se app/oensker.py
 app.include_router(nyheder.router)  # Nyheder i guiden: kortet øverst og nyhedens pop-up (1.24.0) – se app/nyheder.py
+app.include_router(kob.router)      # Køb i guiden: "Få flere ønsker" – kun for guiden med NYT_TOKEN (1.25.0) – se app/kob.py
 
 
 @app.on_event("startup")
@@ -2990,7 +2992,10 @@ def tautulli(cmd, **params):
 kunder.setup(db=db, telegram=telegram, tautulli=tautulli, tautulli_enabled=tautulli_enabled, now=now,
              kv_get=kv_get, kv_set=kv_set, log=log, before_charge=oensker.before_charge)
 oensker.setup(db=db, telegram=telegram, now=now, kv_get=kv_get, kv_set=kv_set, log=log)
-nyheder.setup(db=db, now=now, kv_get=kv_get, kv_set=kv_set, log=log, stat_events=guide.events, stat_enabled=guide.enabled)
+nyheder.setup(db=db, now=now, kv_get=kv_get, kv_set=kv_set, log=log, stat_events=guide.events, stat_enabled=guide.enabled,
+              shop_info=kob.info)
+kob.setup(telegram=telegram, log=log)
+oensker.D.update(shop_info=kob.info, sections=lambda: [{"id": k, "title": v} for k, v in nyheder._sections().items()])
 guide.setup(db=db, now=now, log=log)
 apps.setup(kv_get=kv_get, kv_set=kv_set, now=now, log=log)
 hentegraense.setup(arr=arr, sonarr=lambda: _arr_of("sonarr"), db=db, telegram=telegram, write_log=write_log,
