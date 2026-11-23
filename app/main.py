@@ -371,7 +371,9 @@ def find_title(inst, media, title, year, release=""):
             return hit, None, [], "fundet via din godkendte kobling \"%s\" = \"%s\"" % (al["release_title"], hit.get("title"))
     found = lookup(inst, media, title, year)
     cand, why, same = pick_all(found, title, year)
-    if cand or same or why != NOT_FOUND:
+    if cand:
+        return cand, None, same, why or ""   # why er her en note om valget blandt ens titler (1.26.1)
+    if same or why != NOT_FOUND:
         return cand, why, same, ""
     cc = country_match(found, title, year, release)
     if cc:
@@ -386,7 +388,7 @@ def find_title(inst, media, title, year, release=""):
         lib = []  # biblioteket kunne ikke hentes – gå videre til næste trin
     lcand, lwhy, lsame = pick_all(lib, title, year)
     if lcand:
-        return lcand, None, [], "fundet i dit bibliotek som \"%s\"" % lcand.get("title")
+        return lcand, None, [], ("fundet i dit bibliotek som \"%s\"" % lcand.get("title")) + (f" – {lwhy}" if lwhy else "")
     if lsame:
         return None, lwhy, lsame, ""
     if media == "series":
@@ -540,8 +542,32 @@ def suggest(inst, media, title, year, rule, limit=3, cache=None):
     return out[:limit]
 
 
+POPULAR_FACTOR = 5   # 1.26.1: den mest populære vælges, når den er mindst så mange gange mere populær end nr. 2
+
+
+def choose_among(group):
+    """1.26.1: flere titler med samme navn og år. Vælg
+    1) den eneste, der allerede findes i Sonarr/Radarr, eller
+    2) (kun film) den, der er mindst POPULAR_FACTOR gange mere populær hos TMDb end nr. 2.
+    Giver (titel, note) eller (None, None)."""
+    have = [c for c in group if to_int(c.get("id"))]
+    if len(have) == 1 and len(group) > 1:
+        c = have[0]
+        return c, f"{len(group)} titler med samme navn og år – valgte den, der allerede findes ({c.get('title')}, TMDb {c.get('tmdbId') or '?'})"
+    if any("tvdbId" in c for c in group):
+        return None, None   # serier: kun "findes allerede"
+    pop = sorted(group, key=lambda c: to_float(c.get("popularity")), reverse=True)
+    p1, p2 = to_float(pop[0].get("popularity")), to_float(pop[1].get("popularity"))
+    if p1 >= 1 and p1 >= POPULAR_FACTOR * p2:
+        c = pop[0]
+        return c, (f"{len(group)} titler med samme navn og år – valgte den mest populære hos TMDb "
+                   f"({c.get('title')}, TMDb {c.get('tmdbId') or '?'}, popularitet {p1:.0f} mod {p2:.0f})")
+    return None, None
+
+
 def pick(cands, title, year):
-    """Find præcis én titel, der passer. Ellers en forklaring."""
+    """Find præcis én titel, der passer. Ellers en forklaring.
+    Er titlen valgt blandt flere med samme navn og år (1.26.1), er forklaringen en note om valget."""
     t, tl = norm(title), loose(title)
 
     def names(c):
@@ -562,6 +588,9 @@ def pick(cands, title, year):
         if len(near) == 1:
             return near[0], None
         if len(same) > 1 or len(near) > 1:
+            c, note = choose_among(same if len(same) > 1 else near)
+            if c:
+                return c, note
             return None, "flere mulige titler med samme år – sprunget over"
         return None, f"titlen findes, men året passer ikke ({year})"
     if len(exact) == 1:
@@ -914,7 +943,7 @@ def _process(p, test=False, from_waitlist=False, rules_override=None, extra_pass
                 if m.get("rating"):
                     parts.append(f"rating {m['rating']}")
                 info = " · ".join(parts)
-            notes = [c for c in res["checks"] if "fundet i dit bibliotek" in c or "fundet via TVmaze" in c or "valgte den fra" in c or "undertitel" in c
+            notes = [c for c in res["checks"] if "fundet i dit bibliotek" in c or "fundet via TVmaze" in c or "valgte den" in c or "undertitel" in c
                      or "godkendte kobling" in c or "landekode" in c]
             if notes:
                 info = (info + " · " if info else "") + notes[0].split(": ", 1)[-1]

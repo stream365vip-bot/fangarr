@@ -10,6 +10,12 @@ Faner: Regler · Kunder (Opkrævning, Kunder, Seerr-ønsker, IPTV-linjer, Økono
 
 Sikringer: prøvetilstand, loft pr. døgn, pladsgrænse, kun præcise titelmatch, Seerr-tjek, Telegram ved fejl og "i orden igen", dagligt resumé.
 
+## Flere titler med samme navn og år (1.26.1)
+Før blev en udgivelse sprunget over, når TMDb/TheTVDB havde flere titler med samme navn og år (fx "The Odyssey" 2026). Nu vælger Fangarr:
+1. **den eneste, der allerede findes** i Sonarr/Radarr (film og serier), eller
+2. **kun film:** den, der er **mindst 5 gange mere populær** hos TMDb (`popularity` fra Radarrs opslag) end nr. 2 – og mindst 1.
+Ellers springes den stadig over. Valget står i loggen og i "Test en titel", fx "valgte den mest populære hos TMDb (The Odyssey, TMDb 1368337, popularitet 412 mod 3)". Gælder alle regler.
+
 ## 4K-udgaver: ekstra udgave til radarr4k (1.26.0)
 Premierefilm i 4K med dansk tekst hentes automatisk til radarr4k – ved siden af 1080p-udgaven i den almindelige Radarr.
 
