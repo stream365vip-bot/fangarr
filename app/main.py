@@ -194,8 +194,11 @@ def load_instances():
         api = os.environ.get(f"{key}_APIKEY")
         link = (os.environ.get(f"{key}_LINK") or "").rstrip("/")   # valgfri: adressen, du selv åbner appen på
         typ = os.environ.get(f"{key}_TYPE") or ("radarr" if n.lower().startswith("radarr") else "sonarr")
+        # ekstra udgave (fx radarr4k): bruges kun af regler med "Ekstra udgave" – ikke af oversættelser og ventetid (1.26.0)
+        extra_env = (os.environ.get(f"{key}_EXTRA") or "").strip().lower()
+        extra = extra_env in ("1", "true", "ja", "yes") if extra_env else n.lower().endswith("4k")
         if url and api:
-            inst[n] = {"name": n, "type": typ, "url": url.rstrip("/"), "apikey": api, "link": link}
+            inst[n] = {"name": n, "type": typ, "url": url.rstrip("/"), "apikey": api, "link": link, "extra": extra}
         else:
             log.warning("Instans %s mangler %s_URL eller %s_APIKEY", n, key, key)
     return inst
@@ -599,7 +602,14 @@ def describe(media, c):
     else:
         rating = to_float(ratings.get("value"))
         network = c.get("network") or ""
+    released = ""
+    if media == "movie":
+        # tidligste kendte dato (biograf, digital, fysisk) – bruges af "udkommet inden for X måneder" (1.26.0)
+        dates = [str(c.get(k) or "")[:10] for k in ("inCinemas", "digitalRelease", "physicalRelease", "releaseDate")]
+        dates = [d for d in dates if re.match(r"\d{4}-\d{2}-\d{2}$", d)]
+        released = min(dates) if dates else ""
     return {
+        "released": released,
         "title": c.get("title") or "",
         "year": to_int(c.get("year")),
         "language": ((c.get("originalLanguage") or {}).get("name")) or "",
@@ -610,7 +620,12 @@ def describe(media, c):
     }
 
 
+RES_2160 = re.compile(r"(?:^|[^a-z0-9])(?:2160p|4k|uhd)(?:$|[^a-z0-9])", re.I)
+
+
 def release_ok(rule, release):
+    if rule.get("resolution") == "2160p" and not RES_2160.search(release or ""):
+        return False
     words = [w for w in (rule.get("release_contains") or []) if w]
     if words and not any(w.lower() in release.lower() for w in words):
         return False
@@ -637,6 +652,9 @@ def rule_check(rule, inf):
     if want and not any(g in genres for g in want):
         return False, "genre passer ikke (" + ", ".join(inf["genres"]) + ")", False
     bad = [g.lower() for g in (rule.get("genres_none") or [])]
+    if bad and not genres and rule.get("extra") and not rule.get("allow_missing_genre"):
+        # ekstra udgave (4K): uden genrer kan "udeluk genrer" (fx Animation) ikke tjekkes – tilføj ikke
+        return False, "TMDb mangler genrer – kan ikke udelukke " + ", ".join(rule.get("genres_none") or []), True
     hit = [g for g in bad if g in genres]
     if hit:
         return False, "udelukket genre: " + ", ".join(hit), False
@@ -658,9 +676,34 @@ def rule_check(rule, inf):
     minr = to_float(rule.get("min_rating"))
     if minr and inf["rating"] < minr:
         return False, f"rating {inf['rating'] or 'ingen'} er under {minr}", False
+    months = to_int(rule.get("released_months"))
+    if months:
+        ok, why = released_within(inf, months)
+        if not ok:
+            return False, why, False
     if accepted:
         return True, "alle krav opfyldt – " + " og ".join(accepted) + " mangler hos TheTVDB/TMDb, accepteret", False
     return True, "alle krav opfyldt", False
+
+
+def released_within(inf, months):
+    """Udkommet inden for de sidste `months` måneder – eller med en dato i fremtiden (1.26.0).
+    Uden datoer hos TMDb bruges årstallet: i år eller senere tæller med."""
+    today = now().date()
+    cutoff = today - datetime.timedelta(days=round(months * 30.44))
+    d = inf.get("released") or ""
+    if d:
+        try:
+            day = datetime.date.fromisoformat(d)
+        except ValueError:
+            day = None
+        if day:
+            if day >= cutoff:
+                return True, ""
+            return False, f"udkom {d} – mere end {months} måneder siden"
+    if inf.get("year") and inf["year"] >= today.year:
+        return True, ""
+    return False, f"ingen udgivelsesdato hos TMDb, og årstallet ({inf.get('year') or '?'}) er før {today.year}"
 
 
 def disk_pct():
@@ -688,7 +731,7 @@ def tag_id(inst, label):
     return arr(inst, "POST", "/tag", json={"label": label})["id"]
 
 
-def add_title(inst, media, cand, rule):
+def add_title(inst, media, cand, rule, force_search=False):
     body = {k: v for k, v in cand.items() if k != "id"}
     tags = []
     tid = tag_id(inst, rule.get("tag") or DEFAULT_TAG)
@@ -698,7 +741,7 @@ def add_title(inst, media, cand, rule):
     body["rootFolderPath"] = rule.get("root_folder")
     body["monitored"] = True
     body["tags"] = tags
-    search = bool(rule.get("search", True))
+    search = bool(rule.get("search", True)) or force_search
     if media == "movie":
         body["minimumAvailability"] = rule.get("minimum_availability") or "released"
         body["addOptions"] = {"searchForMovie": search, "monitor": "movieOnly"}
@@ -816,20 +859,33 @@ def is_transient(e):
 
 
 def process(p, test=False, from_waitlist=False, rules_override=None):
-    """Som _process, men kun én behandling ad gangen pr. titel (undgår dobbelt-tilføjelse og 409)."""
+    """Som _process, men kun én behandling ad gangen pr. titel (undgår dobbelt-tilføjelse og 409).
+    Bagefter køres reglerne med "Ekstra udgave" (fx 4K til radarr4k) for sig – uanset hvad de almindelige
+    regler besluttede. Svaret til autobrr følger de almindelige regler; ekstra-resultatet ligger i res["extra"]."""
     title = str(p.get("title") or "").strip()
+
+    def both():
+        res = _process(p, test=test, from_waitlist=from_waitlist, rules_override=rules_override)
+        if rules_override is None and not to_int(p.get("rule_id")) and title:
+            extra = _process(p, test=test, from_waitlist=from_waitlist, extra_pass=True)
+            if extra.get("decision") != "ingen ekstra":
+                res["extra"] = extra
+        return res
+
     if test or not title:
-        return _process(p, test=test, from_waitlist=from_waitlist, rules_override=rules_override)
+        return both()
     with _title_lock(media_of(p), title):
-        return _process(p, test=test, from_waitlist=from_waitlist, rules_override=rules_override)
+        return both()
 
 
-def _process(p, test=False, from_waitlist=False, rules_override=None):
+def _process(p, test=False, from_waitlist=False, rules_override=None, extra_pass=False):
     """Behandl én udgivelse.
     test=True: tilføj intet, log intet, ingen venteliste.
     from_waitlist=True: kaldt af ventelisten – læg ikke på ventelisten igen.
     rules_override: brug disse regler i stedet for de gemte (prøv en regel på historikken).
-    p["rule_id"]: kun den regel, og udgivelsesnavnet tjekkes ikke (fulgt fra premierelisten)."""
+    p["rule_id"]: kun den regel, og udgivelsesnavnet tjekkes ikke (fulgt fra premierelisten).
+    extra_pass=True: kun regler med "Ekstra udgave" (1.26.0). Ingen venteliste, Seerr-tjek eller hjælp til sonarr2.
+    Passer udgivelsen ikke til nogen af dem (fx ikke 2160p), logges intet: decision = "ingen ekstra"."""
     s = get_settings()
     dry = test or bool(s["dry_run"])
     media = media_of(p)
@@ -848,7 +904,8 @@ def _process(p, test=False, from_waitlist=False, rules_override=None):
 
     def done(decision, detail, rule=""):
         res.update(decision=decision, detail=detail, rule=rule)
-        if not test:
+        quiet = extra_pass and from_waitlist and decision != "tilføjet"   # ventelistens forsøg hver 2. time fylder ellers loggen
+        if not test and not quiet:
             m = res["match"] or {}
             info = ""
             if m:
@@ -867,13 +924,19 @@ def _process(p, test=False, from_waitlist=False, rules_override=None):
     if not title:
         return done("afvist", "ingen titel i udgivelsen")
     only = to_int(p.get("rule_id"))
-    if rules_override is not None:
+    if extra_pass:
+        rules = [r for r in get_rules() if r.get("active", True) and r.get("media") == media and r.get("extra")]
+        rules = [r for r in rules if release_ok(r, release)]
+        if not rules:
+            res["decision"] = "ingen ekstra"
+            return res
+    elif rules_override is not None:
         rules = [r for r in rules_override if r.get("media") == media]
     elif only:
         allr = [r for r in get_rules() if r.get("media") == media]
         rules = [r for r in allr if r.get("id") == only] or [r for r in allr if r.get("name") == p.get("rule_name")]
     else:
-        rules = [r for r in get_rules() if r.get("active", True) and r.get("media") == media]
+        rules = [r for r in get_rules() if r.get("active", True) and r.get("media") == media and not r.get("extra")]
     if not rules:
         return done("afvist", "ingen aktive regler for " + ("film" if media == "movie" else "serier"))
 
@@ -896,7 +959,7 @@ def _process(p, test=False, from_waitlist=False, rules_override=None):
                 detail = f"opslag i {inst['name']} fejlede: {e.__class__.__name__}"
                 if isinstance(e, httpx.HTTPStatusError):
                     detail += f" {e.response.status_code}"
-                if not test and not from_waitlist and not only and rules_override is None and is_transient(e):
+                if not test and not from_waitlist and not only and rules_override is None and not extra_pass and is_transient(e):
                     add_to_waitlist(media, title, release, p, name, detail + " – prøver igen")
                     return done("venteliste", detail + " – prøver igen", name)
                 return done("fejl", detail, name)
@@ -943,7 +1006,7 @@ def _process(p, test=False, from_waitlist=False, rules_override=None):
         inf = describe(media, cand)
         res["match"] = inf
         if inf["exists"]:
-            if media == "series" and not test and not dry and s.get("rescue_grab", True) and to_int(cand.get("id")):
+            if media == "series" and not test and not dry and not extra_pass and s.get("rescue_grab", True) and to_int(cand.get("id")):
                 rescue_start(inst, to_int(cand.get("id")), inf["title"], release)
             return done("findes allerede", f"findes allerede i {inst['name']}", name)
         if media == "series" and season > 1 and not only:
@@ -959,7 +1022,7 @@ def _process(p, test=False, from_waitlist=False, rules_override=None):
                 wait_rule, wait_why = name, why
             continue
         note = (" – " + why.split(" – ", 1)[1]) if "accepteret" in why else ""
-        seerr = seerr_status(media, cand) if s.get("seerr_check") else None
+        seerr = seerr_status(media, cand) if s.get("seerr_check") and not extra_pass else None
         if seerr == "declined":
             return done("afvist i Seerr", "en anmodning på titlen er afvist i Seerr", name)
         if seerr == "pending":
@@ -977,7 +1040,7 @@ def _process(p, test=False, from_waitlist=False, rules_override=None):
         if dry:
             return done("ville tilføje", f"til {inst['name']} › {r.get('root_folder')}" + (" (test)" if test else " (prøvetilstand)") + note, name)
         try:
-            created = add_title(inst, media, cand, r)
+            created = add_title(inst, media, cand, r, force_search=extra_pass and from_waitlist)
         except httpx.HTTPError as e:
             if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 409:
                 # titlen blev lagt ind lige før (samme udgivelse fra to trackere) – ikke en fejl
@@ -985,14 +1048,14 @@ def _process(p, test=False, from_waitlist=False, rules_override=None):
             detail = f"tilføjelse i {inst['name']} fejlede: {e.__class__.__name__}"
             if isinstance(e, httpx.HTTPStatusError):
                 detail += f" {e.response.status_code}"
-            if not from_waitlist and not only and rules_override is None and is_transient(e):
+            if not from_waitlist and not only and rules_override is None and not extra_pass and is_transient(e):
                 add_to_waitlist(media, title, release, p, name, detail + " – prøver igen")
                 return done("venteliste", detail + " – prøver igen", name)
             return done("fejl", detail, name)
         remember_added(inst, media, created, inf["title"], name)
         return done("tilføjet", f"til {inst['name']} › {r.get('root_folder')}" + note, name)
 
-    if wait_rule:
+    if wait_rule and not extra_pass:
         res["can_wait"] = True
         reason = wait_why
         if test:
@@ -1005,7 +1068,8 @@ def _process(p, test=False, from_waitlist=False, rules_override=None):
                                   "Glem den under Indstillinger › Koblinger og fjernede titler", wait_rule)
         add_to_waitlist(media, title, release, p, wait_rule, reason, suggestions=res["suggestions"])
         return done("venteliste", "venter på TheTVDB/TMDb: " + reason, wait_rule)
-    return done("afvist", "; ".join(res["checks"]) or "ingen regel passede")
+    one = (rules[0].get("name") or "") if extra_pass and len(rules) == 1 else ""
+    return done("afvist", "; ".join(res["checks"]) or "ingen regel passede", one)
 
 
 # ---------------------------------------------------------------- hjælp til sonarr2 (navn ikke genkendt)
@@ -1474,9 +1538,78 @@ async def webhook(req: Request):
     res = await run_in_threadpool(process, p)
     s = get_settings()
     log.info("%s | %s | %s | %s", res["media"], res["release"], res["decision"], res["detail"])
+    if res.get("extra"):
+        log.info("%s | %s | ekstra: %s | %s", res["media"], res["release"], res["extra"]["decision"], res["extra"]["detail"])
     if res["decision"] == "findes allerede" and s.get("pass_existing"):
         return JSONResponse(res, status_code=200)   # autobrr må fortsætte
     return JSONResponse(res, status_code=202)        # håndteret – Fangarr-filteret afvises, autobrr går videre til næste filter
+
+
+# ---------------------------------------------------------------- import fra radarr4k → Plex (1.26.0)
+# radarr4k har ingen Autoscan-forbindelse. Dens Connect › Webhook sender "Download" (import/opgradering) hertil,
+# og Fangarr beder Plex scanne netop filmens mappe – ingen fuld scanning, så intet andet skjult bliver vist.
+# Mappen kan være lidt om at dukke op på Mediabox, så der scannes igen efter 2 og 10 minutter.
+
+IMPORT_SCAN_DELAYS = [0, 120, 600]   # sekunder
+_scan_state = {"failing": False}
+_scan_lock = threading.Lock()
+
+
+def import_folder(p):
+    movie = p.get("movie") or {}
+    if movie.get("folderPath"):
+        return movie["folderPath"], f"{movie.get('title') or '?'} ({movie.get('year') or '?'})"
+    series = p.get("series") or {}
+    if series.get("path"):
+        rel = os.path.dirname(str((p.get("episodeFile") or {}).get("relativePath") or ""))
+        return (os.path.join(series["path"], rel) if rel else series["path"]), series.get("title") or "?"
+    return "", ""
+
+
+def _import_scan(folder, title, attempt):
+    try:
+        n = plex_refresh([folder])
+    except Exception as e:
+        log.warning("Plex-scan af %s fejlede (forsøg %d): %s", folder, attempt + 1, e.__class__.__name__)
+        if attempt == len(IMPORT_SCAN_DELAYS) - 1:
+            with _scan_lock:
+                first = not _scan_state["failing"]
+                _scan_state["failing"] = True
+            if first:
+                telegram(f"🚨 Fangarr – kunne ikke bede Plex vise {title} ({e.__class__.__name__}). "
+                         "Tjek PLEX_URL/PLEX_TOKEN i fangarr.env – eller scan mappen i hånden.")
+        return
+    if not n:
+        log.warning("Plex-scan af %s: Plex er ikke sat op, eller intet bibliotek indeholder mappen", folder)
+        return
+    log.info("Plex bedt om at scanne %s (%s, forsøg %d)", folder, title, attempt + 1)
+    with _scan_lock:
+        was = _scan_state["failing"]
+        _scan_state["failing"] = False
+    if was:
+        telegram("✅ Fangarr – Plex kan igen bedes vise nye 4K-film.")
+
+
+@app.post("/webhook/import")
+async def webhook_import(req: Request):
+    try:
+        p = await req.json()
+    except ValueError:
+        raise HTTPException(400, "forventede JSON")
+    ev = str(p.get("eventType") or "")
+    if ev == "Test":
+        return {"ok": True, "test": True, "plex": bool(PLEX_URL and PLEX_TOKEN)}
+    if ev != "Download":
+        return {"ok": True, "ignored": ev}
+    folder, title = import_folder(p)
+    if not folder:
+        return {"ok": False, "detail": "ingen mappe i beskeden"}
+    for i, delay in enumerate(IMPORT_SCAN_DELAYS):
+        t = threading.Timer(delay, _import_scan, args=(folder, title, i))
+        t.daemon = True
+        t.start()
+    log.info("Import: %s – Plex scanner %s", title, folder)
+    return {"ok": True, "folder": folder}
 
 
 @app.get("/api/state")
@@ -1533,6 +1666,7 @@ RULE_FIELDS = {
     "root_folder": str, "quality_profile_id": int, "monitor": str,
     "minimum_availability": str, "tag": str, "search": bool, "wait": bool,
     "allow_missing_genre": bool, "allow_missing_year": bool,
+    "extra": bool, "resolution": str, "released_months": int,   # 1.26.0: ekstra udgave (4K)
 }
 
 
@@ -1559,6 +1693,8 @@ def clean_rule(body, strict=True):
         raise HTTPException(400, "reglen skal have et navn")
     if out["instance"] not in INSTANCES:
         raise HTTPException(400, "vælg en Sonarr/Radarr")
+    if out["resolution"] not in ("", "2160p"):
+        out["resolution"] = ""
     if strict and (not out["root_folder"] or not out["quality_profile_id"]):
         raise HTTPException(400, "vælg mappe og kvalitetsprofil")
     return out
@@ -2369,6 +2505,8 @@ def on_the_way():
     """Fanen Oversættelser › C: udgivelser, Sonarr/Radarr holder tilbage på grund af ventetiden (Delay Profile)."""
     out = []
     for inst in INSTANCES.values():
+        if inst.get("extra"):
+            continue   # 4K: hentes uden ventetid og oversættes ikke
         movie = inst["type"] == "radarr"
         params = ({"includeUnknownMovieItems": "true", "includeMovie": "true"} if movie else
                   {"includeUnknownSeriesItems": "true", "includeSeries": "true", "includeEpisode": "true"})
@@ -2727,6 +2865,8 @@ def translations_search(q: str = ""):
     want_n, want_l = norm(q), loose(q)
     out = []
     for inst in INSTANCES.values():
+        if inst.get("extra"):
+            continue   # 4K-udgaver har altid dansk tekst – de oversættes ikke
         media = "movie" if inst["type"] == "radarr" else "series"
         straks = _tag_ids(inst, [STRAKS_TAG])[STRAKS_TAG]
         for it in library(inst, media):

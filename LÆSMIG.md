@@ -10,6 +10,17 @@ Faner: Regler · Kunder (Opkrævning, Kunder, Seerr-ønsker, IPTV-linjer, Økono
 
 Sikringer: prøvetilstand, loft pr. døgn, pladsgrænse, kun præcise titelmatch, Seerr-tjek, Telegram ved fejl og "i orden igen", dagligt resumé.
 
+## 4K-udgaver: ekstra udgave til radarr4k (1.26.0)
+Premierefilm i 4K med dansk tekst hentes automatisk til radarr4k – ved siden af 1080p-udgaven i den almindelige Radarr.
+
+- **Instansen:** `ARR_INSTANCES=sonarr2,radarr,radarr4k` (radarr4k sidst) + `RADARR4K_URL`/`RADARR4K_APIKEY`. Navne, der ender på `4k`, er en "ekstra udgave" (`RADARR4K_EXTRA=true/false` overstyrer). De springes over i Oversættelser (søg og "På vej").
+- **Regler med "Ekstra udgave":** udgivelsen behandles først af de almindelige regler (svaret til autobrr følger dem), og bagefter af reglerne med "Ekstra udgave" for sig. Ingen venteliste, intet Seerr-tjek og ingen hjælp til sonarr2 i den runde. Passer udgivelsen ikke (fx ikke 2160p), sker der intet og logges intet. Kommer en titel på ventelisten i den almindelige runde, prøves ekstra-reglerne også ved ventelistens forsøg – tilføjes filmen dér, søger radarr4k selv (autobrr har sendt udgivelsen for længe siden). Ventelistens afvisninger logges ikke for ekstra-reglerne.
+- **Nye felter på reglen:** "Opløsning" (Alle / Kun 2160p – navnet skal indeholde 2160p, 4K eller UHD), "Udkommet inden for (måneder)" (tidligste dato hos TMDb: biograf, digital eller fysisk; fremtidige datoer tæller med; uden datoer tæller årstallet i år eller senere) og "Ekstra udgave".
+- **Udeluk genrer:** på en ekstra-regel tilføjes filmen ikke, hvis TMDb mangler genrer (så "Animation" altid kan udelukkes).
+- **Anbefalet regel "4K-premiere":** Film · radarr4k · skal indeholde `NORDiC, DKsubs, DANiSH` · Kun 2160p · udkommet inden for 12 mdr. · udeluk Animation · mappe `/mnt/unionfs/Media/Movies/4K` · profil "4K – dansk tekst" · hent når filmen er **Annonceret** (så film, der kommer før TMDb-datoen, ikke afvises) · mærke `4k-fangarr` · **Søg straks fra** (autobrr skubber udgivelsen) · Ekstra udgave.
+- **autobrr:** det eksisterende Fangarr-filmfilter sender også 2160p-udgivelser (ingen opløsningsgrænse). DKsubs kommer med i filterets ord, når reglen har det – tryk "Opdatér filter" under autobrr-fanen. Skub til radarr4k sker med et almindeligt autobrr-filter ("Film4K", prioritet 0, 2160p, klient radarr4k) – oprettes i autobrr.
+- **Plex:** radarr4k › Connect › Webhook → `http://fangarr:8080/webhook/import` (On File Import + On File Upgrade). Fangarr beder Plex scanne netop filmens mappe med det samme og igen efter 2 og 10 minutter. "Test" i radarr4k svarer `{"ok": true, "test": true}`. Fejler alle tre forsøg: én besked til Telegram, og "i orden igen", når det virker. Kræver `PLEX_URL`/`PLEX_TOKEN`.
+
 ## Oversættelser (1.9.0)
 - Fangarr henter alt fra Oversætterens interne adresse (`OVERSAETTER_URL=http://oversaetter:8090`, headeren `X-Api-Token` = `OVERSAETTER_TOKEN`). Fangarr læser aldrig Oversætterens database og ændrer intet hos Oversætteren.
 - Kræver Oversætteren med trin C2 (`API_PORT=8090` og `API_TOKEN` i `/opt/oversaetter/.env`).
