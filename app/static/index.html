@@ -984,6 +984,17 @@
             <div class="small">Adskil med komma. Tomt = alle.</div></div>
           <div class="field"><label>Må ikke indeholde</label><input type="text" id="r_release_excludes" placeholder="SWEDiSH, FiNNiSH">
             <div class="small">Adskil med komma.</div></div>
+          <div class="field"><label>Opløsning</label><select id="r_resolution">
+            <option value="">Alle</option><option value="2160p">Kun 2160p (4K)</option></select></div>
+        </div>
+      </fieldset>
+
+      <fieldset><legend>Ekstra udgave (fx 4K)</legend>
+        <label class="check"><input type="checkbox" id="r_extra"> Ekstra udgave – reglen kører ved siden af de almindelige regler</label>
+        <div class="small">Til 4K: udgivelsen behandles først af de almindelige regler (fx 1080p til Radarr), og bagefter af reglerne med ekstra udgave (fx 4K til radarr4k). Ingen venteliste og intet Seerr-tjek. Mangler TMDb genrer, og har reglen "Udeluk genrer", tilføjes filmen ikke.</div>
+        <div class="grid" style="margin-top:10px">
+          <div class="field"><label>Udkommet inden for (måneder)</label><input type="text" inputmode="numeric" id="r_released_months" placeholder="tomt = ingen grænse">
+            <div class="small">Tidligste dato hos TMDb (biograf, digital eller fysisk). Fremtidige datoer tæller med.</div></div>
         </div>
       </fieldset>
 
@@ -1128,13 +1139,15 @@ function renderRules() {
     if (list(r.genres_none)) f.push(`ikke <b>${esc(r.genres_none.map(g => GENRE_DA[g] || g).join(", "))}</b>`);
     if (r.year_min || r.year_max) f.push(`år <b>${r.year_min || "…"}–${r.year_max || "…"}</b>`);
     if (r.min_rating) f.push(`rating mindst <b>${r.min_rating}</b>`);
+    if (r.resolution) f.push(`kun <b>${esc(r.resolution)}</b>`);
+    if (r.released_months) f.push(`udkommet inden for <b>${r.released_months} mdr.</b>`);
     if (list(r.networks_any)) f.push(`kanal <b>${esc(list(r.networks_any))}</b>`);
     const where = `→ <b>${esc(r.instance)}</b> › <b>${esc(r.root_folder)}</b>` +
       (r.media === "series" ? ` · overvåg ${MONITOR_DA[r.monitor] || r.monitor}` : "") +
       ` · mærke <b>${esc(r.tag || "auto-fangarr")}</b>`;
     return `<div class="card rule ${r.active ? "" : "off"}">
       <div><h3>${i + 1}. ${esc(r.name)} <span class="tag ${r.media === "series" ? "s" : "m"}">${r.media === "series" ? "Serier" : "Film"}</span>
-        ${r.active ? "" : '<span class="tag">Slået fra</span>'}${r.wait ? '<span class="tag">Venter på TheTVDB</span>' : ""}${r.allow_missing_genre || r.allow_missing_year ? `<span class="tag">Tillader manglende ${[r.allow_missing_genre && "genre", r.allow_missing_year && "år"].filter(Boolean).join(" og ")}</span>` : ""}</h3>
+        ${r.active ? "" : '<span class="tag">Slået fra</span>'}${r.extra ? '<span class="tag">Ekstra udgave</span>' : ""}${r.wait ? '<span class="tag">Venter på TheTVDB</span>' : ""}${r.allow_missing_genre || r.allow_missing_year ? `<span class="tag">Tillader manglende ${[r.allow_missing_genre && "genre", r.allow_missing_year && "år"].filter(Boolean).join(" og ")}</span>` : ""}</h3>
         <div class="facts">${f.length ? f.join(" · ") : "Ingen krav – alt passer"}</div>
         <div class="facts" style="margin-top:4px">${where}</div></div>
       <div class="btns">
@@ -1207,6 +1220,9 @@ function editRule(id) {
   $("r_wait").checked = !!r.wait;
   $("r_allow_missing_genre").checked = !!r.allow_missing_genre;
   $("r_allow_missing_year").checked = !!r.allow_missing_year;
+  $("r_extra").checked = !!r.extra;
+  $("r_resolution").value = r.resolution || "";
+  $("r_released_months").value = r.released_months || "";
   mediaChanged(r);
   dlg.showModal();
 }
@@ -1223,6 +1239,7 @@ async function saveRule() {
     monitor: $("r_monitor").value, minimum_availability: $("r_minimum_availability").value,
     tag: $("r_tag").value, search: $("r_search").checked, wait: $("r_wait").checked,
     allow_missing_genre: $("r_allow_missing_genre").checked, allow_missing_year: $("r_allow_missing_year").checked,
+    extra: $("r_extra").checked, resolution: $("r_resolution").value, released_months: $("r_released_months").value,
   };
   try {
     S.rules = await api(editing ? `/api/rules/${editing}` : "/api/rules", {method: editing ? "PUT" : "POST", body: JSON.stringify(body)});
@@ -1258,7 +1275,12 @@ async function runTest() {
       ${m ? `<div class="facts" style="margin-top:10px">Fundet: <b>${esc(m.title)} (${m.year || "?"})</b> · sprog <b>${esc(LANG_DA[m.language] || m.language || "?")}</b>
         · genrer <b>${esc(m.genres.map(g => GENRE_DA[g] || g).join(", ") || "ingen")}</b> · ${r.media === "series" ? "kanal" : "selskab"} <b>${esc(m.network || "?")}</b>
         · rating <b>${m.rating || "ingen"}</b>${m.exists ? " · <b>findes allerede</b>" : ""}</div>` : ""}
-      ${r.checks.length ? `<ul class="checks">${r.checks.map(c => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}</div>`;
+      ${r.checks.length ? `<ul class="checks">${r.checks.map(c => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}</div>`
+      + (r.extra ? `<div class="card result ${r.extra.decision === "ville tilføje" ? "good" : (r.extra.decision === "fejl" ? "bad" : "meh")}" style="margin-top:10px">
+      <h2>Ekstra udgave: ${esc(r.extra.decision)}${r.extra.rule ? " – " + esc(r.extra.rule) : ""}</h2>
+      <div class="facts">${esc(r.extra.detail)}</div>
+      ${r.extra.match && r.extra.match.released ? `<div class="facts" style="margin-top:6px">Tidligste udgivelsesdato hos TMDb: <b>${esc(r.extra.match.released)}</b></div>` : ""}
+      ${r.extra.checks.length ? `<ul class="checks">${r.extra.checks.map(c => `<li>${esc(c)}</li>`).join("")}</ul>` : ""}</div>` : "");
   } catch (e) { $("testResult").innerHTML = `<div class="card result bad">${esc(e.message)}</div>`; }
 }
 
