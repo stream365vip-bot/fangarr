@@ -37,6 +37,7 @@ from app import main  # noqa: E402
 
 main.background_loop = lambda: None
 main._latest_version = lambda: ""
+main.tg.start = lambda: None   # efterlignet Telegram – læs ikke tryk i baggrunden
 
 NAVNE = ["Anna Testesen", "Bo Prøvesen", "Carla Eksempel", "Dan Demo", "Eva Fiktiv", "Finn Opdigt", "Gitte Prøve", "Hans Testmand"]
 
@@ -107,7 +108,16 @@ def seed():
     for x in ch[3:5]:
         c.post(f"/api/kunder/charges/{x['id']}", json={"action": "request"})
     st = c.get("/api/kunder/state").json()["settings"]
-    c.put("/api/kunder/settings", json={**st, "fixed_costs": "Hetzner: 2813\nDomæne: 15"})
+    c.put("/api/kunder/settings", json=st)
+    soon = (now + datetime.timedelta(days=9)).date().isoformat()
+    for u in [{"name": "Hetzner feeder", "amount": 1850, "per": "maaned", "notice": 0},
+              {"name": "Hetzner Mediabox", "amount": 963, "per": "maaned", "notice": 0},
+              {"name": "Domæne stream365.vip", "amount": 180, "per": "aar", "renews": soon, "notice": 14},
+              {"name": "IPTV-leverandør (engros)", "amount": 2400, "per": "aar", "renews": "2027-03-01", "notice": 21}]:
+        c.post("/api/udgifter", json=u)
+    c.post("/api/huskeliste", json={"title": "Opdigtet: kør sb install plex-db på et stille tidspunkt", "due": now.date().isoformat(),
+                                    "server": "Mediabox", "command": "pgrep -af backup.yml"})
+    main.huskeliste.renewals_to_huske()   # "Forny domæne" på huskelisten, som baggrundsjobbet ville gøre
     c.put("/api/kunder/news", json={"text": "📣 Nyt: nu kan du selv ønske film og serier i Seerr."})
     c.put("/api/apps/config", json={"links": "", "extra": "Daglig | Uptime | https://uptime.eksempel.dk"})
     print("Testdata lagt ind.", flush=True)

@@ -6,6 +6,8 @@ function renderSettings() {
   $("s_pass_existing").checked = !!s.pass_existing;
   $("s_seerr_check").checked = !!s.seerr_check;
   $("s_rescue_grab").checked = !!s.rescue_grab;
+  $("s_tg_buttons").checked = !!s.tg_buttons; $("s_prem_notify").checked = !!s.prem_notify;
+  fillRuleSelect("s_prem_rule", "series"); $("s_prem_rule").insertAdjacentHTML("afterbegin", '<option value="0">Første aktive serieregel</option>'); $("s_prem_rule").value = String(s.prem_rule || 0);
   $("seerrInfo").textContent = S.features.seerr ? "Seerr er forbundet." : "Seerr er ikke forbundet – tilføj SEERR_URL og SEERR_APIKEY i fangarr.env for at bruge det.";
   loadGrab();
   $("version").textContent = "Fangarr " + S.features.version;
@@ -13,7 +15,8 @@ function renderSettings() {
     '<div class="warn">Prøvetilstand er slået fra – titler bliver tilføjet til Sonarr/Radarr for alvor.</div>';
 }
 async function saveSettings() {
-  const body = {dry_run: $("s_dry_run").checked, pass_existing: $("s_pass_existing").checked, seerr_check: $("s_seerr_check").checked, rescue_grab: $("s_rescue_grab").checked};
+  const body = {dry_run: $("s_dry_run").checked, pass_existing: $("s_pass_existing").checked, seerr_check: $("s_seerr_check").checked, rescue_grab: $("s_rescue_grab").checked,
+                tg_buttons: $("s_tg_buttons").checked, prem_notify: $("s_prem_notify").checked, prem_rule: +$("s_prem_rule").value || 0};
   SET_NUM.forEach(k => body[k] = $("s_" + k).value);
   if (S.settings.dry_run && !body.dry_run &&
       !confirm("Slå prøvetilstand fra? Herefter tilføjer Fangarr titler til Sonarr/Radarr for alvor.")) return;

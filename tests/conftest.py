@@ -55,6 +55,7 @@ from app import main  # noqa: E402
 
 main.background_loop = lambda: None      # baggrundsjobbet kører ikke under testene
 main._latest_version = lambda: ""        # spørg ikke GitHub
+main.tg.start = lambda: None             # læs ikke knaptryk i baggrunden – testene kalder poll_once selv
 
 
 @pytest.fixture(scope="session")

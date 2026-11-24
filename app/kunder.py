@@ -437,9 +437,18 @@ def charge_status(ch, remind_days):
     return "ny", False
 
 
-def overdue_list():
+def snoozed():
+    """2.1.0: "Udsæt en uge" fra Telegram – {charge_id: dato}. Udsatte opkrævninger er ikke med i påmindelserne før datoen."""
+    today = now().date().isoformat()
+    return {int(k): v for k, v in (D["kv_get"]("kunder_snooze", {}) or {}).items() if v > today}
+
+
+def overdue_list(skip_snoozed=False):
     rd = int(settings()["remind_days"])
     limit = iso(now() - datetime.timedelta(days=rd))
+    if skip_snoozed:
+        sz = snoozed()
+        return [r for r in overdue_list() if r["id"] not in sz]
     return rows("SELECT ch.id, ch.amount, ch.period, ch.requested_at, c.name FROM k_charges ch JOIN k_customers c ON c.id=ch.customer_id"
                 " WHERE ch.paid_at IS NULL AND ch.skipped=0 AND ch.requested_at IS NOT NULL AND ch.requested_at<=? ORDER BY ch.requested_at", (limit,))
 
@@ -966,6 +975,43 @@ async def charge_action(chid: int, req: Request):
     return charges_for(ch["period"][:7])
 
 
+# ---------------------------------------------------------------- knapper i Stream365 Drift (2.1.0)
+
+def tg_paid(p):
+    ch = one("SELECT ch.*, c.name FROM k_charges ch JOIN k_customers c ON c.id=ch.customer_id WHERE ch.id=?", (p["id"],))
+    if not ch:
+        raise RuntimeError("opkrævningen findes ikke længere")
+    if ch["paid_at"]:
+        return f"{ch['name']} var allerede markeret betalt", None
+    t = iso(now())
+    run("UPDATE k_charges SET paid_at=?, requested_at=COALESCE(requested_at, ?), skipped=0 WHERE id=?", (t, t, ch["id"]))
+    return f"{ch['name']} markeret betalt ({_kr(ch['amount'])})", {"id": ch["id"]}
+
+
+def tg_unpaid(p):
+    run("UPDATE k_charges SET paid_at=NULL WHERE id=?", (p["id"],))
+    return "markeret som ikke betalt igen"
+
+
+def tg_snooze(p):
+    sz = D["kv_get"]("kunder_snooze", {}) or {}
+    old = sz.get(str(p["id"]))
+    until = (now().date() + datetime.timedelta(days=7)).isoformat()
+    sz[str(p["id"])] = until
+    D["kv_set"]("kunder_snooze", sz)
+    return f"ingen påmindelse før {until[8:10]}/{until[5:7]}", {"id": p["id"], "old": old}
+
+
+def tg_unsnooze(p):
+    sz = D["kv_get"]("kunder_snooze", {}) or {}
+    if p.get("old"):
+        sz[str(p["id"])] = p["old"]
+    else:
+        sz.pop(str(p["id"]), None)
+    D["kv_set"]("kunder_snooze", sz)
+    return "påmindelsen er tilbage"
+
+
 # ---------------------------------------------------------------- IPTV-linjer
 
 def _iptv_out(l, names=None):
@@ -1126,7 +1172,7 @@ def fixed_costs(text):
 def economy(year: int = 0):
     year = year or now().year
     cur = cur_period()
-    fixed = fixed_costs(settings()["fixed_costs"])
+    fixed = D["fixed_costs"]() if D.get("fixed_costs") else fixed_costs(settings()["fixed_costs"])   # 2.1.0: Opkrævning › Udgifter
     fixed_sum = sum(f["amount"] for f in fixed)
     cust = rows("SELECT * FROM k_customers WHERE status='aktiv' AND kind='kunde' AND freq IS NOT NULL")
     by = {}
@@ -1269,7 +1315,7 @@ def tick():
         if st.get("remind_day") != today:
             st["remind_day"] = today
             changed = True
-            late = overdue_list()
+            late = overdue_list(skip_snoozed=True)
             ids = [r["id"] for r in late]
             sent = set(st.get("remind_ids") or [])
             last = st.get("remind_sent") or ""
@@ -1277,8 +1323,11 @@ def tick():
             old = not last or (n.date() - datetime.date.fromisoformat(last)).days >= repeat
             if late and (old or set(ids) - sent):
                 lines = [f"• {r['name']}: {_kr(r['amount'])} (anmodet {r['requested_at'][8:10]}/{r['requested_at'][5:7]})" for r in late[:40]]
-                D["telegram"](f"⏰ Stream365 – {len(late)} {'kunde mangler' if len(late) == 1 else 'kunder mangler'} at betale "
-                              f"({_kr(sum(r['amount'] for r in late))})\n\n" + "\n".join(lines) + "\n\nMarkér Betalt i Fangarr › Opkrævning.")
+                knapper = [[(f"✅ {r['name'][:22]} betalt", "pay_paid", {"id": r["id"]}),
+                            (f"⏳ {r['name'][:14]} +1 uge", "pay_snooze", {"id": r["id"]})] for r in late[:12]]
+                D["telegram_rows"](f"⏰ Stream365 – {len(late)} {'kunde mangler' if len(late) == 1 else 'kunder mangler'} at betale "
+                                   f"({_kr(sum(r['amount'] for r in late))})\n\n" + "\n".join(lines) +
+                                   "\n\nTryk Betalt herunder eller i Fangarr › Opkrævning. \"+1 uge\" udsætter påmindelsen.", knapper)
                 st["remind_sent"], st["remind_ids"] = today, ids
             elif not late and sent:
                 D["telegram"]("✅ Stream365 – alle, der var anmodet, har nu betalt.")

@@ -187,5 +187,5 @@ function renderEco() {
     <td class="num"><b style="color:${m.result < 0 ? "var(--bad)" : "inherit"}">${kkr(m.result)}</b></td></tr>`).join("") +
     `<tr><td><b>I alt</b></td><td class="num"><b>${kkr(M.reduce((a, m) => a + (m.has_charges ? m.charged : m.state === "past" ? 0 : m.forecast), 0))}</b></td><td class="num"><b>${kkr(sum("paid"))}</b></td>
      <td class="num hs"><b>${kkr(sum("iptv"))}</b></td><td class="num hs"><b>${kkr(sum("fixed"))}</b></td><td class="num"><b>${kkr(res)}</b></td></tr>`;
-  $("ecoNote").innerHTML = "IPTV-udgiften er prisen på de linjer, der udløber i måneden. Faste udgifter retter du nederst på denne side.";
+  $("ecoNote").innerHTML = "IPTV-udgiften er prisen på de linjer, der udløber i måneden. Faste udgifter retter du under Opkrævning › Udgifter (årlige udgifter regnes om til pr. måned).";
 }

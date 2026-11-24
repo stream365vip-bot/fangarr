@@ -44,6 +44,15 @@
     <div data-hj="home"></div>
     <div id="homeWarn"></div>
     <div class="card todo" id="homeTodo"><div class="th"><h2>Kræver din handling</h2></div><div class="none">Henter …</div></div>
+    <div class="card" id="homeStille">
+      <div class="row" style="justify-content:space-between;align-items:flex-start"><div><h2 style="margin:0">Besked ved 0 streams</h2>
+        <div class="small" id="stilleInfo">Fangarr sender én besked til Stream365 Drift, når ingen streamer – fx før en genstart eller opdatering af Plex.</div></div>
+        <div class="btns" id="stilleBtns"></div></div>
+      <div class="row" id="stilleWin" style="margin:10px 0 0"><label style="margin:0">Kun mellem kl.</label>
+        <input type="text" inputmode="numeric" id="stilleFrom" placeholder="fx 1" style="width:60px"><span class="small">og</span>
+        <input type="text" inputmode="numeric" id="stilleTo" placeholder="fx 7" style="width:60px"><span class="small">(tom = hele døgnet)</span></div>
+      <div class="small" id="stilleQuiet" style="margin-top:8px"></div>
+    </div>
     <div class="card" id="homePrem" hidden>
       <div class="row" style="justify-content:space-between"><div><h2 style="margin:0">Nye premierer</h2>
         <div class="small">Kommende danske serier (3 uger), som hverken findes i Sonarr eller følges. <b>Tilføj nu</b> lægger serien i Sonarr med det samme. <b>Følg</b> sætter den på ventelisten, så den tilføjes, når TheTVDB har den.</div></div>
@@ -317,7 +326,7 @@
   <!-- ==================================================== Opkrævning -->
   <section id="pay">
     <div data-hj="pay"></div>
-    <div class="subs" role="tablist"><button data-sub="opkraevning">Opkrævning</button><button data-sub="oekonomi">Økonomi</button></div>
+    <div class="subs" role="tablist"><button data-sub="opkraevning">Opkrævning</button><button data-sub="oekonomi">Økonomi</button><button data-sub="udgifter">Udgifter<span class="bdg" data-bdg="udg"></span></button></div>
     <div data-p="opkraevning">
       <p class="hint" data-hjs="pay/opkraevning"></p>
       <div class="row" style="justify-content:space-between">
@@ -337,11 +346,13 @@
       <div class="card tp"><table><thead><tr><th>Måned</th><th class="num">Opkrævet</th><th class="num">Betalt</th><th class="num hs">IPTV-linjer</th><th class="num hs">Faste udgifter</th><th class="num">Resultat</th></tr></thead>
         <tbody id="ecoBody"></tbody></table></div>
       <div class="small" id="ecoNote"></div>
-      <div class="card" style="margin-top:14px">
-        <div class="field"><label for="ks_fixed_costs">Faste udgifter pr. måned – én pr. linje</label><textarea class="kta" id="ks_fixed_costs" style="min-height:90px" placeholder="Hetzner: 2813"></textarea>
-          <div class="small">Skriv navn, kolon og beløb pr. måned, fx <code>Hetzner: 2813</code>. Bruges i tabellen ovenfor.</div></div>
-        <div class="row" style="margin:12px 0 0"><button class="b pri" onclick="kSaveSettings().then(() => loadEco())">Gem udgifterne</button></div>
-      </div>
+    </div>
+    <div data-p="udgifter">
+      <div class="row" style="justify-content:space-between"><p class="hint" data-hjs="pay/udgifter" style="margin:0"></p>
+        <button class="b pri" onclick="udgEdit(0)">Ny udgift</button></div>
+      <div class="kpis" id="udgKpis" style="margin-top:14px"></div>
+      <div class="card tp"><table><thead><tr><th>Udgift</th><th class="num">Beløb</th><th class="num hs">Pr. måned</th><th>Næste fornyelse</th><th></th></tr></thead>
+        <tbody id="udgBody"><tr><td colspan="5" class="empty">Henter …</td></tr></tbody></table></div>
     </div>
   </section>
 
@@ -518,7 +529,12 @@
   <!-- ==================================================== Drift -->
   <section id="drift">
     <div data-hj="drift"></div>
-    <div class="subs" role="tablist"><button data-sub="forbindelser">Forbindelser<span class="bdg bad" data-bdg="conn"></span></button><button data-sub="trackere">Trackere</button></div>
+    <div class="subs" role="tablist"><button data-sub="huskeliste">Huskeliste<span class="bdg" data-bdg="huske"></span></button><button data-sub="trackere">Trackere</button><button data-sub="forbindelser">Forbindelser<span class="bdg bad" data-bdg="conn"></span></button></div>
+    <div data-p="huskeliste">
+      <div class="row" style="justify-content:space-between"><p class="hint" data-hjs="drift/huskeliste" style="margin:0"></p>
+        <div class="btns"><button class="b" id="huskeDoneBtn" onclick="huskeToggleDone()">Vis udførte</button><button class="b pri" onclick="huskeEdit(0)">Ny opgave</button></div></div>
+      <div id="huskeList" style="margin-top:12px"><div class="empty">Henter …</div></div>
+    </div>
     <div data-p="forbindelser">
       <div class="row" style="justify-content:space-between"><p class="hint" data-hjs="drift/forbindelser" style="margin:0"></p>
         <button class="b sm" onclick="loadConn(1)" title="Spørg alle apps igen nu">Tjek igen</button></div>
@@ -545,10 +561,19 @@
         <div class="grid">
           <div class="field"><label for="s_summary_hour">Dagligt resumé til Telegram kl. (0–23, -1 = fra)</label><input type="text" inputmode="numeric" id="s_summary_hour">
             <div class="small">Hvad Fangarr har tilføjet og oversat det seneste døgn.</div></div>
+          <div class="field"><label for="s_huske_hour">Huskelisten sender besked på dagen fra kl. (0–23, -1 = fra)</label><input type="text" inputmode="numeric" id="s_huske_hour">
+            <div class="small">Én besked pr. opgave med knapperne Udført og Udsæt en dag.</div></div>
+          <div class="field"><label for="s_prem_rule">Regel til "Tilføj nu" fra Telegram</label><select id="s_prem_rule"></select>
+            <div class="small">Bestemmer mappe, kvalitet og mærke, når du tilføjer en ny premiere fra en besked.</div></div>
         </div>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="s_tg_buttons"> Knapper i beskederne (Fangarr læser dine tryk)</label>
+        <div class="small">Kun tryk fra din egen chat tages imod. Slået fra: beskederne kommer stadig, men uden knapper.</div>
+        <label class="check" style="margin-top:10px"><input type="checkbox" id="s_prem_notify"> Besked om nye danske premierer</label>
+        <div class="small">Én besked pr. ny premiere med Tilføj nu · Følg · Ikke interesseret.</div>
         <div class="small" style="margin-top:8px">Hvornår beskeder om kunder og betalinger kommer, sættes under Kunder › Indstillinger.</div>
         <div class="row" style="margin:16px 0 0"><button class="b pri" onclick="saveSettings()">Gem indstillinger</button></div>
       </div>
+      <div class="card"><h2>Seneste tryk på knapperne</h2><div id="tgRecent" class="small">Henter …</div></div>
     </div>
     <div data-p="eksport">
       <p class="hint" data-hjs="settings/eksport"></p>
@@ -727,6 +752,7 @@
 <script src="/static/js/kontodeling.js?v=__V__"></script>
 <script src="/static/js/guide.js?v=__V__"></script>
 <script src="/static/js/drift.js?v=__V__"></script>
+<script src="/static/js/huskeliste.js?v=__V__"></script>
 <script src="/static/js/indstillinger.js?v=__V__"></script>
 <script src="/static/js/start.js?v=__V__"></script>
 </body>
