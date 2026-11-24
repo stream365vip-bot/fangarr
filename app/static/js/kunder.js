@@ -144,9 +144,12 @@ function renderCard() {
 
     <div class="ksec"><h3>Opkrævninger</h3></div>
     ${c.charges.length ? `<table><tbody>${c.charges.map(h => `<tr><td>${K_MONTH[Number(h.period.slice(5, 7)) - 1]} ${h.period.slice(0, 4)}</td><td class="num">${kkr(h.amount)}</td>
-      <td><span class="pill ${h.late ? "bad" : K_ST[h.status][1]}">${h.late ? "Mangler betaling" : K_ST[h.status][0]}</span></td><td class="small hs">${h.paid_at ? "betalt " + kDay(h.paid_at) : h.requested_at ? "anmodet " + kDay(h.requested_at) : ""}</td></tr>`).join("")}</tbody></table>` : '<div class="small">Ingen opkrævninger endnu.</div>'}`;
+      <td><span class="pill ${h.late ? "bad" : K_ST[h.status][1]}">${h.late ? "Mangler betaling" : K_ST[h.status][0]}</span></td><td class="small hs">${h.paid_at ? "betalt " + kDay(h.paid_at) : h.requested_at ? "anmodet " + kDay(h.requested_at) : ""}</td></tr>`).join("")}</tbody></table>` : '<div class="small">Ingen opkrævninger endnu.</div>'}
+
+    <div id="kTimeline"></div>`;
   $("kdFoot").innerHTML = `<button class="b danger" onclick="kDelete()">Slet</button><button class="b" onclick="kMerge()">Flet ind i anden kunde</button><button class="b pri" onclick="kSaveCard()">Gem</button>`;
   kSeerrLoad(c.id);
+  kTimelineLoad(c.id);   // 2.2: tidslinje og noter (udsendelse.js)
 }
 function kCardVals() { const o = {}; ["name", "status", "kind", "method", "revolut", "freq", "cycle", "due_day", "phone", "email", "contact", "tg", "fb", "notes"].forEach(k => o[k] = $("kc_" + k).value.trim()); return o; }
 async function kSaveCard(quiet) {

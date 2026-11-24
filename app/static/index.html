@@ -23,7 +23,7 @@
     <div class="grp">Kunder</div>
     <button class="nv" data-tab="cust"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 20a8 8 0 0 1 16 0"/></svg><span class="t">Kunder</span><span class="bdg" data-bdg="cust"></span></button>
     <button class="nv" data-tab="pay"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18v11H3zM3 11h18M7 15h3"/></svg><span class="t">Opkrævning</span><span class="bdg" data-bdg="pay"></span></button>
-    <button class="nv" data-tab="besk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4zM4 7l8 6 8-6"/></svg><span class="t">Beskeder</span></button>
+    <button class="nv" data-tab="besk"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4zM4 7l8 6 8-6"/></svg><span class="t">Beskeder</span><span class="bdg" data-bdg="besk"></span></button>
     <button class="nv" data-tab="oensker"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4zM14 6v12"/></svg><span class="t">Seerr-ønsker</span><span class="bdg" data-bdg="oensker"></span></button>
     <button class="nv" data-tab="share"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a3 3 0 0 0 0-6M21 20a6 6 0 0 0-3-5"/></svg><span class="t">Kontodeling</span><span class="bdg" data-bdg="share"></span></button>
     <button class="nv" data-tab="guide"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3zM5 17a3 3 0 0 1 3-3h11M9 8h6"/></svg><span class="t">Guide</span></button>
@@ -359,9 +359,43 @@
   <!-- ==================================================== Beskeder -->
   <section id="besk">
     <div data-hj="besk"></div>
-    <div class="subs" role="tablist"><button data-sub="skabeloner">Skabeloner</button><button data-sub="nyhed">Nyhed i opkrævningen</button></div>
+    <div class="subs" role="tablist"><button data-sub="koe">Send-kø<span class="bdg" data-bdg="koe"></span></button><button data-sub="klar">Ønsker klar<span class="bdg" data-bdg="klar"></span></button><button data-sub="aendring">Ændring for alle</button><button data-sub="skabeloner">Skabeloner</button><button data-sub="nyhed">Nyhed i opkrævningen</button></div>
+    <div data-p="koe">
+      <div class="row" style="justify-content:space-between"><p class="hint" data-hjs="besk/koe" style="margin:0"></p>
+        <div class="btns"><button class="b" id="bqAllBtn" onclick="bqToggleAll()">Vis færdige køer</button><button class="b pri" onclick="bqNew()">Ny besked til flere</button></div></div>
+      <div id="bqList" style="margin-top:12px"><div class="empty">Henter …</div></div>
+      <div id="bqOpen"></div>
+    </div>
+    <div data-p="klar">
+      <div class="row" style="justify-content:space-between"><p class="hint" data-hjs="besk/klar" style="margin:0"></p>
+        <div class="btns"><button class="b" id="brDoneBtn" onclick="brToggleDone()">Vis sendte</button><button class="b" onclick="brCheck()">Tjek Seerr nu</button></div></div>
+      <div class="small" id="brInfo" style="margin-top:8px"></div>
+      <div id="brList" style="margin-top:12px"><div class="empty">Henter …</div></div>
+    </div>
+    <div data-p="aendring">
+      <p class="hint" data-hjs="besk/aendring"></p>
+      <div class="card">
+        <h2>Ny pris på en tjeneste</h2>
+        <div class="grid">
+          <div class="field"><label for="bp_service">Tjeneste</label><select id="bp_service"></select></div>
+          <div class="field"><label for="bp_only">Kun kunder, der betaler (kr. pr. måned) – valgfri</label><input type="text" inputmode="decimal" id="bp_only" placeholder="fx 75">
+            <div class="small">Tomt = alle med tjenesten. Brug det, så kunder med en særpris ikke rammes.</div></div>
+          <div class="field"><label for="bp_price">Ny pris pr. måned (kr.)</label><input type="text" inputmode="decimal" id="bp_price" placeholder="fx 85"></div>
+          <div class="field"><label for="bp_from">Gælder fra (måned)</label><input type="month" id="bp_from"></div>
+        </div>
+        <label class="check" style="margin-top:10px"><input type="checkbox" id="bp_family"> Også familie (Egen)</label>
+        <div class="row" style="margin:14px 0 0"><button class="b pri" onclick="bpPlan()">Vis hvem der rammes</button></div>
+      </div>
+      <div id="bpPlan"></div>
+      <div class="card"><h2>Ændringer</h2><div id="bpList" class="small">Henter …</div></div>
+    </div>
     <div data-p="skabeloner">
       <p class="hint" data-hjs="besk/skabeloner"></p>
+      <div class="card">
+        <div class="row" style="justify-content:space-between"><h2 style="margin:0">Beskeder til kunderne</h2><button class="b" onclick="btEdit(0)">Ny skabelon</button></div>
+        <div class="small" style="margin:6px 0 10px">Felter: {fornavn} {navn} {guide} · i "Dit ønske er klar" også {titel} · i "Prisændring" også {tjeneste} {gammel_pris} {ny_pris} {dato}.</div>
+        <div id="btList" class="kl"><div class="small">Henter …</div></div>
+      </div>
       <div class="card">
         <h2>Opkrævning</h2>
         <div class="field"><label for="ks_template">Besked til kunden (kopieres fra Opkrævning › Send besked)</label><textarea class="kta" id="ks_template" style="min-height:230px"></textarea>
@@ -485,7 +519,16 @@
   <!-- ==================================================== Guide -->
   <section id="guide">
     <div data-hj="guide"></div>
-    <div class="subs" role="tablist"><button data-sub="besoeg">Besøg</button><button data-sub="nyheder">Nyheder<span id="nwTabN"></span></button></div>
+    <div class="subs" role="tablist"><button data-sub="besoeg">Besøg</button><button data-sub="nyheder">Nyheder<span id="nwTabN"></span></button><button data-sub="soegninger">Søgninger</button></div>
+    <div data-p="soegninger">
+      <div class="row" style="justify-content:space-between"><p class="hint" data-hjs="guide/soegninger" style="margin:0"></p>
+        <button class="b sm" onclick="loadSearches(1)">Opdatér</button></div>
+      <div class="grid2" style="margin-top:12px">
+        <div class="card"><h2>Søgt i guiden – intet svar</h2><div id="gsNo" class="small">Henter …</div></div>
+        <div class="card"><h2>Mest ønsket i Seerr (90 dage)</h2><div id="gsSeerr" class="small">Henter …</div></div>
+      </div>
+      <div class="card"><h2>Alle søgninger i guiden</h2><div id="gsAll" class="small"></div></div>
+    </div>
     <div data-p="besoeg">
       <div class="row" style="justify-content:space-between">
         <p class="hint" data-hjs="guide/besoeg" style="margin:0"></p>
@@ -728,6 +771,11 @@
     <div class="dlg-foot"><span class="small" id="edErr" style="color:var(--bad)"></span><div class="btns"><button class="b" onclick="edlg.close()">Annullér</button><button class="b pri" id="edSave">Gem</button></div></div>
   </form>
 </dialog>
+<dialog id="bdlg" style="width:min(620px,96vw)">
+  <div class="dlg-head"><b id="bdTitle">Send besked</b><button class="b" onclick="bdlg.close()">Luk</button></div>
+  <div class="dlg-body" id="bdBody"></div>
+  <div class="dlg-foot"><span class="small" id="bdErr" style="color:var(--bad)"></span><div class="btns" id="bdFoot"></div></div>
+</dialog>
 <dialog id="sdlg" style="width:min(620px,96vw)">
   <div class="dlg-head"><b id="sdTitle">Send besked</b><button class="b" onclick="sdlg.close()">Luk</button></div>
   <div class="dlg-body" id="sdBody"></div>
@@ -753,6 +801,7 @@
 <script src="/static/js/guide.js?v=__V__"></script>
 <script src="/static/js/drift.js?v=__V__"></script>
 <script src="/static/js/huskeliste.js?v=__V__"></script>
+<script src="/static/js/udsendelse.js?v=__V__"></script>
 <script src="/static/js/indstillinger.js?v=__V__"></script>
 <script src="/static/js/start.js?v=__V__"></script>
 </body>

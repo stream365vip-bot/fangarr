@@ -157,14 +157,18 @@ def summary(days=30):
         elif r["e"] == "news":   # nyheder (1.24.0) – tælles under Guide › Nyheder
             continue
         elif r["e"] == "search" and r.get("q"):
-            u["searches"].append({"q": str(r["q"]), "t": r["t"]})
+            u["searches"].append({"q": str(r["q"]), "t": r["t"], "h": r.get("h")})   # h = antal svar i guiden (fra 2.2.0)
 
     q_tot = {}
     for u in users.values():
         u["searches"] = _collapse_searches(u["searches"])
         for s in u["searches"]:
-            t = q_tot.setdefault(s["q"], {"q": s["q"], "n": 0, "users": set(), "last": s["t"]})
+            t = q_tot.setdefault(s["q"], {"q": s["q"], "n": 0, "users": set(), "last": s["t"], "nohit": 0, "known": 0})
             t.update(n=t["n"] + 1, last=max(t["last"], s["t"]))
+            if s.get("h") is not None:
+                t["known"] += 1
+                if str(s["h"]) == "0":
+                    t["nohit"] += 1
             t["users"].add(u["name"])
         u["searches"].reverse()
         u["sections"] = sorted(u["sections"].values(), key=lambda s: s["last"], reverse=True)

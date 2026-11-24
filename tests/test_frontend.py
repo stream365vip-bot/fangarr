@@ -26,7 +26,7 @@ def _defined():
     names = set(re.findall(r"(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(", ALL_JS))
     names |= set(re.findall(r"(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=", ALL_JS))
     names |= set(re.findall(r"(?:const|let|var)\s+[^;=]*?,\s*([A-Za-z_$][\w$]*)\s*=", ALL_JS))
-    return names | {"event", "this", "document", "window", "if", "return", "confirm", "history", "location", "String", "Number"}
+    return names | {"event", "this", "document", "window", "if", "return", "confirm", "history", "location", "String", "Number", "setTimeout"}
 
 
 def test_all_js_files_exist():

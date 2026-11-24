@@ -38,6 +38,11 @@ from app import main  # noqa: E402
 main.background_loop = lambda: None
 main._latest_version = lambda: ""
 main.tg.start = lambda: None   # efterlignet Telegram – læs ikke tryk i baggrunden
+main.beskeder.SEERR_URL = f"http://127.0.0.1:{MOCK}/seerr"   # efterlignet Seerr til Ønsker klar og Søgninger
+main.beskeder.SEERR_APIKEY = "test"
+STAT = os.path.join(DATA, "guide-stat")
+os.makedirs(STAT, exist_ok=True)
+main.guide.STAT_DIR = STAT
 
 NAVNE = ["Anna Testesen", "Bo Prøvesen", "Carla Eksempel", "Dan Demo", "Eva Fiktiv", "Finn Opdigt", "Gitte Prøve", "Hans Testmand"]
 
@@ -120,6 +125,34 @@ def seed():
     main.huskeliste.renewals_to_huske()   # "Forny domæne" på huskelisten, som baggrundsjobbet ville gøre
     c.put("/api/kunder/news", json={"text": "📣 Nyt: nu kan du selv ønske film og serier i Seerr."})
     c.put("/api/apps/config", json={"links": "", "extra": "Daglig | Uptime | https://uptime.eksempel.dk"})
+    # 2.2: Plex-konti, ønsker klar, send-kø, prisændring, noter og guidens søgninger (alt opdigtet)
+    for i, cu in enumerate(c.get("/api/kunder/customers").json()[:4]):
+        main.kunder.run("UPDATE k_services SET plex_user_id=? WHERE customer_id=? AND service='plex'", (880000 + i, cu["id"]))
+        main.kunder.run("UPDATE k_customers SET tg=? WHERE id=?", (f"demo{i + 1}" if i % 2 == 0 else "", cu["id"]))
+    utc = datetime.datetime.utcnow().isoformat() + "Z"
+    efterligning.SEERR["requests"] = [
+        {"id": 1, "type": "movie", "media": {"tmdbId": 501, "status": 5}, "requestedBy": {"id": 1, "plexId": 880000}, "updatedAt": utc, "createdAt": utc},
+        {"id": 2, "type": "tv", "seasons": [{"seasonNumber": 1}], "media": {"tmdbId": 601, "status": 5}, "requestedBy": {"id": 2, "plexId": 880001},
+         "updatedAt": utc, "createdAt": utc},
+        {"id": 3, "type": "movie", "media": {"tmdbId": 502, "status": 3}, "requestedBy": {"id": 3, "plexId": 880002}, "updatedAt": utc, "createdAt": utc},
+        {"id": 4, "type": "movie", "media": {"tmdbId": 502, "status": 3}, "requestedBy": {"id": 4, "plexId": 880003}, "updatedAt": utc, "createdAt": utc}]
+    main.kv_set("klar_init", True)
+    main.beskeder.check_ready()
+    tid = next(t["id"] for t in c.get("/api/beskeder/skabeloner").json()["templates"] if t["kind"] == "velkomst")
+    q = c.post("/api/beskeder/koe", json={"template_id": tid, "who": "alle", "name": "Opdigtet: velkomst til alle"}).json()
+    for it in q["items"][:2]:
+        c.post(f"/api/beskeder/item/{it['id']}", json={"action": "sent"})
+    nxt = (now.date().replace(day=1) + datetime.timedelta(days=40)).strftime("%Y-%m")
+    plan = c.post("/api/beskeder/pris/plan", json={"service": "plex", "price": 85, "from": nxt, "only_price": 75}).json()
+    c.post("/api/beskeder/pris", json={"service": "plex", "price": 85, "from": nxt, "only_price": 75, "queue": False,
+                                       "confirm_ids": [x["id"] for x in plan["customers"]]})
+    first = c.get("/api/kunder/customers").json()[0]["id"]
+    c.post(f"/api/beskeder/tidslinje/{first}", json={"text": "Opdigtet note: spurgte om Chromecast"})
+    day = now.strftime("%Y-%m-%d")
+    lines = [("chromecast", "0"), ("chromecast", "0"), ("undertekster", "4"), ("apple tv", "0"), ("betaling", "2"), ("4k", "0")]
+    with open(os.path.join(STAT, day + ".jsonl"), "w", encoding="utf-8") as f:
+        for i, (q_, h) in enumerate(lines):
+            f.write(json.dumps({"t": f"{day}T0{i}:00:00", "uid": str(100 + i), "user": f"testbruger{i}", "e": "search", "q": q_, "h": h}) + "\n")
     print("Testdata lagt ind.", flush=True)
 
 
