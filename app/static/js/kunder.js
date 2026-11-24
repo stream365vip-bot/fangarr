@@ -328,7 +328,7 @@ function kLoginEdit(id) {
 
 
 // ---------- indstillinger for kunder
-const KS = ["remind_days", "remind_repeat_days", "pay_days", "inactive_days", "plex_price", "message_hour", "sync_hour", "template", "fixed_costs", "pay_link_text", "pay_revolut_text", "pay_mobilepay_text", "pay_other_text", "app_tg_pkg", "app_fb_pkg"];
+const KS = ["remind_days", "remind_repeat_days", "pay_days", "inactive_days", "plex_price", "message_hour", "sync_hour", "template", "pay_link_text", "pay_revolut_text", "pay_mobilepay_text", "pay_other_text", "app_tg_pkg", "app_fb_pkg"];
 let KS_READY = false;   // felterne er fyldt ud fra K.settings – før det må Gem ikke sende tomme felter
 function renderKSet() { if (K) { KS.forEach(k => $("ks_" + k).value = K.settings[k] ?? ""); KS_READY = true;
     const miss = ["{betaling}", "{rabatter}", "{nyhed}"].filter(f => !String(K.settings.template || "").includes(f)), w = $("ks_tplWarn");

@@ -10,6 +10,14 @@ Menu (2.0): **Overblik** · *Indhold:* Log (Tilføjet · Alle beslutninger) · V
 
 Sikringer: prøvetilstand, loft pr. døgn, pladsgrænse, kun præcise titelmatch, Seerr-tjek, Telegram ved fejl og "i orden igen", dagligt resumé.
 
+## Påmindelser og knapper i Telegram (2.1.0)
+- **Huskeliste** (Drift › Huskeliste, `app/huskeliste.py`): opgave, dato, server, valgfri kontrolkommando (med kopiknap), gentagelse. På dagen står den under *Kræver din handling*, og der kommer én besked i Stream365 Drift med **Udført** og **Udsæt en dag** (fra kl. `huske_hour`, standard 8). Datoopgaverne fra dokumentationen (24. nov.) lægges ind første gang.
+- **Udgifter** (Opkrævning › Udgifter): navn, beløb pr. måned/år, næste fornyelse og varsel. Når varslet nås, kommer "Forny …" på huskelisten; Udført rykker fornyelsen en måned/et år frem. Økonomi bruger udgifterne – linjerne i det gamle felt "faste udgifter" flyttes over én gang.
+- **Besked ved 0 streams** (Overblik, `app/stille.py`): Fangarr spørger Tautulli hvert minut og sender én besked, når ingen streamer (evt. kun i et tidsrum). Overblik viser, hvornår der normalt er stille om natten (0 streams i mindst 9 af 10 af de sidste 30 nætter).
+- **Knapper i Stream365 Drift** (`app/tg.py`): Fangarr henter selv dine tryk hos Telegram (`getUpdates`, long polling) – ingen ny adresse udefra. Kun tryk fra `TELEGRAM_CHAT_ID` tages imod; andre afvises og tælles. Knappens data er kun et tal (`a:<id>`), handlingen ligger i tabellen `tg_actions`, kan kun udføres én gang og udløber efter 14 dage. Efter et tryk rettes beskeden med resultatet, og der kommer en **Fortryd**-knap, hvor det giver mening. Knapper på: manglende betaling (Betalt · +1 uge), forslag på ventelisten (Godkend · Fjern), nye danske premierer (Tilføj nu · Følg · Ikke interesseret), huskeliste (Udført · Udsæt en dag), 0 streams (Sig til igen), vist uden dansk tekst (Oversæt nu). Slås fra under Indstillinger › Telegram (så kommer beskederne uden knapper). **Kun én app må læse botten** – tjekket 24. nov. 2026.
+- **Nye premierer** står under *Kræver din handling* med Ikke interesseret; første gang huskes de eksisterende, så der ikke kommer 20 beskeder på én gang.
+- Nye indstillinger: `tg_buttons`, `huske_hour`, `prem_notify`, `prem_rule`. Nye tabeller: `huske`, `udgifter`, `tg_actions`. Ingen ændringer i `fangarr.env`.
+
 ## Ny menu og beskrivelser (2.0.0)
 - **Menuen** har 14 punkter (se øverst). Indstillinger ligger hos den funktion, de hører til, som sidste underfane; siden Indstillinger har kun det, der gælder hele Fangarr. Telefonens bundmenu: Overblik · Kunder · Opkrævning · Log · Mere.
 - **Fjernet:** siden Premierer (nye danske premierer står nu under *Kræver din handling* på Overblik med Tilføj nu/Følg), menupunktet Opsætning (nu underfaner under Regler), Import fra regneark, og "Senest sendt" og Forbindelser på Overblik (nu Log › Tilføjet og Drift › Forbindelser).

@@ -80,9 +80,13 @@ def test_customers_flow(client):
     assert r.status_code == 200, r.text
     assert client.get(f"/api/kunder/customers/{cid}").status_code == 200
     st = client.get("/api/kunder/state").json()
-    r = client.put("/api/kunder/settings", json=dict(st["settings"], fixed_costs="Hetzner: 100"))
+    r = client.put("/api/kunder/settings", json=dict(st["settings"]))
     assert r.status_code == 200, r.text
-    assert client.get("/api/kunder/economy").json()["fixed"]
+    # 2.1: faste udgifter ligger under Opkrævning › Udgifter
+    r = client.post("/api/udgifter", json={"name": "Hetzner", "amount": 1200, "per": "aar", "renews": "2027-01-10", "notice": 14})
+    assert r.status_code == 200, r.text
+    fixed = client.get("/api/kunder/economy").json()["fixed"]
+    assert any(f["name"] == "Hetzner" and f["amount"] == 100 for f in fixed)
     r = client.post("/api/kunder/charges/generate", json={"period": st.get("period") or ""})
     assert r.status_code in (200, 400), r.text
     r = client.put("/api/kunder/news", json={"text": "Nyhed til test"})

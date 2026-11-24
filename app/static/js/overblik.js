@@ -18,7 +18,8 @@ function renderPrem() {
       <div class="small">${esc(p.date)} · ${esc(p.network || "kanal ukendt")} · ${esc((p.genres || []).map(g => GENRE_DA[g] || g).join(", ") || p.type || "")}</div>
       ${p.summary ? `<div class="small">${esc(p.summary)}</div>` : ""}</div>
     <div class="btns">${p.exists ? "" : `<button class="b sm" ${p.tvdb ? "" : 'disabled title="Ikke på TheTVDB endnu – brug Følg"'} onclick="premAdd(${i})">Tilføj nu</button>
-      <button class="b sm" ${p.following ? "disabled" : ""} onclick="premFollow(${i})">Følg</button>`}</div></div>`).join("") + "</div>"
+      <button class="b sm" ${p.following ? "disabled" : ""} onclick="premFollow(${i})">Følg</button>
+      <button class="b sm" onclick="premNo(${i})">Ikke interesseret</button>`}</div></div>`).join("") + "</div>"
     : '<div class="empty">Ingen nye premierer lige nu.</div>';
 }
 async function premAdd(i) {
@@ -32,6 +33,11 @@ async function premFollow(i) {
   try { await api("/api/premieres/follow", {method: "POST", body: JSON.stringify({rule_id: +$("prem_rule").value, title: p.title, date: p.date})});
         toast(`${p.title} følges – den står nu på ventelisten`); p.following = true; renderPrem(); load(); loadHome(); } catch (e) { toast(e.message, true); }
 }
+async function premNo(i) {
+  const p = PREM[i];
+  try { await api("/api/premieres/no", {method: "POST", body: JSON.stringify({tmdb: p.tmdb})}); PREM.splice(i, 1); renderPrem();
+        if (OV && OV.premieres_new) { OV.premieres_new--; renderHome(); } } catch (e) { toast(e.message, true); }
+}
 // "Skjul de viste": premiererne tæller ikke længere under Kræver din handling (en ny premiere vises igen)
 function premSeen() {
   const ids = (PREM || []).map(p => p.tmdb).filter(Boolean);
@@ -40,12 +46,19 @@ function premSeen() {
   if (ids.length) api("/api/premieres/seen", {method: "POST", body: JSON.stringify({ids})}).catch(() => {});
 }
 
+// Tallet ved Drift i menuen: apps, der ikke svarer (rødt), ellers opgaver på huskelisten i dag
+function driftBadge() {
+  const bad = ((CONN || {}).items || []).filter(c => !c.ok).length, hc = ((OV || {}).huske || {}).count || 0;
+  setBadge("drift", bad || hc, !!bad);
+}
+
 // ---------- forside
 async function loadHome() {
   try { OV = await api("/api/overview"); } catch (e) { return; }
   const t = OV.translator || {}, sh = (OV.sharing || {}).buckets || {};
   setBadge("wait", OV.suggestions, false); setBadge("tr", t.problems, true); setBadge("share", sh.bloker, true);
   setBadge("oensker", (OV.oensker || {}).problems, true);
+  const hc = (OV.huske || {}).count || 0; setBadge("huske", hc, false); driftBadge();
   const kb = OV.kunder || {}; setBadge("pay", kb.overdue, true); const iptv = (kb.iptv_due || 0) + (kb.iptv_expired || 0);
   setBadge("cust", (kb.setup || 0) + iptv, !!kb.iptv_expired); setBadge("iptv", iptv, !!kb.iptv_expired);
   if ($("trProbN")) $("trProbN").textContent = t.problems ? ` (${t.problems})` : "";
@@ -60,6 +73,10 @@ function renderHome() {
   if (down.length) add(down.length, true, down.length === 1 ? `${esc(down[0].name)} svarer ikke` : "Apps svarer ikke", down.length === 1 ? `Fangarr får ikke svar fra appen (${down[0].detail}). Se Drift › Forbindelser.` : down.map(c => `${c.name}: ${c.detail}`).join(" · "), "Se forbindelser", "go('drift','forbindelser')");
   const appsDown = (APPS || {}).down || [];
   if (appsDown.length) add(appsDown.length, true, appsDown.length === 1 ? `${esc(appsDown[0])} er nede` : "Apps er nede", appsDown.length === 1 ? "Uptime Kuma får ikke svar fra appen." : appsDown.map(esc).join(" · "), "Se apps", "document.getElementById('homeAppsCard').scrollIntoView({behavior:'smooth'})");
+  const hu = OV.huske || {};
+  (hu.due || []).slice(0, 5).forEach(h => add("📌", h.due < new Date().toISOString().slice(0, 10), esc(h.title),
+    (h.server ? h.server + (h.command ? ": " + h.command : "") : h.command || "") || "Fra huskelisten. Tryk Udført, når det er gjort.", "Åbn huskelisten", "go('drift','huskeliste')"));
+  if ((hu.count || 0) > 5) add(hu.count - 5, false, "Flere opgaver på huskelisten", "Se dem alle under Drift › Huskeliste.", "Åbn huskelisten", "go('drift','huskeliste')");
   if (OV.errors_24h) add(OV.errors_24h, true, "Fejl det seneste døgn", "Fangarr kunne ikke slå en titel op eller tilføje den. Se detaljerne i loggen.", "Se fejlene", "logPick('fejl');go('log','alle')");
   if (OV.suggestions) add(OV.suggestions, false, OV.suggestions === 1 ? "Forslag venter på godkendelse" : "Forslag venter på godkendelse", "Titler på ventelisten med et muligt match. Tryk Godkend ved det rigtige.", "Åbn ventelisten", "go('wait')");
   if (t.problems) add(t.problems, true, t.problems === 1 ? "Oversættelse er gået galt" : "Oversættelser er gået galt", "Prøv igen, eller opgiv dem, så de vises uden dansk tekst.", "Se problemer", "go('tr','problemer')");
@@ -98,7 +115,7 @@ async function loadConn(refresh) {
   try { CONN = await api("/api/connections?refresh=" + (refresh ? 1 : 0)); } catch (e) { return; }
   $("homeConn").innerHTML = CONN.items.length ? CONN.items.map(c => `<span class="conn ${c.ok ? "" : "bad"}"><i></i>${esc(c.name)} <span>${c.ok ? "i orden" : esc(c.detail)}</span></span>`).join("")
     : '<span class="small">Ingen apps er sat op i fangarr.env.</span>';
-  const bad = CONN.items.filter(c => !c.ok).length; setBadge("drift", bad, true); setBadge("conn", bad, true);
+  const bad = CONN.items.filter(c => !c.ok).length; setBadge("conn", bad, true); driftBadge();
   renderHome();
 }
 const APP_T = {up: "Oppe", down: "Nede", pending: "Tjekker igen", maint: "Vedligehold", unknown: "Ukendt", none: "Ingen lampe"};

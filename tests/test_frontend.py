@@ -86,3 +86,26 @@ def test_old_addresses_redirect():
     f = JS["js/faelles.js"]
     for old in ("setup", "iptv", "eco", "prem", "stats"):
         assert re.search(rf'\b{old}: \[', f), f"gammel adresse #{old} sendes ikke videre"
+
+
+
+def test_no_duplicate_globals():
+    """Alle JavaScript-filer deler ét fælles rum. Samme navn to steder (let/const/function) stopper hele filen i browseren."""
+    import glob
+    import re
+    jsdir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app", "static", "js")
+    seen = {}
+    for f in sorted(glob.glob(os.path.join(jsdir, "*.js"))):
+        for line in open(f, encoding="utf-8"):
+            names = []
+            m = re.match(r"(?:async\s+)?function\s+([\w$]+)", line)
+            if m:
+                names = [m.group(1)]
+            m = re.match(r"(?:let|const|var)\s+(.*)", line)
+            if m:
+                body = re.sub(r"\{[^{}]*\}|\[[^\[\]]*\]|\([^()]*\)|\"[^\"]*\"|'[^']*'|`[^`]*`", "", m.group(1))
+                names = re.findall(r"(?:^|,)\s*([A-Za-z_$][\w$]*)\s*(?==|,|;|$)", body)
+            for n in names:
+                assert n not in seen, f"{n} findes både i {seen[n]} og {os.path.basename(f)}"
+                seen[n] = os.path.basename(f)
+    assert len(seen) > 100

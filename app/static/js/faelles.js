@@ -9,7 +9,7 @@ const GENRE_DA = {"Drama":"Drama","Crime":"Krimi","Thriller":"Thriller","Mystery
 const MONITOR_DA = {latestSeason:"nyeste sæson + nye",future:"kun fremtidige afsnit",firstSeason:"første sæson + nye",all:"alle sæsoner + nye",none:"intet"};
 
 let S = null, editing = null, logRows = [], AB = null;
-const SET_NUM = ["max_series_per_day", "max_movies_per_day", "max_disk_pct", "summary_hour", "wait_hours", "wait_days", "refresh_hours", "refresh_days", "backup_hour", "backup_keep"];
+const SET_NUM = ["max_series_per_day", "max_movies_per_day", "max_disk_pct", "summary_hour", "wait_hours", "wait_days", "refresh_hours", "refresh_days", "backup_hour", "backup_keep", "huske_hour"];
 const $ = id => document.getElementById(id);
 const dlg = $("dlg");
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -63,7 +63,7 @@ async function poll(job, progId, onDone) {
 // ====================================================================== menu og sider (2.0)
 // Hvert menupunkt er en <section> i index.html. Underfanerne står i SUBDEF; den første er standard.
 const SUBDEF = {log: "tilfoejet", wait: "venter", tr: "status", rules: "regler", cust: "liste", pay: "opkraevning",
-                besk: "skabeloner", guide: "besoeg", drift: "forbindelser", settings: "telegram"};
+                besk: "skabeloner", guide: "besoeg", drift: "huskeliste", settings: "telegram"};
 const TAB_IDS = ["home", "log", "wait", "tr", "bib", "rules", "cust", "pay", "besk", "oensker", "share", "guide", "drift", "settings", "hjaelp", "search"];
 // Gamle adresser (bogmærker, widgetten) sendes videre til den nye plads: "gammel" eller "gammel/underfane" → [side, underfane]
 const OLD_HASH = {
@@ -93,20 +93,20 @@ function go(tab, sub) {
   window.scrollTo(0, 0);
   if (!S) return;
   const s = SUB[tab];
-  if (tab === "home") { loadHome(); loadConn(0); loadApps(0); }
+  if (tab === "home") { loadHome(); loadConn(0); loadApps(0); loadStille(); }
   if (tab === "log") loadLog();
   if (tab === "wait") { loadWait(); if (s === "koblinger") loadAliases(); if (s === "fjernede") loadIgnored(); }
   if (tab === "tr") { loadTr(); loadTrStats(0); window._trTimer = setInterval(() => loadTr(), 60000); }
   if (tab === "bib") loadStats();
   if (tab === "rules") { fillRuleSelect("sim_rule", null); if (s === "autobrr") loadAutobrr(); }
   if (tab === "cust") { loadCust().then(renderKSet); if (s === "logins") loadLogins(); if (s === "iptv") loadIptv(); }
-  if (tab === "pay") { if (s === "oekonomi") { loadEco(); kNeed().then(renderKSet); } else loadPay(); }
+  if (tab === "pay") { if (s === "oekonomi") loadEco(); else if (s === "udgifter") loadUdg(); else loadPay(); }
   if (tab === "besk") kState().then(() => { renderKSet(); renderNews(); }).catch(e => toast(e.message, true));
   if (tab === "oensker") loadOensker();
   if (tab === "share") loadShare();
   if (tab === "guide") { if (s === "nyheder") nwLoad(); else loadGuide(); }
-  if (tab === "drift") { loadConn(0); if (s === "trackere") loadGrab(); }
-  if (tab === "settings") { loadBackups(); loadAppsCfg(); renderTelegram(); }
+  if (tab === "drift") { loadConn(0); if (s === "trackere") loadGrab(); if (s === "huskeliste") loadHuske(); }
+  if (tab === "settings") { loadBackups(); loadAppsCfg(); renderTelegram(); loadTgStatus(); }
   if (tab === "hjaelp") renderHelp();
 }
 document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => go(b.dataset.tab));

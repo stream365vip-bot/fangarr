@@ -1,4 +1,4 @@
-"""Efterlignede apps til test og skærmbilleder: sonarr2, radarr, radarr4k og Uptime Kuma.
+"""Efterlignede apps til test og skærmbilleder: sonarr2, radarr, radarr4k, Uptime Kuma, Telegram og Tautulli.
 
 Alt her er opdigtet testdata – aldrig rigtige kunder eller rigtige titler fra serveren.
 Kør for sig selv (til skærmbilleder):  python tests/efterligning.py 18990
@@ -75,6 +75,44 @@ def beats():
     return {"heartbeatList": hb, "uptimeList": up}
 
 
+# ---------------------------------------------------------------- Telegram og Tautulli (2.1)
+TG = {"sent": [], "edits": [], "answers": [], "updates": []}
+TAUTULLI = {"streams": 3}
+
+
+@app.post("/tg/bot{tok}/{method}")
+async def telegram(tok: str, method: str, req: Request):
+    try:
+        b = await req.json()
+    except ValueError:
+        b = {}
+    if method == "sendMessage":
+        TG["sent"].append(b)
+        return {"ok": True, "result": {"message_id": len(TG["sent"]), "chat": {"id": int(b.get("chat_id") or 0)},
+                                       "text": b.get("text"), "reply_markup": b.get("reply_markup")}}
+    if method == "editMessageText":
+        TG["edits"].append(b)
+        return {"ok": True, "result": True}
+    if method == "answerCallbackQuery":
+        TG["answers"].append(b)
+        return {"ok": True, "result": True}
+    if method == "getUpdates":
+        ups, TG["updates"] = TG["updates"], []
+        return {"ok": True, "result": ups}
+    return {"ok": False, "description": "ukendt"}
+
+
+@app.get("/tautulli/api/v2")
+def tautulli(cmd: str = ""):
+    if cmd == "get_activity":
+        return {"response": {"result": "success", "data": {"stream_count": str(TAUTULLI["streams"]), "sessions": []}}}
+    if cmd == "get_history":
+        return {"response": {"result": "success", "data": {"data": [], "recordsFiltered": 0}}}
+    if cmd == "get_users":
+        return {"response": {"result": "success", "data": []}}
+    return {"response": {"result": "success", "data": {}}}
+
+
 def env(port):
     """Miljøvariabler, så Fangarr bruger de efterlignede apps."""
     base = f"http://127.0.0.1:{port}"
@@ -82,7 +120,9 @@ def env(port):
             "SONARR2_URL": base + "/sonarr2", "SONARR2_APIKEY": "test",
             "RADARR_URL": base + "/radarr", "RADARR_APIKEY": "test",
             "RADARR4K_URL": base + "/radarr4k", "RADARR4K_APIKEY": "test",
-            "UPTIME_URL": base + "/uptime", "APPS_DOMAIN": "eksempel.dk"}
+            "UPTIME_URL": base + "/uptime", "APPS_DOMAIN": "eksempel.dk",
+            "TELEGRAM_TOKEN": "test", "TELEGRAM_CHAT_ID": "731397952", "TELEGRAM_API": base + "/tg",
+            "TAUTULLI_URL": base + "/tautulli", "TAUTULLI_APIKEY": "test"}
 
 
 if __name__ == "__main__":

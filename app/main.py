@@ -30,6 +30,9 @@ from . import kunder
 from . import oensker
 from . import nyheder
 from . import kob
+from . import tg
+from . import huskeliste
+from . import stille
 
 DATA_DIR = os.environ.get("DATA_DIR", "/config")
 DB_PATH = os.path.join(DATA_DIR, "fangarr.db")
@@ -58,6 +61,10 @@ DEFAULT_SETTINGS = {
     "backup_hour": 3,           # natlig eksport til /config/backup (lokal tid), -1 = fra
     "backup_keep": 14,          # antal natlige eksporter der gemmes
     "rescue_grab": True,        # hent for sonarr2, når den ikke genkender navnet på en serie, den har
+    "tg_buttons": True,         # 2.1: knapper i Stream365 Drift (Fangarr læser dine tryk)
+    "huske_hour": 8,            # 2.1: huskelisten sender besked på dagen fra dette klokkeslæt, -1 = fra
+    "prem_notify": True,        # 2.1: besked med knapper om nye danske premierer
+    "prem_rule": 0,             # 2.1: serieregel til Tilføj fra Telegram (0 = første aktive serieregel)
 }
 
 DEFAULT_TAG = "auto-fangarr"
@@ -273,7 +280,7 @@ def telegram(text):
     if not tok or not chat:
         return
     try:
-        httpx.post(f"https://api.telegram.org/bot{tok}/sendMessage",
+        httpx.post(f"{tg.API}/bot{tok}/sendMessage",
                    data={"chat_id": chat, "text": text}, timeout=20)
     except httpx.HTTPError as e:
         log.warning("Telegram fejlede: %s", e)
@@ -1422,6 +1429,9 @@ def background_loop():
             refresh_premieres_bg()
             kunder.tick()
             oensker.tick()   # Seerr-ønsker: hvem må ønske i Seerr – hvert 5. minut (1.23.0)
+            huskeliste.tick()   # huskeliste og udgifter: besked på dagen (2.1.0)
+            notify_suggestions()   # forslag på ventelisten med Godkend/Fjern i Telegram (2.1.0)
+            stille.tick()       # besked ved 0 streams, når du har bedt om det (2.1.0)
         except Exception as e:  # baggrundsjobbet må aldrig stoppe appen
             log.warning("Baggrundsjob fejlede: %s", e)
         time.sleep(LOOP_SECONDS)
@@ -1531,6 +1541,8 @@ app.include_router(hentegraense.router)   # Hentegrænse: søg afviste afsnit ig
 app.include_router(apps.router)     # Apps med lampe på forsiden og /widget/<nøgle> til telefonen (1.20.0) – se app/apps.py
 app.include_router(oensker.router)  # Seerr-ønsker: pakker, enkeltkøb og hvem der må ønske i Seerr (1.23.0) – se app/oensker.py
 app.include_router(nyheder.router)  # Nyheder i guiden: kortet øverst og nyhedens pop-up (1.24.0) – se app/nyheder.py
+app.include_router(huskeliste.router)   # Huskeliste og udgifter (2.1.0) – se app/huskeliste.py
+app.include_router(stille.router)       # Besked ved 0 streams (2.1.0) – se app/stille.py
 app.include_router(kob.router)      # Køb i guiden: "Få flere ønsker" – kun for guiden med NYT_TOKEN (1.25.0) – se app/kob.py
 
 
@@ -1540,6 +1552,10 @@ def startup():
     kunder.init()
     oensker.init()
     nyheder.init()
+    tg.init()
+    huskeliste.init()
+    tg.cleanup()
+    tg.start()   # læser dine tryk på knapperne i Stream365 Drift (2.1.0)
     threading.Thread(target=background_loop, daemon=True).start()
     log.info("Fangarr startet. Instanser: %s", ", ".join(INSTANCES) or "ingen")
 
@@ -1826,13 +1842,19 @@ async def waitlist_retry(wid: int):
 @app.post("/api/waitlist/{wid}/approve")
 async def waitlist_approve(wid: int, req: Request):
     b = await req.json()
+    await run_in_threadpool(_waitlist_approve, wid, b.get("id"))
+    return get_waitlist()
+
+
+def _waitlist_approve(wid, sid):
+    """Godkend et forslag. Returnerer (resultat, inst, oprettet-id, visningsnavn)."""
     con = db()
     row = con.execute("SELECT * FROM waitlist WHERE id=?", (wid,)).fetchone()
     con.close()
     if not row or row["status"] != "venter":
         raise HTTPException(404, "titlen står ikke længere på ventelisten")
     sugg = json.loads(row["suggestions"] or "[]")
-    sg = next((x for x in sugg if str(x.get("id")) == str(b.get("id"))), None)
+    sg = next((x for x in sugg if str(x.get("id")) == str(sid)), None)
     if not sg:
         raise HTTPException(400, "forslaget findes ikke længere – tryk Opdatér")
     media = row["media"]
@@ -1841,7 +1863,7 @@ async def waitlist_approve(wid: int, req: Request):
     if not rule or not inst:
         raise HTTPException(400, "reglen eller Sonarr/Radarr findes ikke længere")
     term = f"tvdb:{sg['id']}" if media == "series" else f"tmdb:{sg['id']}"
-    found = await run_in_threadpool(arr, inst, "GET", "/series/lookup" if media == "series" else "/movie/lookup", params={"term": term})
+    found = arr(inst, "GET", "/series/lookup" if media == "series" else "/movie/lookup", params={"term": term})
     cand = (found or [None])[0] if isinstance(found, list) else found
     if not cand:
         raise HTTPException(404, f"{term} blev ikke fundet i {inst['name']}")
@@ -1849,6 +1871,7 @@ async def waitlist_approve(wid: int, req: Request):
     shown = cand.get("title") or "?"
     if not re.search(r"\(\d{4}\)$", shown):
         shown += f" ({to_int(cand.get('year')) or '?'})"
+    created = None
     if cand.get("id"):
         result, detail = "findes allerede", f"godkendt: {row['title']} = {shown}, findes allerede i {inst['name']}"
     else:
@@ -1856,7 +1879,7 @@ async def waitlist_approve(wid: int, req: Request):
         pct = disk_pct()
         if pct is not None and pct > to_float(s["max_disk_pct"]):
             raise HTTPException(400, f"disken er {pct} % fyldt (grænse {s['max_disk_pct']} %)")
-        created = await run_in_threadpool(add_title, inst, media, cand, rule)
+        created = add_title(inst, media, cand, rule)
         remember_added(inst, media, created, cand.get("title") or "", rule.get("name") or "")
         result, detail = "tilføjet", f"godkendt manuelt: {row['title']} = {shown} → {inst['name']} › {rule.get('root_folder')}"
     write_log(media, row["release"], cand.get("title") or row["title"], to_int(cand.get("year")), result,
@@ -1865,7 +1888,7 @@ async def waitlist_approve(wid: int, req: Request):
     with con:
         con.execute("UPDATE waitlist SET status='klar', reason=?, suggestions='[]' WHERE id=?", (detail, wid))
     con.close()
-    return get_waitlist()
+    return result, inst, (created or {}).get("id"), shown
 
 
 @app.get("/api/aliases")
@@ -2406,25 +2429,28 @@ async def premiere_add(req: Request):
     rule = next((r for r in get_rules() if r["id"] == to_int(b.get("rule_id")) and r["media"] == "series"), None)
     if not rule:
         raise HTTPException(400, "vælg en serieregel – den bestemmer mappe, kvalitet og overvågning")
+    return await run_in_threadpool(_premiere_add, rule, to_int(b.get("tvdb")), b.get("title") or "")
+
+
+def _premiere_add(rule, tvdb, title):
     inst = INSTANCES.get(rule.get("instance"))
-    tvdb = to_int(b.get("tvdb"))
     if not inst or not tvdb:
         raise HTTPException(400, "titlen har intet TheTVDB-nummer endnu – brug Følg i stedet")
     s = get_settings()
     pct = disk_pct()
     if pct is not None and pct > to_float(s["max_disk_pct"]):
         raise HTTPException(400, f"disken er {pct} % fyldt (grænse {s['max_disk_pct']} %)")
-    found = await run_in_threadpool(arr, inst, "GET", "/series/lookup", params={"term": f"tvdb:{tvdb}"})
+    found = arr(inst, "GET", "/series/lookup", params={"term": f"tvdb:{tvdb}"})
     if not found:
         raise HTTPException(404, "TheTVDB-nummeret blev ikke fundet i Sonarr – prøv Følg")
     cand = found[0]
     if cand.get("id"):
         return {"result": "findes allerede"}
-    created = await run_in_threadpool(add_title, inst, "series", cand, rule)
+    created = add_title(inst, "series", cand, rule)
     remember_added(inst, "series", created, cand.get("title") or "", rule.get("name") or "")
-    write_log("series", "(tilføjet fra premierelisten)", cand.get("title") or b.get("title") or "", to_int(cand.get("year")),
+    write_log("series", "(tilføjet fra premierelisten)", cand.get("title") or title or "", to_int(cand.get("year")),
               "tilføjet", rule.get("name") or "", f"manuelt fra premierelisten til {inst['name']} › {rule.get('root_folder')}", False)
-    return {"result": "tilføjet", "title": cand.get("title")}
+    return {"result": "tilføjet", "title": cand.get("title"), "id": (created or {}).get("id"), "instance": inst["name"]}
 
 
 @app.post("/api/premieres/follow")
@@ -2433,12 +2459,15 @@ async def premiere_follow(req: Request):
     rule = next((r for r in get_rules() if r["id"] == to_int(b.get("rule_id")) and r["media"] == "series"), None)
     if not rule:
         raise HTTPException(400, "vælg en serieregel")
-    title = str(b.get("title") or "").strip()
+    return _premiere_follow(rule, str(b.get("title") or "").strip(), b.get("date"))
+
+
+def _premiere_follow(rule, title, date):
     if not title:
         raise HTTPException(400, "mangler titel")
     start = None
     try:
-        start = datetime.datetime.fromisoformat(str(b.get("date")))
+        start = datetime.datetime.fromisoformat(str(date))
     except ValueError:
         pass
     add_to_waitlist("series", title, "(fulgt fra premierelisten)",
@@ -2656,8 +2685,10 @@ def notify_safety_net(shown):
         return
     lines = "\n".join(f"• {x.get('title') or x['key']} – {x.get('reason') or ''}" for x in new[:20])
     more = f"\n… og {len(new) - 20} mere" if len(new) > 20 else ""
-    telegram(f"⏰ Fangarr – vist i Plex UDEN dansk tekst (sikkerhedsnet):\n{lines}{more}\n\n"
-             "Se Fangarr › Oversættelser › Skjult for kunderne.")
+    rows = [[(f"Oversæt nu: {(x.get('title') or x['key'])[:40]}", "tr_now", {"key": x["key"], "title": x.get("title") or ""})]
+            for x in new[:8]]
+    telegram_rows(f"⏰ Fangarr – vist i Plex UDEN dansk tekst (sikkerhedsnet):\n{lines}{more}\n\n"
+                  "Se Fangarr › Oversættelser › Venter. \"Oversæt nu\" beder Oversætteren prøve igen.", rows)
 
 
 def notify_plex_missing(missing, fixed):
@@ -3171,6 +3202,29 @@ kob.setup(telegram=telegram, log=log)
 oensker.D.update(shop_info=kob.info, sections=lambda: [{"id": k, "title": v} for k, v in nyheder._sections().items()])
 guide.setup(db=db, now=now, log=log)
 apps.setup(kv_get=kv_get, kv_set=kv_set, now=now, log=log)
+def telegram_rows(text, rows=None):
+    """2.1: besked med knapper (falder tilbage til almindelig besked, hvis knapperne er slået fra)."""
+    tg.send(text, rows)
+
+
+tg.D.update(db=db, kv_get=kv_get, kv_set=kv_set, now=now, iso=iso, get_settings=get_settings)
+kunder.D.update(telegram_rows=telegram_rows, fixed_costs=lambda: huskeliste.fixed_for_economy())
+huskeliste.D.update(db=db, kv_get=kv_get, kv_set=kv_set, now=now, iso=iso, telegram_rows=telegram_rows, get_settings=get_settings,
+                    kunder_settings=kunder.settings, money=kunder.money)
+stille.D.update(tautulli=tautulli, tautulli_enabled=tautulli_enabled, kv_get=kv_get, kv_set=kv_set, now=now, iso=iso,
+                telegram_rows=telegram_rows, log=log)
+
+
+@app.get("/api/telegram/status")
+def telegram_status():
+    st = tg.status()
+    con = db()
+    st["recent"] = [dict(r) for r in con.execute("SELECT id, created, kind, label, done_at, result, undone_at FROM tg_actions"
+                                                  " WHERE done_at IS NOT NULL ORDER BY done_at DESC LIMIT 15").fetchall()]
+    con.close()
+    return st
+
+
 hentegraense.setup(arr=arr, sonarr=lambda: _arr_of("sonarr"), db=db, telegram=telegram, write_log=write_log,
                    kv_get=kv_get, kv_set=kv_set, log=log)
 
@@ -4312,6 +4366,114 @@ def refresh_premieres_bg():
         _prem_bg["items"] = fetch_premieres(21, "da")
     except Exception as e:
         log.warning("Premierer kunne ikke hentes til menuen: %s", e.__class__.__name__)
+        return
+    try:
+        notify_premieres()
+    except Exception as e:   # beskeden er en hjælp – må aldrig stoppe baggrundsjobbet
+        log.warning("Besked om premierer fejlede: %s", e)
+
+
+def premieres_pending():
+    """Nye danske premierer (3 uger), som hverken findes, følges eller er afvist – til Overblik og Telegram."""
+    if not _prem_bg["items"]:
+        return []
+    items = premiere_status([dict(x) for x in _prem_bg["items"]])
+    no = set(kv_get("premieres_no", []) or [])
+    return [i for i in items if not i["exists"] and not i["following"] and i.get("tmdb") not in no]
+
+
+def prem_rule():
+    rules = [r for r in get_rules() if r.get("media") == "series" and r.get("active")]
+    want = to_int(get_settings().get("prem_rule"))
+    return next((r for r in rules if r["id"] == want), None) or (rules[0] if rules else None)
+
+
+def notify_premieres():
+    """2.1: én besked pr. ny premiere med knapperne Tilføj, Følg og Ikke interesseret (hver premiere kun én gang)."""
+    if not get_settings().get("prem_notify"):
+        return
+    told = set(kv_get("premieres_told", []) or [])
+    first = not kv_get("premieres_told_init")
+    new = [i for i in premieres_pending() if i.get("tmdb") and i["tmdb"] not in told]
+    if first:   # første gang: husk dem, der allerede står på listen, så du ikke får 20 beskeder på én gang
+        kv_set("premieres_told", sorted({i.get("tmdb") for i in premieres_pending() if i.get("tmdb")})[-2000:])
+        kv_set("premieres_told_init", True)
+        return
+    rule = prem_rule()
+    for it in new[:5]:
+        told.add(it["tmdb"])
+        info = " · ".join(x for x in (it.get("date"), it.get("network"), ", ".join(it.get("genres") or [])) if x)
+        text = f"🎬 Ny dansk premiere: {it['title']}\n{info}\n{(it.get('summary') or '')[:200]}\n{it.get('url') or ''}"
+        row = []
+        if rule and it.get("tvdb"):
+            row.append(("Tilføj nu", "prem_add", {"tvdb": it["tvdb"], "title": it["title"], "rule": rule["id"]}))
+        if rule:
+            row.append(("Følg", "prem_follow", {"title": it["title"], "date": it.get("date"), "rule": rule["id"]}))
+        row.append(("Ikke interesseret", "prem_no", {"tmdb": it["tmdb"], "title": it["title"]}))
+        tg.send(text, [row])
+    kv_set("premieres_told", sorted(told)[-2000:])
+
+
+def _tg_rule(p):
+    rule = next((r for r in get_rules() if r["id"] == to_int(p.get("rule")) and r["media"] == "series"), None)
+    if not rule:
+        raise RuntimeError("serieregelen findes ikke længere")
+    return rule
+
+
+def tg_prem_add(p):
+    out = _premiere_add(_tg_rule(p), to_int(p.get("tvdb")), p.get("title") or "")
+    if out["result"] != "tilføjet":
+        return out["result"], None
+    return f"tilføjet til {out['instance']}", {"instance": out["instance"], "id": out.get("id"), "title": out.get("title")}
+
+
+def tg_prem_add_undo(u):
+    inst = INSTANCES.get(u.get("instance"))
+    if not inst or not u.get("id"):
+        raise RuntimeError("serien kan ikke findes")
+    # ingen filer endnu – serien fjernes uden at slette noget på disken
+    arr(inst, "DELETE", f"/series/{u['id']}", params={"deleteFiles": "false", "addImportListExclusion": "false"})
+    write_log("series", "(fortrudt i Telegram)", u.get("title") or "", 0, "fjernet", "", f"fjernet igen fra {inst['name']} (Fortryd)", False)
+    return f"fjernet igen fra {inst['name']}"
+
+
+def tg_prem_follow(p):
+    _premiere_follow(_tg_rule(p), p.get("title") or "", p.get("date"))
+    con = db()
+    row = con.execute("SELECT id FROM waitlist WHERE status='venter' AND media='series' AND title=? ORDER BY id DESC",
+                      (p.get("title") or "",)).fetchone()
+    con.close()
+    return "følges – står på ventelisten", {"id": row["id"] if row else 0}
+
+
+def tg_prem_follow_undo(u):
+    con = db()
+    with con:
+        con.execute("DELETE FROM waitlist WHERE id=?", (to_int(u.get("id")),))
+    con.close()
+    return "fjernet fra ventelisten"
+
+
+def tg_prem_no(p):
+    no = set(kv_get("premieres_no", []) or [])
+    no.add(to_int(p.get("tmdb")))
+    kv_set("premieres_no", sorted(no)[-2000:])
+    return "vises ikke mere under Kræver din handling", {"tmdb": p.get("tmdb")}
+
+
+def tg_prem_no_undo(u):
+    no = set(kv_get("premieres_no", []) or [])
+    no.discard(to_int(u.get("tmdb")))
+    kv_set("premieres_no", sorted(no))
+    return "vises igen"
+
+
+@app.post("/api/premieres/no")
+async def premiere_no(req: Request):
+    b = await req.json()
+    tg_prem_no({"tmdb": b.get("tmdb")})
+    return {"ok": True}
 
 
 def premieres_new():
@@ -4322,7 +4484,7 @@ def premieres_new():
         items = premiere_status([dict(x) for x in _prem_bg["items"]])
     except Exception:
         return 0
-    seen = set(kv_get("premieres_seen", []) or [])
+    seen = set(kv_get("premieres_seen", []) or []) | set(kv_get("premieres_no", []) or [])
     return sum(1 for i in items if not i["exists"] and not i["following"] and i.get("tmdb") not in seen)
 
 
@@ -4414,7 +4576,18 @@ def overview():
         "waiting": waiting, "suggestions": sugg, "errors_24h": errors, "rescued_24h": rescued,
         "translator": tr, "sharing": kv_get("sharing_summary") if tautulli_enabled() else None,
         "premieres_new": prem_new, "recent": recent, "kunder": _kunder_brief(), "oensker": _oensker_brief(),
+        "huske": _huske_brief(), "stille": stille.state(),
     }
+
+
+def _huske_brief():
+    try:
+        items = huskeliste.due_items()
+        return {"due": [{"id": h["id"], "title": h["title"], "due": h["due"], "server": h["server"], "command": h["command"],
+                         "kind": h["kind"]} for h in items[:20]], "count": len(items)}
+    except Exception as e:
+        log.warning("Huskeliste-overblik fejlede: %s", e)
+        return {"due": [], "count": 0}
 
 
 # ---------------------------------------------------------------- søg efter en titel
@@ -4453,3 +4626,99 @@ def search(q: str = ""):
                 pass
     return {"q": q, "log": logs, "waitlist": wait, "added": added, "aliases": aliases, "ignored": ignored,
             "translations": trans[:30]}
+
+
+# ---------------------------------------------------------------- knapper i Stream365 Drift: handlingerne (2.1.0)
+
+def notify_suggestions():
+    """2.1: én besked pr. titel på ventelisten, der har fået forslag – med Godkend for hvert forslag og Fjern."""
+    con = db()
+    rows = con.execute("SELECT * FROM waitlist WHERE status='venter' AND suggestions NOT IN ('', '[]') ORDER BY id").fetchall()
+    con.close()
+    told = set(kv_get("wl_told", []) or [])
+    live = {r["id"] for r in rows}
+    if not kv_get("wl_told_init"):   # første gang: ingen beskeder om dem, der allerede venter
+        kv_set("wl_told", sorted(live))
+        kv_set("wl_told_init", True)
+        return
+    for r in rows:
+        if r["id"] in told:
+            continue
+        told.add(r["id"])
+        sugg = json.loads(r["suggestions"] or "[]")[:3]
+        lines = [f"🔎 Venteliste: forslag til {r['title']}", f"Udgivelse: {r['release'][:120]}"]
+        btns = []
+        for sg in sugg:
+            name = f"{sg.get('title') or '?'} ({sg.get('year') or '?'})"
+            lines.append(f"• {name} → {sg.get('rule') or ''}")
+            btns.append([(f"Godkend: {name[:40]}", "wl_approve", {"wid": r["id"], "sid": sg.get("id")})])
+        btns.append([("Fjern fra ventelisten", "wl_remove", {"wid": r["id"]})])
+        tg.send("\n".join(lines), btns)
+    kv_set("wl_told", sorted(told & live)[-2000:])
+
+
+def tg_wl_approve(p):
+    con = db()
+    old = con.execute("SELECT status, reason, suggestions FROM waitlist WHERE id=?", (to_int(p.get("wid")),)).fetchone()
+    con.close()
+    if not old or old["status"] != "venter":
+        return "titlen står ikke længere på ventelisten", None
+    result, inst, created, shown = _waitlist_approve(to_int(p.get("wid")), p.get("sid"))
+    undo = {"wid": to_int(p.get("wid")), "reason": old["reason"], "suggestions": old["suggestions"],
+            "instance": inst["name"] if created else "", "id": created, "media": inst["type"], "title": shown}
+    return f"{shown} {result}", undo
+
+
+def tg_wl_approve_undo(u):
+    msg = "står på ventelisten igen"
+    inst = INSTANCES.get(u.get("instance") or "")
+    if inst and u.get("id"):
+        path = f"/series/{u['id']}" if inst["type"] == "sonarr" else f"/movie/{u['id']}"
+        arr(inst, "DELETE", path, params={"deleteFiles": "false", "addImportListExclusion": "false"})
+        msg = f"fjernet igen fra {inst['name']} og " + msg
+    con = db()
+    with con:
+        con.execute("UPDATE waitlist SET status='venter', reason=?, suggestions=? WHERE id=?",
+                    (u.get("reason") or "", u.get("suggestions") or "[]", u["wid"]))
+    con.close()
+    write_log("series" if (inst or {}).get("type") == "sonarr" else "movie", "(fortrudt i Telegram)", u.get("title") or "", 0,
+              "fortrudt", "", msg, False)
+    return msg
+
+
+def tg_wl_remove(p):
+    con = db()
+    row = con.execute("SELECT * FROM waitlist WHERE id=?", (to_int(p.get("wid")),)).fetchone()
+    with con:
+        con.execute("DELETE FROM waitlist WHERE id=?", (to_int(p.get("wid")),))
+    con.close()
+    if not row:
+        return "stod ikke længere på ventelisten", None
+    return f"{row['title']} fjernet fra ventelisten", {"row": dict(row)}
+
+
+def tg_wl_remove_undo(u):
+    r = u["row"]
+    cols = [k for k in r.keys()]
+    con = db()
+    with con:
+        con.execute(f"INSERT OR REPLACE INTO waitlist ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})", [r[k] for k in cols])
+    con.close()
+    return "står på ventelisten igen"
+
+
+def tg_tr_now(p):
+    _ov_post_or_error("/api/items/retry", {"key": str(p.get("key") or "")})
+    return "Oversætteren prøver igen – filen bliver i Plex imens", None
+
+tg.register("huske_done", lambda p: huskeliste.mark_done(p["id"]), huskeliste.undo_done)
+tg.register("huske_snooze", lambda p: huskeliste.snooze(p["id"]), huskeliste.undo_snooze)
+tg.register("pay_paid", kunder.tg_paid, kunder.tg_unpaid)
+tg.register("pay_snooze", kunder.tg_snooze, kunder.tg_unsnooze)
+tg.register("stille_again", stille.again)
+tg.register("prem_add", tg_prem_add, tg_prem_add_undo)
+tg.register("prem_follow", tg_prem_follow, tg_prem_follow_undo)
+tg.register("prem_no", tg_prem_no, tg_prem_no_undo)
+tg.register("wl_approve", tg_wl_approve, tg_wl_approve_undo)
+tg.register("wl_remove", tg_wl_remove, tg_wl_remove_undo)
+tg.register("tr_now", tg_tr_now)
