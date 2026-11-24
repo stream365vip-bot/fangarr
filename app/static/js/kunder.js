@@ -24,6 +24,8 @@ function kForm(title, fields, vals, onSave, saveText) {
   $("edBody").innerHTML = fields.map(f => {
     const v = vals[f.k] ?? "", id = "ef_" + f.k, hint = f.hint ? `<div class="small">${f.hint}</div>` : "";
     if (f.type === "check") return `<div class="field" style="margin-bottom:12px"><label class="check"><input type="checkbox" id="${id}" ${v ? "checked" : ""}> ${esc(f.label)}</label>${hint}</div>`;
+    if (f.type === "multi") return `<div class="field" style="margin-bottom:12px"><label>${esc(f.label)}</label>${hint}<div id="${id}" class="kmulti">${f.options.map(([o, l]) =>
+      `<label class="check"><input type="checkbox" value="${esc(o)}" ${(v || []).map(String).includes(String(o)) ? "checked" : ""}> ${esc(l)}</label>`).join("")}</div></div>`;
     let inp;
     if (f.type === "select") inp = `<select id="${id}">${f.options.map(([o, l]) => `<option value="${esc(o)}" ${String(o) === String(v) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
     else if (f.type === "textarea") inp = `<textarea id="${id}" style="min-height:70px">${esc(v)}</textarea>`;
@@ -34,7 +36,8 @@ function kForm(title, fields, vals, onSave, saveText) {
   }).join("");
   $("edSave").onclick = async () => {
     const out = {};
-    fields.forEach(f => { const el = $("ef_" + f.k); out[f.k] = f.type === "check" ? el.checked : el.value.trim(); });
+    fields.forEach(f => { const el = $("ef_" + f.k);
+      out[f.k] = f.type === "check" ? el.checked : f.type === "multi" ? [...el.querySelectorAll("input:checked")].map(i => i.value) : el.value.trim(); });
     try { await onSave(out); edlg.close(); } catch (e) { $("edErr").textContent = e.message; }
   };
   edlg.showModal();

@@ -86,10 +86,11 @@ async function bqNew() {
   const tpl = BQ.templates.map(t => [t.id, t.name]);
   kForm("Ny besked til flere kunder", [
     {k: "template_id", label: "Skabelon", type: "select", options: tpl, hint: "Teksten kan rettes på næste side og pr. kunde, når du sender."},
-    {k: "who", label: "Hvem skal have den?", type: "select", options: [["alle", "Alle aktive kunder"], ["tjeneste", "Kunder med en bestemt tjeneste"], ["metode", "Kunder med en bestemt betalingsmetode"]]},
+    {k: "who", label: "Hvem skal have den?", type: "select", options: [["alle", "Alle aktive kunder"], ["tjeneste", "Kunder med en bestemt tjeneste"], ["metode", "Kunder med en bestemt betalingsmetode"], ["udvalgte", "Udvalgte kunder (vælg nederst)"]]},
     {k: "service", label: "Tjeneste (hvis valgt ovenfor)", type: "select", options: BQ.services},
     {k: "method", label: "Betalingsmetode (hvis valgt ovenfor)", type: "select", options: [["MobilePay", "MobilePay"], ["Revolut", "Revolut"], ["Andet", "Andet"]]},
     {k: "family", label: "Også familie (Egen)", type: "check"},
+    {k: "ids", label: "Udvalgte kunder (hvis valgt ovenfor)", type: "multi", options: (KC.length ? KC : (await api("/api/kunder/customers").catch(() => []))).map(c => [c.id, c.name])},
   ], {who: "alle"}, async v => {
     const pre = await api("/api/beskeder/modtagere", {method: "POST", body: JSON.stringify(v)});
     if (!pre.count) throw new Error("ingen modtagere passer til dit valg");
