@@ -113,6 +113,26 @@ def tautulli(cmd: str = ""):
     return {"response": {"result": "success", "data": {}}}
 
 
+# ---------------------------------------------------------------- Seerr (2.2) – kun de adresser, Beskeder bruger
+SEERR = {"requests": []}
+SEERR_TITLES = {("movie", 501): ("Den Opdigtede Film", "2026-01-01"), ("tv", 601): ("Fjordmord", "2025-03-01"),
+                ("movie", 502): ("Juleræset", "2025-11-01")}
+
+
+@app.get("/seerr/api/v1/request")
+def seerr_requests(take: int = 20, skip: int = 0, filter: str = "all", sort: str = "added"):
+    rs = SEERR["requests"]
+    if filter == "available":
+        rs = [r for r in rs if (r.get("media") or {}).get("status") in (4, 5)]
+    return {"pageInfo": {"results": len(rs)}, "results": rs[skip:skip + take]}
+
+
+@app.get("/seerr/api/v1/{kind}/{tmdb}")
+def seerr_media(kind: str, tmdb: int):
+    t, d = SEERR_TITLES.get((kind, tmdb), (f"Titel {tmdb}", "2024-01-01"))
+    return {"title": t, "name": t, "releaseDate": d, "firstAirDate": d}
+
+
 def env(port):
     """Miljøvariabler, så Fangarr bruger de efterlignede apps."""
     base = f"http://127.0.0.1:{port}"

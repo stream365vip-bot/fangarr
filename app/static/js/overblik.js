@@ -59,6 +59,7 @@ async function loadHome() {
   setBadge("wait", OV.suggestions, false); setBadge("tr", t.problems, true); setBadge("share", sh.bloker, true);
   setBadge("oensker", (OV.oensker || {}).problems, true);
   const hc = (OV.huske || {}).count || 0; setBadge("huske", hc, false); driftBadge();
+  const bk = OV.beskeder || {}; setBadge("klar", bk.klar, false); setBadge("koe", bk.koe, false); setBadge("besk", (bk.klar || 0) + (bk.koe || 0), false);
   const kb = OV.kunder || {}; setBadge("pay", kb.overdue, true); const iptv = (kb.iptv_due || 0) + (kb.iptv_expired || 0);
   setBadge("cust", (kb.setup || 0) + iptv, !!kb.iptv_expired); setBadge("iptv", iptv, !!kb.iptv_expired);
   if ($("trProbN")) $("trProbN").textContent = t.problems ? ` (${t.problems})` : "";
@@ -77,6 +78,9 @@ function renderHome() {
   (hu.due || []).slice(0, 5).forEach(h => add("📌", h.due < new Date().toISOString().slice(0, 10), esc(h.title),
     (h.server ? h.server + (h.command ? ": " + h.command : "") : h.command || "") || "Fra huskelisten. Tryk Udført, når det er gjort.", "Åbn huskelisten", "go('drift','huskeliste')"));
   if ((hu.count || 0) > 5) add(hu.count - 5, false, "Flere opgaver på huskelisten", "Se dem alle under Drift › Huskeliste.", "Åbn huskelisten", "go('drift','huskeliste')");
+  const bk = OV.beskeder || {};
+  if (bk.klar) add(bk.klar, false, bk.klar === 1 ? "Kunde venter på besked om sit ønske" : "Kunder venter på besked om deres ønske", "Ønsket er klar i Plex. Send kunden beskeden fra Fangarr – den åbnes klar i Telegram eller Messenger.", "Ønsker klar", "go('besk','klar')");
+  if (bk.koe) add(bk.koe, false, bk.koe === 1 ? "Besked i send-køen venter" : "Beskeder i send-køen venter", "Du er i gang med at sende en besked til flere kunder.", "Send-kø", "go('besk','koe')");
   if (OV.errors_24h) add(OV.errors_24h, true, "Fejl det seneste døgn", "Fangarr kunne ikke slå en titel op eller tilføje den. Se detaljerne i loggen.", "Se fejlene", "logPick('fejl');go('log','alle')");
   if (OV.suggestions) add(OV.suggestions, false, OV.suggestions === 1 ? "Forslag venter på godkendelse" : "Forslag venter på godkendelse", "Titler på ventelisten med et muligt match. Tryk Godkend ved det rigtige.", "Åbn ventelisten", "go('wait')");
   if (t.problems) add(t.problems, true, t.problems === 1 ? "Oversættelse er gået galt" : "Oversættelser er gået galt", "Prøv igen, eller opgiv dem, så de vises uden dansk tekst.", "Se problemer", "go('tr','problemer')");

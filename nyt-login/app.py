@@ -947,7 +947,8 @@ document.addEventListener("input",function(ev){var el=ev.target;
  var isSearch=el.type==="search"||/s(ø|oe)g|search/i.test((el.placeholder||"")+" "+(el.id||"")+" "+(el.name||"")+" "+(el.getAttribute("aria-label")||""));
  if(!isSearch)return;clearTimeout(st);
  st=setTimeout(function(){var v=(el.value||"").replace(/\s+/g," ").trim().toLowerCase().slice(0,60);
-  if(v.length>=3&&v!==lastQ){lastQ=v;push({e:"search",q:v});}},1500);},true);
+  if(v.length>=3&&v!==lastQ){lastQ=v;var hb=document.getElementById("hits"),ev={e:"search",q:v};
+   if(hb)ev.h=String(hb.querySelectorAll("a").length);push(ev);}},1500);},true);
 window.addEventListener("pagehide",flush);
 document.addEventListener("visibilitychange",function(){if(document.hidden)flush();});
 })();"""
@@ -984,7 +985,8 @@ async def api_stat(req: Request):
         elif e.get("e") == "search":
             term = _clean_text(e.get("q"), 60).lower()
             if len(term) >= 3:
-                stat_log(s[0], s[1], "search", q=term)
+                h = str(e.get("h") or "")      # antal svar i guidens søgning (fra Fangarr 2.2.0) – "0" = intet svar
+                stat_log(s[0], s[1], "search", q=term, h=h if h.isdigit() and len(h) <= 4 else None)
     return empty
 
 

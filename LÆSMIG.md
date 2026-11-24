@@ -10,6 +10,15 @@ Menu (2.0): **Overblik** · *Indhold:* Log (Tilføjet · Alle beslutninger) · V
 
 Sikringer: prøvetilstand, loft pr. døgn, pladsgrænse, kun præcise titelmatch, Seerr-tjek, Telegram ved fejl og "i orden igen", dagligt resumé.
 
+## Kunder og beskeder (2.2.0)
+- **Beskeder › Send-kø** (`app/beskeder.py`): vælg skabelon og modtagere (alle aktive kunder, en tjeneste, en betalingsmetode – familie kun hvis valgt). Kunderne gennemgås én ad gangen med beskeden klar i Telegram eller Messenger (samme knapper som Send besked). Flueben ved sendt, og det kommer på tidslinjen. Køen kan stoppes og fortsættes.
+- **Beskeder › Ønsker klar:** Fangarr spørger Seerr hvert 10. minut efter ønsker, der står som tilgængelige (film) eller hvor alle ønskede sæsoner er tilgængelige (serier). Seerr ser først titlen, når Plex viser den – og Plex viser den først med dansk tale eller tekst. Kunden findes via Plex-kontoen på kundekortet. Første gang huskes de gamle. Én besked om dagen til Stream365 Drift med antal (fra kl. `klar_hour`, standard 10) – aldrig navne, telefon eller e-mail.
+- **Beskeder › Ændring for alle:** ny pris på en tjeneste fra en måned, evt. kun for kunder med en bestemt pris. Kontrolsiden viser hver kunde før og efter (pr. måned og pr. opkrævning); intet ændres før Bekræft. Prisen skiftes den 1. i måneden (før kundernes månedskørsel), og opkrævninger fra den måned, der hverken er anmodet eller betalt, regnes om. Opkrævninger før datoen røres ikke. Kan annulleres, indtil datoen er nået.
+- **Beskeder › Skabeloner:** opkrævningsbeskeden som før + skabelonerne Velkomst, Dit ønske er klar, Prisændring og egne. Felter: `{fornavn} {navn} {guide} {titel} {tjeneste} {gammel_pris} {ny_pris} {dato}`.
+- **Tidslinje på kundekortet:** bygges af det, Fangarr har gemt (oprettet, opkrævninger, anmodet, betalt, Seerr-ønsker) + nye hændelser (`k_events`: beskeder sendt, ønske klar, prisændringer) og noter.
+- **Guide › Søgninger:** søgninger i guiden uden svar og de mest ønskede titler i Seerr (90 dage). **Guiden (`nyt-login/`) skal bygges igen** for at gemme antal svar pr. søgning (`h` i statistikfilen).
+- Nye tabeller: `b_templates`, `b_queue`, `b_items`, `b_ready`, `b_price`, `k_events`. Ny indstilling: `klar_hour`. Ingen ændringer i `fangarr.env`.
+
 ## Påmindelser og knapper i Telegram (2.1.0)
 - **Huskeliste** (Drift › Huskeliste, `app/huskeliste.py`): opgave, dato, server, valgfri kontrolkommando (med kopiknap), gentagelse. På dagen står den under *Kræver din handling*, og der kommer én besked i Stream365 Drift med **Udført** og **Udsæt en dag** (fra kl. `huske_hour`, standard 8). Datoopgaverne fra dokumentationen (24. nov.) lægges ind første gang.
 - **Udgifter** (Opkrævning › Udgifter): navn, beløb pr. måned/år, næste fornyelse og varsel. Når varslet nås, kommer "Forny …" på huskelisten; Udført rykker fornyelsen en måned/et år frem. Økonomi bruger udgifterne – linjerne i det gamle felt "faste udgifter" flyttes over én gang.

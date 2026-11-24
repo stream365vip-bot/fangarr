@@ -33,6 +33,7 @@ from . import kob
 from . import tg
 from . import huskeliste
 from . import stille
+from . import beskeder
 
 DATA_DIR = os.environ.get("DATA_DIR", "/config")
 DB_PATH = os.path.join(DATA_DIR, "fangarr.db")
@@ -65,6 +66,7 @@ DEFAULT_SETTINGS = {
     "huske_hour": 8,            # 2.1: huskelisten sender besked på dagen fra dette klokkeslæt, -1 = fra
     "prem_notify": True,        # 2.1: besked med knapper om nye danske premierer
     "prem_rule": 0,             # 2.1: serieregel til Tilføj fra Telegram (0 = første aktive serieregel)
+    "klar_hour": 10,            # 2.2: besked om "ønsker klar" én gang om dagen fra dette klokkeslæt, -1 = fra
 }
 
 DEFAULT_TAG = "auto-fangarr"
@@ -1427,6 +1429,7 @@ def background_loop():
                 check_seerr_straks()
                 hentegraense.tick()   # trackeren afviste hentninger – søg afsnittene igen i små portioner (1.22.0)
             refresh_premieres_bg()
+            beskeder.tick()     # prisændringer (før kundernes månedskørsel) og ønsker klar (2.2.0)
             kunder.tick()
             oensker.tick()   # Seerr-ønsker: hvem må ønske i Seerr – hvert 5. minut (1.23.0)
             huskeliste.tick()   # huskeliste og udgifter: besked på dagen (2.1.0)
@@ -1542,7 +1545,8 @@ app.include_router(apps.router)     # Apps med lampe på forsiden og /widget/<n�
 app.include_router(oensker.router)  # Seerr-ønsker: pakker, enkeltkøb og hvem der må ønske i Seerr (1.23.0) – se app/oensker.py
 app.include_router(nyheder.router)  # Nyheder i guiden: kortet øverst og nyhedens pop-up (1.24.0) – se app/nyheder.py
 app.include_router(huskeliste.router)   # Huskeliste og udgifter (2.1.0) – se app/huskeliste.py
-app.include_router(stille.router)       # Besked ved 0 streams (2.1.0) – se app/stille.py
+app.include_router(stille.router)
+app.include_router(beskeder.router)     # Kunder og beskeder: send-kø, ønsker klar, ændring for alle, tidslinje (2.2.0) – se app/beskeder.py       # Besked ved 0 streams (2.1.0) – se app/stille.py
 app.include_router(kob.router)      # Køb i guiden: "Få flere ønsker" – kun for guiden med NYT_TOKEN (1.25.0) – se app/kob.py
 
 
@@ -1554,6 +1558,7 @@ def startup():
     nyheder.init()
     tg.init()
     huskeliste.init()
+    beskeder.init()
     tg.cleanup()
     tg.start()   # læser dine tryk på knapperne i Stream365 Drift (2.1.0)
     threading.Thread(target=background_loop, daemon=True).start()
@@ -3211,6 +3216,8 @@ tg.D.update(db=db, kv_get=kv_get, kv_set=kv_set, now=now, iso=iso, get_settings=
 kunder.D.update(telegram_rows=telegram_rows, fixed_costs=lambda: huskeliste.fixed_for_economy())
 huskeliste.D.update(db=db, kv_get=kv_get, kv_set=kv_set, now=now, iso=iso, telegram_rows=telegram_rows, get_settings=get_settings,
                     kunder_settings=kunder.settings, money=kunder.money)
+beskeder.setup(db=db, kv_get=kv_get, kv_set=kv_set, now=now, iso=iso, telegram_rows=telegram_rows, get_settings=get_settings, log=log,
+               guide_summary=guide.summary)
 stille.D.update(tautulli=tautulli, tautulli_enabled=tautulli_enabled, kv_get=kv_get, kv_set=kv_set, now=now, iso=iso,
                 telegram_rows=telegram_rows, log=log)
 
@@ -4576,7 +4583,7 @@ def overview():
         "waiting": waiting, "suggestions": sugg, "errors_24h": errors, "rescued_24h": rescued,
         "translator": tr, "sharing": kv_get("sharing_summary") if tautulli_enabled() else None,
         "premieres_new": prem_new, "recent": recent, "kunder": _kunder_brief(), "oensker": _oensker_brief(),
-        "huske": _huske_brief(), "stille": stille.state(),
+        "huske": _huske_brief(), "stille": stille.state(), "beskeder": beskeder.brief(),
     }
 
 

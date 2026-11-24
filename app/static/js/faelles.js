@@ -63,7 +63,7 @@ async function poll(job, progId, onDone) {
 // ====================================================================== menu og sider (2.0)
 // Hvert menupunkt er en <section> i index.html. Underfanerne står i SUBDEF; den første er standard.
 const SUBDEF = {log: "tilfoejet", wait: "venter", tr: "status", rules: "regler", cust: "liste", pay: "opkraevning",
-                besk: "skabeloner", guide: "besoeg", drift: "huskeliste", settings: "telegram"};
+                besk: "koe", guide: "besoeg", drift: "huskeliste", settings: "telegram"};
 const TAB_IDS = ["home", "log", "wait", "tr", "bib", "rules", "cust", "pay", "besk", "oensker", "share", "guide", "drift", "settings", "hjaelp", "search"];
 // Gamle adresser (bogmærker, widgetten) sendes videre til den nye plads: "gammel" eller "gammel/underfane" → [side, underfane]
 const OLD_HASH = {
@@ -101,10 +101,11 @@ function go(tab, sub) {
   if (tab === "rules") { fillRuleSelect("sim_rule", null); if (s === "autobrr") loadAutobrr(); }
   if (tab === "cust") { loadCust().then(renderKSet); if (s === "logins") loadLogins(); if (s === "iptv") loadIptv(); }
   if (tab === "pay") { if (s === "oekonomi") loadEco(); else if (s === "udgifter") loadUdg(); else loadPay(); }
-  if (tab === "besk") kState().then(() => { renderKSet(); renderNews(); }).catch(e => toast(e.message, true));
+  if (tab === "besk") { if (s === "koe") loadQueues(); else if (s === "klar") loadReady(); else if (s === "aendring") loadPrices();
+    else kState().then(() => { renderKSet(); renderNews(); if (s === "skabeloner") loadTemplates(); }).catch(e => toast(e.message, true)); }
   if (tab === "oensker") loadOensker();
   if (tab === "share") loadShare();
-  if (tab === "guide") { if (s === "nyheder") nwLoad(); else loadGuide(); }
+  if (tab === "guide") { if (s === "nyheder") nwLoad(); else if (s === "soegninger") loadSearches(); else loadGuide(); }
   if (tab === "drift") { loadConn(0); if (s === "trackere") loadGrab(); if (s === "huskeliste") loadHuske(); }
   if (tab === "settings") { loadBackups(); loadAppsCfg(); renderTelegram(); loadTgStatus(); }
   if (tab === "hjaelp") renderHelp();

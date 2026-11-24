@@ -962,17 +962,25 @@ async def charge_action(chid: int, req: Request):
             raise HTTPException(400, "beløbet kan ikke være negativt")
         run("UPDATE k_charges SET amount=?, note=? WHERE id=?", (amount, str(b.get("note") or "").strip(), chid))
     elif a == "recalc":       # nye priser på kunden: regn grundbeløbet om, behold fradrag/tillæg
-        c = one("SELECT * FROM k_customers WHERE id=?", (ch["customer_id"],))
-        sv = rows("SELECT * FROM k_services WHERE customer_id=?", (ch["customer_id"],))
-        det = json.loads(ch["detail"] or "{}")
-        n = FREQ.get(c["freq"], det.get("months") or 0)
-        base = monthly(sv) * n
-        det.update({"lines": service_lines(sv), "months": n})
-        amount = max(0.0, base + sum(x["amount"] for x in det.get("adjust", [])))
-        run("UPDATE k_charges SET amount=?, base=?, detail=? WHERE id=?", (amount, base, json.dumps(det, ensure_ascii=False), chid))
+        recalc_charge(chid)
     else:
         raise HTTPException(400, "ukendt handling")
     return charges_for(ch["period"][:7])
+
+
+def recalc_charge(chid):
+    """Regn grundbeløbet om ud fra kundens nuværende priser; fradrag og tillæg bevares (også brugt af Ændring for alle, 2.2.0)."""
+    ch = one("SELECT * FROM k_charges WHERE id=?", (chid,))
+    c = one("SELECT * FROM k_customers WHERE id=?", (ch["customer_id"],)) if ch else None
+    if not ch or not c:
+        return
+    sv = rows("SELECT * FROM k_services WHERE customer_id=?", (ch["customer_id"],))
+    det = json.loads(ch["detail"] or "{}")
+    n = FREQ.get(c["freq"], det.get("months") or 0)
+    base = monthly(sv) * n
+    det.update({"lines": service_lines(sv), "months": n})
+    amount = max(0.0, base + sum(x["amount"] for x in det.get("adjust", [])))
+    run("UPDATE k_charges SET amount=?, base=?, detail=? WHERE id=?", (amount, base, json.dumps(det, ensure_ascii=False), chid))
 
 
 # ---------------------------------------------------------------- knapper i Stream365 Drift (2.1.0)
