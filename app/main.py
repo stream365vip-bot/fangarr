@@ -20,7 +20,7 @@ import unicodedata
 import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import apps
@@ -1546,8 +1546,11 @@ def startup():
 
 @app.get("/")
 def index():
-    # no-cache: browseren spørger hver gang, så en opdatering af Fangarr ses med det samme
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"), headers={"Cache-Control": "no-cache"})
+    # no-cache: browseren spørger hver gang, så en opdatering af Fangarr ses med det samme.
+    # 2.0: CSS og JavaScript ligger i egne filer – "?v=__V__" bliver til versionsnummeret, så browseren henter dem forfra efter en opdatering.
+    with open(os.path.join(STATIC_DIR, "index.html"), encoding="utf-8") as f:
+        html = f.read().replace("?v=__V__", "?v=" + VERSION)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")   # skrifterne (Outfit, DM Sans) ligger i Fangarr selv
@@ -1655,7 +1658,8 @@ def state():
         "waiting": venter,
         "features": {"tracearr": bool(TRACEARR_URL and TRACEARR_APIKEY), "seerr": bool(SEERR_URL and SEERR_APIKEY),
                      "autobrr": bool(AUTOBRR_URL and AUTOBRR_APIKEY), "translator": ov_enabled(),
-                     "plex": bool(PLEX_URL and PLEX_TOKEN), "tautulli": tautulli_enabled(), "guide": guide.enabled(), "apps": apps.enabled(), "oensker": oensker.enabled(), "version": VERSION},
+                     "plex": bool(PLEX_URL and PLEX_TOKEN), "tautulli": tautulli_enabled(), "guide": guide.enabled(), "apps": apps.enabled(), "oensker": oensker.enabled(), "version": VERSION,
+                     "telegram": bool(os.environ.get("TELEGRAM_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID"))},
     }
 
 
