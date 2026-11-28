@@ -63,12 +63,12 @@ async function poll(job, progId, onDone) {
 // ====================================================================== menu og sider (2.0)
 // Hvert menupunkt er en <section> i index.html. Underfanerne står i SUBDEF; den første er standard.
 const SUBDEF = {log: "tilfoejet", wait: "venter", tr: "status", rules: "regler", cust: "liste", pay: "opkraevning",
-                besk: "koe", guide: "besoeg", drift: "huskeliste", settings: "telegram"};
+                besk: "koe", guide: "besoeg", drift: "huskeliste", bib: "tjekliste", settings: "telegram"};
 const TAB_IDS = ["home", "log", "wait", "tr", "bib", "rules", "cust", "pay", "besk", "oensker", "share", "guide", "drift", "settings", "hjaelp", "search"];
 // Gamle adresser (bogmærker, widgetten) sendes videre til den nye plads: "gammel" eller "gammel/underfane" → [side, underfane]
 const OLD_HASH = {
   setup: ["rules", "afproev"], "setup/test": ["rules", "afproev"], "setup/sim": ["rules", "historik"], "setup/autobrr": ["rules", "autobrr"],
-  iptv: ["cust", "iptv"], eco: ["pay", "oekonomi"], prem: ["home"], stats: ["bib"], "cust/import": ["cust", "liste"],
+  iptv: ["cust", "iptv"], eco: ["pay", "oekonomi"], prem: ["home"], stats: ["bib", "statistik"], "cust/import": ["cust", "liste"],
   "settings/gen": ["rules", "indst"], "settings/vente": ["wait", "indst"], "settings/kob": ["wait", "koblinger"],
   "tr/skjult": ["tr", "venter"], "tr/paavej": ["tr", "venter"], "tr/faerdige": ["tr", "status"], "tr/stat": ["tr", "status"],
 };
@@ -97,7 +97,7 @@ function go(tab, sub) {
   if (tab === "log") loadLog();
   if (tab === "wait") { loadWait(); if (s === "koblinger") loadAliases(); if (s === "fjernede") loadIgnored(); }
   if (tab === "tr") { loadTr(); loadTrStats(0); window._trTimer = setInterval(() => loadTr(), 60000); }
-  if (tab === "bib") loadStats();
+  if (tab === "bib") { if (s === "statistik") loadStats(); else loadTjek(); }
   if (tab === "rules") { fillRuleSelect("sim_rule", null); if (s === "autobrr") loadAutobrr(); }
   if (tab === "cust") { loadCust().then(renderKSet); if (s === "logins") loadLogins(); if (s === "iptv") loadIptv(); }
   if (tab === "pay") { if (s === "oekonomi") loadEco(); else if (s === "udgifter") loadUdg(); else loadPay(); }
@@ -106,7 +106,7 @@ function go(tab, sub) {
   if (tab === "oensker") loadOensker();
   if (tab === "share") loadShare();
   if (tab === "guide") { if (s === "nyheder") nwLoad(); else if (s === "soegninger") loadSearches(); else loadGuide(); }
-  if (tab === "drift") { loadConn(0); if (s === "trackere") loadGrab(); if (s === "huskeliste") loadHuske(); }
+  if (tab === "drift") { loadConn(0); if (s === "trackere") { loadGrab(); loadTrk(0); } if (s === "sikkerhed") loadSik(); if (s === "huskeliste") loadHuske(); }
   if (tab === "settings") { loadBackups(); loadAppsCfg(); renderTelegram(); loadTgStatus(); }
   if (tab === "hjaelp") renderHelp();
 }

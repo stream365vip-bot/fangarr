@@ -162,13 +162,27 @@ def _groups():
     return data
 
 
+_seen_domain = {"v": None}
+
+
 def _domain(req):
-    """Domænet, apps ligger på: APPS_DOMAIN – ellers Fangarrs egen adresse uden første led."""
+    """Domænet, apps ligger på: APPS_DOMAIN – ellers Fangarrs egen adresse uden første led.
+    Domænet huskes, så sikkerhedstjekket (2.3.0) kan bruge det, når ingen har åbnet siden."""
     if APPS_DOMAIN:
         return APPS_DOMAIN
+    if req is None:
+        return _seen_domain["v"] or (D["kv_get"]("apps_domain", "") if D.get("kv_get") else "")
     host = (req.headers.get("x-forwarded-host") or req.headers.get("host") or "").split(",")[0].strip().split(":")[0]
     parts = host.split(".")
-    return ".".join(parts[1:]) if len(parts) > 2 and not host.replace(".", "").isdigit() else ""
+    dom = ".".join(parts[1:]) if len(parts) > 2 and not host.replace(".", "").isdigit() else ""
+    if dom and dom != _seen_domain["v"] and D.get("kv_set"):
+        _seen_domain["v"] = dom
+        D["kv_set"]("apps_domain", dom)
+    return dom
+
+
+def domain():
+    return _domain(None)
 
 
 def build(req):

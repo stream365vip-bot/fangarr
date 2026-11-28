@@ -153,6 +153,19 @@ def seed():
     with open(os.path.join(STAT, day + ".jsonl"), "w", encoding="utf-8") as f:
         for i, (q_, h) in enumerate(lines):
             f.write(json.dumps({"t": f"{day}T0{i}:00:00", "uid": str(100 + i), "user": f"testbruger{i}", "e": "search", "q": q_, "h": h}) + "\n")
+    # 2.3: sikkerhedstjek (porte på 127.0.0.1, adresserne efterlignet), trackere fra den efterlignede qBittorrent, tjekliste
+    def fake_check(client, url, kind):
+        if kind == "widget":
+            return "ok", "404 – forkert nøgle afvises"
+        if "radarr" in url and kind == "api":
+            return "fund", "svarer 401 uden login"
+        return ("ok", "404 – findes ikke") if kind == "api" else ("ok", "302 → login")
+    main.sikkerhed.check_url = fake_check
+    c.put("/api/sikkerhed/indst", json={"hosts": f"feeder 127.0.0.1 22,80,443,{MOCK}", "ports": f"{MOCK - 3}-{MOCK + 3}"})
+    main.sikkerhed.run(manual=True)
+    c.get("/api/trackere?refresh_now=1")
+    main.trackere.notify(*main.trackere.refresh())
+    main.tjekliste.run(manual=True)
     print("Testdata lagt ind.", flush=True)
 
 

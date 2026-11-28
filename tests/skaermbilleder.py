@@ -48,7 +48,7 @@ def main():
                 pg.wait_for_timeout(900)
                 pg.screenshot(path=os.path.join(OUT, f"{name}-{sec}{'-' + sub if sub else ''}.png"), full_page=not mobile)
             # gamle adresser sendes videre
-            for old, want in (("setup", "#rules/afproev"), ("iptv", "#cust/iptv"), ("eco", "#pay/oekonomi"), ("stats", "#bib"), ("settings/vente", "#wait/indst")):
+            for old, want in (("setup", "#rules/afproev"), ("iptv", "#cust/iptv"), ("eco", "#pay/oekonomi"), ("stats", "#bib/statistik"), ("settings/vente", "#wait/indst")):
                 pg.goto(BASE + "/#" + old); pg.reload(); pg.wait_for_timeout(700)
                 if not pg.url.endswith(want):
                     errors.append(f"{name}: #{old} gik til {pg.url} (ventet {want})")

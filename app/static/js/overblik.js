@@ -48,8 +48,10 @@ function premSeen() {
 
 // Tallet ved Drift i menuen: apps, der ikke svarer (rødt), ellers opgaver på huskelisten i dag
 function driftBadge() {
-  const bad = ((CONN || {}).items || []).filter(c => !c.ok).length, hc = ((OV || {}).huske || {}).count || 0;
-  setBadge("drift", bad || hc, !!bad);
+  const bad = ((CONN || {}).items || []).filter(c => !c.ok).length, hc = ((OV || {}).huske || {}).count || 0, dr = (OV || {}).drift || {};
+  const risk = (dr.sikkerhed || 0) + (dr.trackere || 0) + (dr.qbit_down ? 1 : 0);
+  setBadge("drift", bad + risk || hc, !!(bad || risk));
+  setBadge("sik", dr.sikkerhed || 0, true); setBadge("trk", (dr.trackere || 0) + (dr.qbit_down ? 1 : 0), true);
 }
 
 // ---------- forside
@@ -78,6 +80,10 @@ function renderHome() {
   (hu.due || []).slice(0, 5).forEach(h => add("📌", h.due < new Date().toISOString().slice(0, 10), esc(h.title),
     (h.server ? h.server + (h.command ? ": " + h.command : "") : h.command || "") || "Fra huskelisten. Tryk Udført, når det er gjort.", "Åbn huskelisten", "go('drift','huskeliste')"));
   if ((hu.count || 0) > 5) add(hu.count - 5, false, "Flere opgaver på huskelisten", "Se dem alle under Drift › Huskeliste.", "Åbn huskelisten", "go('drift','huskeliste')");
+  const dr = OV.drift || {};
+  if (dr.sikkerhed) add(dr.sikkerhed, true, dr.sikkerhed === 1 ? "Fund i sikkerhedstjekket" : "Fund i sikkerhedstjekket", "En adresse er åben uden Authelia, eller en ny port er åben udefra. Fangarr har ikke ændret noget.", "Se sikkerhed", "go('drift','sikkerhed')");
+  if (dr.trackere) add(dr.trackere, true, dr.trackere === 1 ? "Torrent står stille før seedingkravet" : "Torrents står stille før seedingkravet", "Risiko for hit-and-run hos trackeren. Start dem igen i qBittorrent.", "Se trackerne", "go('drift','trackere')");
+  if (dr.qbit_down) add("!", true, "Fangarr kan ikke læse qBittorrent", "Trackerne kan ikke tjekkes. Se Drift › Trackere.", "Se trackerne", "go('drift','trackere')");
   const bk = OV.beskeder || {};
   if (bk.klar) add(bk.klar, false, bk.klar === 1 ? "Kunde venter på besked om sit ønske" : "Kunder venter på besked om deres ønske", "Ønsket er klar i Plex. Send kunden beskeden fra Fangarr – den åbnes klar i Telegram eller Messenger.", "Ønsker klar", "go('besk','klar')");
   if (bk.koe) add(bk.koe, false, bk.koe === 1 ? "Besked i send-køen venter" : "Beskeder i send-køen venter", "Du er i gang med at sende en besked til flere kunder.", "Send-kø", "go('besk','koe')");
