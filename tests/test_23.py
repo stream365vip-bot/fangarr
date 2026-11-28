@@ -144,6 +144,15 @@ def test_tracker_rules_save(client):
     client.put("/api/trackere/regler", json={})
 
 
+def test_qbit_old_and_new_login(client):
+    for new in (True, False):
+        efterligning.QB["new_style"] = new
+        trackere._s["cookie"] = None
+        assert len(trackere.torrents()) == 4
+        assert len(trackere.torrents()) == 4, "cookien genbruges"
+    efterligning.QB["new_style"] = True
+
+
 def test_qbit_wrong_login(client, monkeypatch):
     monkeypatch.setattr(trackere, "QBIT_PASS", "forkert")
     trackere._s["cookie"] = None
