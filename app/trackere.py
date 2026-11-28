@@ -91,22 +91,26 @@ def met(t, rule):
 # ---------------------------------------------------------------- qBittorrent
 
 def _login(c):
+    """qBittorrent 5.2+ svarer 204 uden tekst og kalder cookien QBT_SID_<port>; ældre udgaver svarer 200 "Ok." og SID."""
     r = c.post(QBIT_URL + "/api/v2/auth/login", data={"username": QBIT_USER, "password": QBIT_PASS},
                headers={"Referer": QBIT_URL})
     if r.status_code == 403:
         raise RuntimeError("qBittorrent har midlertidigt spærret Fangarr efter for mange forkerte logins")
-    if r.status_code != 200 or r.text.strip() != "Ok.":
+    ok = r.status_code == 204 or (r.status_code == 200 and r.text.strip() == "Ok.")
+    sid = next(((k, v) for k, v in r.cookies.items() if "SID" in k.upper()), None)
+    if not ok or not sid:
         raise RuntimeError("qBittorrent afviste login (QBIT_USER/QBIT_PASS i fangarr.env)")
-    _s["cookie"] = c.cookies.get("SID")
+    _s["cookie"] = sid
 
 
 def torrents():
     with httpx.Client(timeout=30) as c:
         if _s["cookie"]:
-            c.cookies.set("SID", _s["cookie"])
+            c.cookies.set(*_s["cookie"])
         r = c.get(QBIT_URL + "/api/v2/torrents/info", headers={"Referer": QBIT_URL})
-        if r.status_code == 403:
+        if r.status_code in (401, 403):
             _login(c)
+            c.cookies.set(*_s["cookie"])
             r = c.get(QBIT_URL + "/api/v2/torrents/info", headers={"Referer": QBIT_URL})
         r.raise_for_status()
         return r.json()

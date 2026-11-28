@@ -137,7 +137,7 @@ def seerr_media(kind: str, tmdb: int):
 
 # ---------------------------------------------------------------- qBittorrent (2.3.0) – opdigtede torrents
 H = 3600
-QB = {"torrents": [
+QB = {"new_style": True, "torrents": [
     {"hash": "a1", "name": "Testby.S01E01.DANiSH.1080p.WEB", "tracker": "https://tracker.superbits.org/announce", "tags": "superbits",
      "category": "sonarr-done", "state": "stalledUP", "ratio": 0.3, "seeding_time": 10 * H, "progress": 1, "size": 2 * 10**9,
      "uploaded": 6 * 10**8, "downloaded": 2 * 10**9, "added_on": 1},
@@ -157,6 +157,11 @@ async def qb_login(req: Request):
     from fastapi.responses import PlainTextResponse
     f = await req.form()
     if f.get("username") == "test" and f.get("password") == "test":
+        if QB["new_style"]:   # qBittorrent 5.2+: 204 uden tekst, cookie QBT_SID_<port>
+            from fastapi import Response
+            r = Response(status_code=204)
+            r.set_cookie("QBT_SID_8080", "abc")
+            return r
         r = PlainTextResponse("Ok.")
         r.set_cookie("SID", "abc")
         return r
@@ -166,7 +171,7 @@ async def qb_login(req: Request):
 @app.get("/qbit/api/v2/torrents/info")
 def qb_info(req: Request):
     from fastapi.responses import PlainTextResponse
-    if req.cookies.get("SID") != "abc":
+    if "abc" not in (req.cookies.get("SID"), req.cookies.get("QBT_SID_8080")):
         return PlainTextResponse("Forbidden", status_code=403)
     return QB["torrents"]
 
