@@ -34,6 +34,9 @@ from . import tg
 from . import huskeliste
 from . import stille
 from . import beskeder
+from . import sikkerhed
+from . import trackere
+from . import tjekliste
 
 DATA_DIR = os.environ.get("DATA_DIR", "/config")
 DB_PATH = os.path.join(DATA_DIR, "fangarr.db")
@@ -1435,6 +1438,9 @@ def background_loop():
             huskeliste.tick()   # huskeliste og udgifter: besked på dagen (2.1.0)
             notify_suggestions()   # forslag på ventelisten med Godkend/Fjern i Telegram (2.1.0)
             stille.tick()       # besked ved 0 streams, når du har bedt om det (2.1.0)
+            sikkerhed.tick()    # sikkerhedstjek hver mandag kl. 3 (2.3.0)
+            trackere.tick()     # trackerne: qBittorrent hvert 15. minut (2.3.0)
+            tjekliste.tick()    # tjekliste for biblioteket hver søndag kl. 4 (2.3.0)
         except Exception as e:  # baggrundsjobbet må aldrig stoppe appen
             log.warning("Baggrundsjob fejlede: %s", e)
         time.sleep(LOOP_SECONDS)
@@ -1547,6 +1553,9 @@ app.include_router(nyheder.router)  # Nyheder i guiden: kortet øverst og nyhede
 app.include_router(huskeliste.router)   # Huskeliste og udgifter (2.1.0) – se app/huskeliste.py
 app.include_router(stille.router)
 app.include_router(beskeder.router)     # Kunder og beskeder: send-kø, ønsker klar, ændring for alle, tidslinje (2.2.0) – se app/beskeder.py       # Besked ved 0 streams (2.1.0) – se app/stille.py
+app.include_router(sikkerhed.router)   # Drift › Sikkerhed (2.3.0) – se app/sikkerhed.py
+app.include_router(trackere.router)    # Drift › Trackere (2.3.0) – se app/trackere.py
+app.include_router(tjekliste.router)   # Bibliotek › Tjekliste (2.3.0) – se app/tjekliste.py
 app.include_router(kob.router)      # Køb i guiden: "Få flere ønsker" – kun for guiden med NYT_TOKEN (1.25.0) – se app/kob.py
 
 
@@ -1558,6 +1567,7 @@ def startup():
     nyheder.init()
     tg.init()
     huskeliste.init()
+    trackere.init()
     beskeder.init()
     tg.cleanup()
     tg.start()   # læser dine tryk på knapperne i Stream365 Drift (2.1.0)
@@ -1679,7 +1689,7 @@ def state():
         "waiting": venter,
         "features": {"tracearr": bool(TRACEARR_URL and TRACEARR_APIKEY), "seerr": bool(SEERR_URL and SEERR_APIKEY),
                      "autobrr": bool(AUTOBRR_URL and AUTOBRR_APIKEY), "translator": ov_enabled(),
-                     "plex": bool(PLEX_URL and PLEX_TOKEN), "tautulli": tautulli_enabled(), "guide": guide.enabled(), "apps": apps.enabled(), "oensker": oensker.enabled(), "version": VERSION,
+                     "plex": bool(PLEX_URL and PLEX_TOKEN), "tautulli": tautulli_enabled(), "guide": guide.enabled(), "apps": apps.enabled(), "oensker": oensker.enabled(), "qbit": trackere.enabled(), "version": VERSION,
                      "telegram": bool(os.environ.get("TELEGRAM_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID"))},
     }
 
@@ -3232,6 +3242,18 @@ def telegram_status():
     return st
 
 
+sikkerhed.setup(apps=apps, kv_get=kv_get, kv_set=kv_set, now=now, iso=iso, telegram=telegram_rows, log=log)
+trackere.setup(db=db, kv_get=kv_get, kv_set=kv_set, now=now, iso=iso, telegram=telegram_rows, log=log)
+
+
+def _reveal_week():
+    if not OVERSAETTER_URL:
+        return None
+    return ov_get("/api/reveal", {"days": 7})
+
+
+tjekliste.setup(arr=arr, instances=lambda: INSTANCES, plex=lambda: (PLEX_URL, PLEX_TOKEN), reveal=_reveal_week,
+                kv_get=kv_get, kv_set=kv_set, now=now, iso=iso, telegram=telegram_rows, log=log)
 hentegraense.setup(arr=arr, sonarr=lambda: _arr_of("sonarr"), db=db, telegram=telegram, write_log=write_log,
                    kv_get=kv_get, kv_set=kv_set, log=log)
 
@@ -4584,7 +4606,18 @@ def overview():
         "translator": tr, "sharing": kv_get("sharing_summary") if tautulli_enabled() else None,
         "premieres_new": prem_new, "recent": recent, "kunder": _kunder_brief(), "oensker": _oensker_brief(),
         "huske": _huske_brief(), "stille": stille.state(), "beskeder": beskeder.brief(),
+        "drift": _drift_brief(),
     }
+
+
+def _drift_brief():
+    """Sikkerhedsfund og torrents i fare for hit-and-run (2.3.0) – til Overblik og tallet ved Drift."""
+    try:
+        sik = len(kv_get(sikkerhed.ALARM_KEY, []) or [])
+        trs = len((kv_get(trackere.STATE_KEY, {}) or {}).get("stalled") or [])
+        return {"sikkerhed": sik, "trackere": trs, "qbit_down": bool((kv_get(trackere.STATE_KEY, {}) or {}).get("down"))}
+    except Exception:
+        return {}
 
 
 def _huske_brief():

@@ -207,7 +207,16 @@
 
   <!-- ==================================================== Bibliotek -->
   <section id="bib">
-    <div class="phrow"><div data-hj="bib"></div><button class="b pri" id="statBtn" onclick="refreshStats()">Beregn nu</button></div>
+    <div data-hj="bib"></div>
+    <div class="subs" role="tablist"><button data-sub="tjekliste">Tjekliste<span class="bdg" data-bdg="tjek"></span></button><button data-sub="statistik">Statistik</button></div>
+    <div data-p="tjekliste">
+      <div class="row" style="justify-content:space-between"><p class="hint" data-hjs="bib/tjekliste" style="margin:0"></p>
+        <button class="b pri" id="tjekBtn" onclick="tjekRun()">Tjek nu</button></div>
+      <div id="tjekInfo" class="small" style="margin:10px 0"></div>
+      <div id="tjekList"><div class="empty">Henter …</div></div>
+    </div>
+    <div data-p="statistik">
+    <div class="row" style="justify-content:space-between"><p class="hint" data-hjs="bib/statistik" style="margin:0"></p><button class="b pri" id="statBtn" onclick="refreshStats()">Beregn nu</button></div>
     <div id="statNote"></div>
     <div id="statProg"></div>
     <div id="statRules"></div>
@@ -217,6 +226,7 @@
     <div class="card" style="padding:0; overflow-x:auto"><table>
       <thead><tr><th class="sort" data-k="title" onclick="statSort('title')">Titel<i style="font-style:normal"></i></th><th class="sort" data-k="rule" onclick="statSort('rule')">Regel<i style="font-style:normal"></i></th><th class="sort" data-k="added" onclick="statSort('added')">Tilføjet<i style="font-style:normal"></i></th><th class="sort num" data-k="gb" onclick="statSort('gb')">GB<i style="font-style:normal"></i></th><th class="sort num" data-k="plays" onclick="statSort('plays')">Afspilninger<i style="font-style:normal"></i></th><th class="sort num" data-k="users" onclick="statSort('users')">Seere<i style="font-style:normal"></i></th><th class="sort num" data-k="plays_30" onclick="statSort('plays_30')">Sidste 30 dage<i style="font-style:normal"></i></th></tr></thead>
       <tbody id="statBody"></tbody></table></div>
+    </div>
   </section>
 
   <!-- ==================================================== Regler -->
@@ -572,7 +582,7 @@
   <!-- ==================================================== Drift -->
   <section id="drift">
     <div data-hj="drift"></div>
-    <div class="subs" role="tablist"><button data-sub="huskeliste">Huskeliste<span class="bdg" data-bdg="huske"></span></button><button data-sub="trackere">Trackere</button><button data-sub="forbindelser">Forbindelser<span class="bdg bad" data-bdg="conn"></span></button></div>
+    <div class="subs" role="tablist"><button data-sub="huskeliste">Huskeliste<span class="bdg" data-bdg="huske"></span></button><button data-sub="sikkerhed">Sikkerhed<span class="bdg bad" data-bdg="sik"></span></button><button data-sub="trackere">Trackere<span class="bdg bad" data-bdg="trk"></span></button><button data-sub="forbindelser">Forbindelser<span class="bdg bad" data-bdg="conn"></span></button></div>
     <div data-p="huskeliste">
       <div class="row" style="justify-content:space-between"><p class="hint" data-hjs="drift/huskeliste" style="margin:0"></p>
         <div class="btns"><button class="b" id="huskeDoneBtn" onclick="huskeToggleDone()">Vis udførte</button><button class="b pri" onclick="huskeEdit(0)">Ny opgave</button></div></div>
@@ -583,8 +593,18 @@
         <button class="b sm" onclick="loadConn(1)" title="Spørg alle apps igen nu">Tjek igen</button></div>
       <div class="card" style="margin-top:12px"><div class="row" id="homeConn" style="margin:0"><span class="small">Tjekker …</span></div></div>
     </div>
+    <div data-p="sikkerhed">
+      <div class="row" style="justify-content:space-between"><p class="hint" data-hjs="drift/sikkerhed" style="margin:0"></p>
+        <div class="btns"><button class="b" onclick="sikCfg()">Indstillinger</button><button class="b pri" id="sikBtn" onclick="sikRun()">Tjek nu</button></div></div>
+      <div id="sikInfo" class="small" style="margin:10px 0"></div>
+      <div id="sikPorts"></div>
+      <div id="sikUrls"></div>
+    </div>
     <div data-p="trackere">
-      <p class="hint" data-hjs="drift/trackere"></p>
+      <div class="row" style="justify-content:space-between"><p class="hint" data-hjs="drift/trackere" style="margin:0"></p>
+        <div class="btns"><button class="b" onclick="trkRules()">Krav</button><button class="b pri" onclick="loadTrk(1)">Hent igen</button></div></div>
+      <div id="trkInfo" class="small" style="margin:10px 0"></div>
+      <div id="trkList"></div>
       <div class="card">
         <h2>Hentegrænse hos trackeren</h2>
         <div class="small">Henter sonarr2 mange enkeltafsnit på én gang (fx når en bruger ønsker flere sæsoner i Seerr), kan trackeren afvise resten ("API Grab Limit reached"). sonarr2 prøver ikke selv igen. Fangarr læser sonarr2's log hvert 2. minut, sender én besked til Telegram og beder sonarr2 søge de afviste afsnit igen i små portioner. Du får besked, når alle er hjemme – eller hvis nogle stadig mangler, så du selv kan søge dem. Seriens øvrige manglende afsnit tages også med, fordi sonarr2 sætter trackeren på pause efter en afvisning og derfor kan springe resten af serien over. Kun overvågede afsnit uden fil, som allerede er sendt. Tallene kan ændres i fangarr.env (GRAB_RETRY_BATCH, GRAB_RETRY_MINUTES, GRAB_RETRY_HOURS).</div>

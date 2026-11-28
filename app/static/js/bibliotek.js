@@ -41,3 +41,20 @@ function statSorted(rows) {
   const v = ST_VAL[ST_SORT.k];
   return rows.slice().sort((a, b) => { const x = v(a), y = v(b); return (x < y ? -1 : x > y ? 1 : 0) * ST_SORT.dir; });
 }
+
+// ---------- Tjekliste (2.3.0): ting i biblioteket, der bør ses på – kun visning
+let TJ = null;
+async function loadTjek() {
+  try { TJ = await api("/api/tjekliste"); } catch (e) { $("tjekInfo").textContent = e.message; return; }
+  $("tjekBtn").disabled = !!TJ.running; $("tjekBtn").textContent = TJ.running ? "Tjekker …" : "Tjek nu";
+  if (TJ.running) setTimeout(() => { if (TAB === "bib" && SUB.bib === "tjekliste") loadTjek(); }, 4000);
+  if (!TJ.at) { $("tjekInfo").textContent = TJ.running ? "Tjeklisten laves …" : "Ikke lavet endnu. Tryk Tjek nu (laves også selv hver søndag kl. 4)."; $("tjekList").innerHTML = ""; return; }
+  $("tjekInfo").innerHTML = `Lavet ${fmt(TJ.at)}${TJ.manual ? " (i hånden)" : ""}.` + ((TJ.errors || []).length ? `<div class="warn">${TJ.errors.map(esc).join("<br>")}</div>` : "");
+  const tot = (TJ.sections || []).filter(s => s.key !== "mangler").reduce((a, s) => a + s.count, 0); setBadge("tjek", tot, false);
+  $("tjekList").innerHTML = (TJ.sections || []).map(s => `<div class="card"><details ${s.count && s.count <= 20 ? "open" : ""}><summary><b>${esc(s.label)}</b> <span class="pill ${s.count ? "warn" : "ok"}">${s.count}</span></summary>
+    ${s.items.length ? `<div style="overflow-x:auto"><table><tbody>${s.items.map(i => `<tr><td>${arrLink(i, "<b>" + esc(i.title) + "</b>")}${i.year ? " (" + i.year + ")" : ""}</td><td class="small">${esc(i.note || "")}</td></tr>`).join("")}</tbody></table></div>
+      ${s.count > s.items.length ? `<div class="small">… og ${s.count - s.items.length} mere</div>` : ""}` : '<div class="small">Intet her 🎉</div>'}</details></div>`).join("");
+}
+async function tjekRun() {
+  try { await api("/api/tjekliste/tjek", {method: "POST"}); setTimeout(loadTjek, 800); } catch (e) { toast(e.message, true); }
+}

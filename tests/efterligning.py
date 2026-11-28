@@ -38,14 +38,16 @@ def queue(inst: str):
 
 @app.get("/{inst}/api/v3/series")
 def series(inst: str):
-    return [{"id": 100, "title": "Testby", "titleSlug": "testby", "statistics": {"episodeFileCount": 6, "episodeCount": 6}},
-            {"id": 102, "title": "Fjordmord", "titleSlug": "fjordmord", "statistics": {"episodeFileCount": 2, "episodeCount": 4}}]
+    return [{"id": 100, "title": "Testby", "titleSlug": "testby", "statistics": {"episodeFileCount": 6, "episodeCount": 6},
+             "monitored": True, "qualityProfileId": 1, "path": "/data/TV/TV/Testby", "genres": []},
+            {"id": 102, "title": "Fjordmord", "titleSlug": "fjordmord", "statistics": {"episodeFileCount": 2, "episodeCount": 4},
+             "monitored": True, "qualityProfileId": 1, "path": "/data/TV/Serier/Fjordmord", "genres": ["Crime"]}]
 
 
 @app.get("/{inst}/api/v3/movie")
 def movies(inst: str):
-    return [{"id": 101, "title": "Den Opdigtede Film", "tmdbId": 1, "hasFile": True},
-            {"id": 103, "title": "Den Opdigtede Film", "tmdbId": 1, "hasFile": False, "isAvailable": True}]
+    return [{"id": 101, "title": "Den Opdigtede Film", "tmdbId": 1, "hasFile": True, "qualityProfileId": 1, "year": 2026},
+            {"id": 103, "title": "Den Opdigtede Film", "tmdbId": 1, "hasFile": False, "isAvailable": True, "qualityProfileId": 9, "year": 2026}]
 
 
 @app.api_route("/{inst}/api/v3/{rest:path}", methods=["GET", "POST", "PUT", "DELETE"])
@@ -133,6 +135,54 @@ def seerr_media(kind: str, tmdb: int):
     return {"title": t, "name": t, "releaseDate": d, "firstAirDate": d}
 
 
+# ---------------------------------------------------------------- qBittorrent (2.3.0) – opdigtede torrents
+H = 3600
+QB = {"torrents": [
+    {"hash": "a1", "name": "Testby.S01E01.DANiSH.1080p.WEB", "tracker": "https://tracker.superbits.org/announce", "tags": "superbits",
+     "category": "sonarr-done", "state": "stalledUP", "ratio": 0.3, "seeding_time": 10 * H, "progress": 1, "size": 2 * 10**9,
+     "uploaded": 6 * 10**8, "downloaded": 2 * 10**9, "added_on": 1},
+    {"hash": "a2", "name": "Fjordmord.S02E03.NORDiC.1080p.WEB", "tracker": "", "tags": "nordicbytes, issue",
+     "category": "sonarr-done", "state": "stoppedUP", "ratio": 0.1, "seeding_time": 5 * H, "progress": 1, "size": 10**9,
+     "uploaded": 10**8, "downloaded": 10**9, "added_on": 2},
+    {"hash": "a3", "name": "Den.Opdigtede.Film.2026.NORDiC.1080p", "tracker": "https://t.nordicbytes.org/a", "tags": "nordicbytes",
+     "category": "radarr-done", "state": "uploading", "ratio": 1.4, "seeding_time": 80 * H, "progress": 1, "size": 8 * 10**9,
+     "uploaded": 11 * 10**9, "downloaded": 8 * 10**9, "added_on": 3},
+    {"hash": "a4", "name": "Opdigtet.Boxset.2160p", "tracker": "https://tracker.torrentleech.org/a/x", "tags": "",
+     "category": "ratio", "state": "uploading", "ratio": 0.6, "seeding_time": 20 * H, "progress": 1, "size": 40 * 10**9,
+     "uploaded": 24 * 10**9, "downloaded": 0, "added_on": 4}]}
+
+
+@app.post("/qbit/api/v2/auth/login")
+async def qb_login(req: Request):
+    from fastapi.responses import PlainTextResponse
+    f = await req.form()
+    if f.get("username") == "test" and f.get("password") == "test":
+        r = PlainTextResponse("Ok.")
+        r.set_cookie("SID", "abc")
+        return r
+    return PlainTextResponse("Fails.")
+
+
+@app.get("/qbit/api/v2/torrents/info")
+def qb_info(req: Request):
+    from fastapi.responses import PlainTextResponse
+    if req.cookies.get("SID") != "abc":
+        return PlainTextResponse("Forbidden", status_code=403)
+    return QB["torrents"]
+
+
+# ---------------------------------------------------------------- adresser til sikkerhedstjekket (2.3.0)
+@app.get("/sik/login")
+def sik_login():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("https://login.eksempel.dk/?rd=x", status_code=302)
+
+
+@app.get("/sik/aaben")
+def sik_open():
+    return {"hej": 1}
+
+
 def env(port):
     """Miljøvariabler, så Fangarr bruger de efterlignede apps."""
     base = f"http://127.0.0.1:{port}"
@@ -142,7 +192,8 @@ def env(port):
             "RADARR4K_URL": base + "/radarr4k", "RADARR4K_APIKEY": "test",
             "UPTIME_URL": base + "/uptime", "APPS_DOMAIN": "eksempel.dk",
             "TELEGRAM_TOKEN": "test", "TELEGRAM_CHAT_ID": "731397952", "TELEGRAM_API": base + "/tg",
-            "TAUTULLI_URL": base + "/tautulli", "TAUTULLI_APIKEY": "test"}
+            "TAUTULLI_URL": base + "/tautulli", "TAUTULLI_APIKEY": "test",
+            "QBIT_URL": base + "/qbit", "QBIT_USER": "test", "QBIT_PASS": "test"}
 
 
 if __name__ == "__main__":
