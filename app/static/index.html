@@ -474,6 +474,30 @@
   <!-- ==================================================== Kontodeling -->
   <section id="share">
     <div data-hj="share"></div>
+    <div class="subs" role="tablist"><button data-sub="analyse">Analyse<span class="bdg" data-bdg="shnew"></span></button><button data-sub="blokeringer">Blokeringer<span class="bdg bad" data-bdg="blk"></span></button><button data-sub="indst">Indstillinger</button></div>
+    <div data-p="blokeringer">
+      <div class="row" style="justify-content:space-between"><p class="hint" data-hjs="share/blokeringer" style="margin:0"></p>
+        <div class="btns"><a class="b" id="blkLink" target="_blank" rel="noopener" style="display:none">Åbn Tracearr</a><button class="b pri" id="blkBtn" onclick="blkRefresh()">Hent igen</button></div></div>
+      <div class="card" style="margin-top:12px"><div class="shf">
+        <div class="field"><label for="blkDays">Periode</label><select id="blkDays" onchange="loadBlk()" style="width:auto"><option value="7">Seneste 7 dage</option><option value="30" selected>Seneste 30 dage</option><option value="90">Seneste 90 dage</option><option value="180">Seneste 180 dage</option></select></div>
+        <div class="field"><label for="blkRule">Regel</label><select id="blkRule" onchange="loadBlk()" style="width:auto"><option value="">Alle viste regler</option></select></div>
+        <div class="field"><label style="display:flex;gap:6px;align-items:center;margin-top:22px"><input type="checkbox" id="blkOpen" onchange="loadBlk()" style="width:auto"> Kun uafgjorte</label></div>
+      </div></div>
+      <div id="blkInfo" class="small" style="margin:10px 0"></div>
+      <div id="blkList"><div class="empty">Henter …</div></div>
+    </div>
+    <div data-p="indst">
+      <p class="hint" data-hjs="share/indst"></p>
+      <div class="card"><h2>Kontodeling af sig selv</h2>
+        <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="shAutoOn" style="width:auto" onchange="shAutoSave()"> Kør analysen hver mandag kl. 2 (seneste 30 dage)</label>
+        <div class="small" id="shAutoInfo" style="margin-top:6px"></div></div>
+      <div class="card"><h2>Reglerne i Tracearr</h2>
+        <div class="small" style="margin-bottom:8px">Tracearr fortæller ikke, hvad en regel gør. Vælg det her, så Fangarr kan skrive det rigtige. Skjulte regler vises ikke under Blokeringer og giver ingen besked. Regler med "Test" giver aldrig besked.</div>
+        <div id="blkRules"><div class="empty">Henter …</div></div>
+        <div class="row" style="margin:10px 0 0"><button class="b pri" onclick="blkRulesSave()">Gem</button></div></div>
+    </div>
+    <div data-p="analyse">
+    <div id="shAutoNew"></div>
     <details class="card shhelp"><summary><b>Sådan læser du resultatet</b> <span class="small">(tryk for at folde ud)</span></summary>
       <h4>De fem grupper</h4>
       <ul>
@@ -524,6 +548,7 @@
     <div id="shSum"></div>
     <div id="shGroups"><div class="card empty">Vælg periode og tryk Analysér. Allerførste gang hentes hele Tautullis historik – det kan tage et par minutter. Derefter er den gemt.</div></div>
     <div id="shKinds"></div>
+    </div>
   </section>
 
   <!-- ==================================================== Guide -->
@@ -779,6 +804,10 @@
     </div>
   </form>
 </dialog>
+<dialog id="fsdlg">
+  <div class="dlg-head"><b id="fsTitle">Fejlsøg</b><button class="b" onclick="fsdlg.close()">Luk</button></div>
+  <div class="dlg-body" id="fsBody"></div>
+</dialog>
 <dialog id="kdlg">
   <div class="dlg-head"><b id="kdTitle">Kunde</b><button class="b" onclick="kdlg.close()">Luk</button></div>
   <div class="dlg-body" id="kdBody"></div>
@@ -818,6 +847,8 @@
 <script src="/static/js/beskeder.js?v=__V__"></script>
 <script src="/static/js/oensker.js?v=__V__"></script>
 <script src="/static/js/kontodeling.js?v=__V__"></script>
+<script src="/static/js/blokeringer.js?v=__V__"></script>
+<script src="/static/js/fejlsoeg.js?v=__V__"></script>
 <script src="/static/js/guide.js?v=__V__"></script>
 <script src="/static/js/drift.js?v=__V__"></script>
 <script src="/static/js/huskeliste.js?v=__V__"></script>

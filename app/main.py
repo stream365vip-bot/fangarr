@@ -37,6 +37,8 @@ from . import beskeder
 from . import sikkerhed
 from . import trackere
 from . import tjekliste
+from . import blokeringer
+from . import fejlsoeg
 
 DATA_DIR = os.environ.get("DATA_DIR", "/config")
 DB_PATH = os.path.join(DATA_DIR, "fangarr.db")
@@ -1441,6 +1443,8 @@ def background_loop():
             sikkerhed.tick()    # sikkerhedstjek hver mandag kl. 3 (2.3.0)
             trackere.tick()     # trackerne: qBittorrent hvert 15. minut (2.3.0)
             tjekliste.tick()    # tjekliste for biblioteket hver søndag kl. 4 (2.3.0)
+            blokeringer.tick()  # overtrædelser fra Tracearr hvert 15. minut (2.4.0)
+            sharing_auto_tick() # kontodelingsanalysen af sig selv mandag nat (2.4.0)
         except Exception as e:  # baggrundsjobbet må aldrig stoppe appen
             log.warning("Baggrundsjob fejlede: %s", e)
         time.sleep(LOOP_SECONDS)
@@ -1556,6 +1560,8 @@ app.include_router(beskeder.router)     # Kunder og beskeder: send-kø, ønsker 
 app.include_router(sikkerhed.router)   # Drift › Sikkerhed (2.3.0) – se app/sikkerhed.py
 app.include_router(trackere.router)    # Drift › Trackere (2.3.0) – se app/trackere.py
 app.include_router(tjekliste.router)   # Bibliotek › Tjekliste (2.3.0) – se app/tjekliste.py
+app.include_router(blokeringer.router) # Kontodeling › Blokeringer (2.4.0) – se app/blokeringer.py
+app.include_router(fejlsoeg.router)    # Fejlsøg på kundekortet (2.4.0) – se app/fejlsoeg.py
 app.include_router(kob.router)      # Køb i guiden: "Få flere ønsker" – kun for guiden med NYT_TOKEN (1.25.0) – se app/kob.py
 
 
@@ -1568,6 +1574,7 @@ def startup():
     tg.init()
     huskeliste.init()
     trackere.init()
+    blokeringer.init()
     beskeder.init()
     tg.cleanup()
     tg.start()   # læser dine tryk på knapperne i Stream365 Drift (2.1.0)
@@ -3252,6 +3259,9 @@ def _reveal_week():
     return ov_get("/api/reveal", {"days": 7})
 
 
+blokeringer.setup(db=db, kv_get=kv_get, kv_set=kv_set, now=now, iso=iso, telegram=telegram_rows, log=log,
+                  cases=lambda: sharing_marks()[1])
+fejlsoeg.setup(db=db, now=now, iso=iso, reveal_all=_reveal_week, log=log)
 tjekliste.setup(arr=arr, instances=lambda: INSTANCES, plex=lambda: (PLEX_URL, PLEX_TOKEN), reveal=_reveal_week,
                 kv_get=kv_get, kv_set=kv_set, now=now, iso=iso, telegram=telegram_rows, log=log)
 hentegraense.setup(arr=arr, sonarr=lambda: _arr_of("sonarr"), db=db, telegram=telegram, write_log=write_log,
@@ -4114,6 +4124,86 @@ def run_sharing(job, start, end, min_minutes, red_days, cut, full):
         job["error"] = str(e) if isinstance(e, RuntimeError) else f"{e.__class__.__name__}: {e}"
 
 
+# ---------------------------------------------------------------- kontodeling af sig selv (2.4.0)
+# Hver mandag nat kl. 2 kører analysen for de seneste 30 dage. Kun konti, der er NYE i "Kan blokeres" eller
+# "Afgør selv" siden sidste automatiske kørsel, kommer under Kræver din handling og i Stream365 Drift (navn og antal
+# aftener – aldrig adresser). Listen ryddes, når du åbner Kontodeling › Analyse.
+SH_AUTO_KEY = "sh_auto"          # {"enabled": bool, "last": dato, "known": [user_id, ...]}
+SH_AUTO_NEW = "sh_auto_new"      # [{"user_id", "name", "bucket", "evenings", "at"}]
+SH_AUTO_DAY, SH_AUTO_HOUR = 0, 2
+
+
+def sharing_auto_cfg():
+    c = kv_get(SH_AUTO_KEY, {}) or {}
+    return {"enabled": c.get("enabled", True), "last": c.get("last") or "", "known": c.get("known") or []}
+
+
+def sharing_auto_compare(users):
+    """Find konti, der er nye i Kan blokeres/Afgør selv. Gemmer listen over kendte og de nye. Returnerer de nye."""
+    c = sharing_auto_cfg()
+    known = set(str(x) for x in c["known"])
+    flagged = [u for u in users if u.get("bucket") in ("bloker", "afgoer")]
+    new = [u for u in flagged if str(u["user_id"]) not in known]
+    c["known"] = [str(u["user_id"]) for u in flagged]
+    kv_set(SH_AUTO_KEY, c)
+    if new:
+        old = {str(x["user_id"]): x for x in (kv_get(SH_AUTO_NEW, []) or [])}
+        for u in new:
+            old[str(u["user_id"])] = {"user_id": str(u["user_id"]), "name": u.get("name") or "", "bucket": u["bucket"],
+                                      "evenings": u.get("evenings") or 0, "at": iso(now())}
+        kv_set(SH_AUTO_NEW, list(old.values()))
+        lines = [f"• {u.get('name') or u['user_id']} – {'kan blokeres' if u['bucket'] == 'bloker' else 'afgør selv'}"
+                 f"{(' (' + str(u['evenings']) + ' aftener samtidig)') if u.get('evenings') else ''}" for u in new[:10]]
+        telegram_rows(f"👀 Kontodeling: {len(new)} {'ny konto' if len(new) == 1 else 'nye konti'} at se på\n" + "\n".join(lines)
+                      + ("\n… og flere" if len(new) > 10 else "") + "\nSe Fangarr › Kontodeling › Analyse.")
+    return new
+
+
+def _sharing_auto_run(job, start, end):
+    run_sharing(job, start, end, 10, 5, None, False)
+    if job["status"] == "færdig":
+        try:
+            sharing_auto_compare(job["results"]["users"])
+        except Exception as e:  # noqa: BLE001
+            log.warning("Kontodeling af sig selv: kunne ikke sammenligne: %s", e)
+    else:
+        log.warning("Kontodeling af sig selv fejlede: %s", job.get("error"))
+
+
+def sharing_auto_tick(force=False):
+    c = sharing_auto_cfg()
+    t = now()
+    if not tautulli_enabled() or not (force or (c["enabled"] and t.weekday() == SH_AUTO_DAY and t.hour == SH_AUTO_HOUR
+                                                 and c["last"] != t.strftime("%Y-%m-%d"))):
+        return None
+    if any(j["kind"] == "sharing" and j["status"] == "kører" for j in _jobs.values()):
+        return None
+    kv_set(SH_AUTO_KEY, {**(kv_get(SH_AUTO_KEY, {}) or {}), "last": t.strftime("%Y-%m-%d")})
+    job = new_job("sharing")
+    job["note"] = "kører af sig selv (mandag nat)"
+    th = threading.Thread(target=_sharing_auto_run, args=(job, t - datetime.timedelta(days=30), t), daemon=True)
+    th.start()
+    return job, th
+
+
+@app.get("/api/sharing/auto")
+def sharing_auto_get():
+    c = sharing_auto_cfg()
+    return {"enabled": c["enabled"], "last": c["last"], "new": kv_get(SH_AUTO_NEW, []) or []}
+
+
+@app.put("/api/sharing/auto")
+async def sharing_auto_put(req: Request):
+    b = await req.json()
+    c = kv_get(SH_AUTO_KEY, {}) or {}
+    if "enabled" in b:
+        c["enabled"] = bool(b["enabled"])
+    kv_set(SH_AUTO_KEY, c)
+    if b.get("seen"):
+        kv_set(SH_AUTO_NEW, [])
+    return sharing_auto_get()
+
+
 def _sharing_day(v, end_of_day=False):
     try:
         d = datetime.datetime.strptime(str(v), "%Y-%m-%d")
@@ -4606,7 +4696,8 @@ def overview():
         "translator": tr, "sharing": kv_get("sharing_summary") if tautulli_enabled() else None,
         "premieres_new": prem_new, "recent": recent, "kunder": _kunder_brief(), "oensker": _oensker_brief(),
         "huske": _huske_brief(), "stille": stille.state(), "beskeder": beskeder.brief(),
-        "drift": _drift_brief(),
+        "drift": _drift_brief(), "blokeringer": blokeringer.brief(),
+        "sharing_new": len(kv_get(SH_AUTO_NEW, []) or []) if tautulli_enabled() else 0,
     }
 
 
