@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # backuptjek.py - proeve af backuppen (Fangarr 2.3.0). Koerer paa feeder den 1. i maaneden.
 # Tjekker den seneste backup af begge servere i Google Drive (gcrypt:Mediabox og gcrypt:Feeder):
-#   1) alder (seneste fil under ca. 30 timer gammel) og samlet stoerrelse,
-#   2) henter den mindste tar-fil, aabner den med tar og sletter kopien igen.
+#   1) alder (seneste fil under 20 timer gammel - en enkelt mislykket nat opdages) og samlet stoerrelse,
+#   2) henter den mindste tar-fil over 1 MB (tomme mapper siger intet), aabner den med tar og sletter kopien igen.
 # Besked til Stream365 Drift kun ved problemer og "i orden igen". Aendrer intet i backuppen.
 #   --prove          viser resultatet, sender ingen besked
 #   --test-besked    sender en testbesked til Stream365 Drift
@@ -12,7 +12,8 @@ MAPPE = os.path.dirname(os.path.abspath(__file__))
 LOG = os.path.join(MAPPE, "backuptjek.log")
 STATUS = os.path.join(MAPPE, "status.json")
 MAAL = [("Mediabox", "gcrypt:Mediabox", 30), ("feeder", "gcrypt:Feeder", 5)]   # navn, rclone-sti, mindst GB
-MAKS_TIMER = 30
+MAKS_TIMER = 20      # backuppen kl. 04 dansk, tjekket kl. 06:30 -> ca. 2,5 timer; en mislykket nat -> ca. 26,5
+MIN_TAR = 1_000_000  # proeven bruger den mindste tar-fil over 1 MB
 RCLONE = shutil.which("rclone") or "/usr/bin/rclone"
 
 
@@ -52,7 +53,8 @@ def tjek(navn, sti, mindst_gb):
     nyeste = max(datetime.datetime.fromisoformat(f["ModTime"].replace("Z", "+00:00")) for f in filer)
     timer = (datetime.datetime.now(datetime.timezone.utc) - nyeste).total_seconds() / 3600
     gb = sum(f["Size"] for f in filer) / 1e9
-    tars = sorted((f for f in filer if ".tar" in f["Name"] and f["Size"] > 1024), key=lambda f: f["Size"])
+    alle = sorted((f for f in filer if ".tar" in f["Name"] and f["Size"] > 1024), key=lambda f: f["Size"])
+    tars = [f for f in alle if f["Size"] >= MIN_TAR] or alle
     linje = "%s: %d filer, %.1f GB, seneste %.0f timer gammel" % (navn, len(filer), gb, timer)
     if timer > MAKS_TIMER:
         return linje, "%s: seneste backup er %.0f timer gammel (højst %d)" % (navn, timer, MAKS_TIMER)

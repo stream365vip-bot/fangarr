@@ -194,6 +194,7 @@ def test_backuptjek_with_fake_rclone(tmp_path, monkeypatch):
     src.write_bytes(src.read_bytes() + b"\0" * 2048)
     now = dt.datetime.now(dt.timezone.utc).isoformat()
     files = [{"Path": "opt/lille.tar", "Name": "lille.tar", "Size": 40 * 10**9, "ModTime": now},
+             {"Path": "opt/tom.tar", "Name": "tom.tar", "Size": 10240, "ModTime": now},
              {"Path": "archived/gammel.tar", "Name": "gammel.tar", "Size": 5, "ModTime": "2020-01-01T00:00:00Z"}]
 
     def fake(*args, timeout=0):
@@ -207,6 +208,7 @@ def test_backuptjek_with_fake_rclone(tmp_path, monkeypatch):
 
     monkeypatch.setattr(bt, "rclone", fake)
     line, problem = bt.tjek("Mediabox", "gcrypt:Mediabox", 30)
-    assert problem is None and "prøvegendannelse" in line
-    files[0]["ModTime"] = "2020-01-01T00:00:00Z"
-    assert "timer gammel" in bt.tjek("Mediabox", "gcrypt:Mediabox", 30)[1]
+    assert problem is None and "prøvegendannelse af opt/lille.tar" in line, "den næsten tomme fil springes over"
+    old = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=26)).isoformat()
+    files[0]["ModTime"] = files[1]["ModTime"] = old
+    assert "timer gammel" in bt.tjek("Mediabox", "gcrypt:Mediabox", 30)[1], "én mislykket nat skal opdages"
