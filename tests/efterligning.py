@@ -77,6 +77,69 @@ def beats():
     return {"heartbeatList": hb, "uptimeList": up}
 
 
+@app.get("/uptime/api/status-page/kunder")
+def page_kunder():
+    return {"publicGroupList": [{"id": 9, "name": "Kunder", "monitorList": [{"id": 91, "name": "Plex"}, {"id": 92, "name": "Seerr"},
+                                                                             {"id": 93, "name": "IPTV 1"}]}]}
+
+
+@app.get("/uptime/api/status-page/heartbeat/kunder")
+def beats_kunder():
+    return {"heartbeatList": {"91": [{"status": 1}], "92": [{"status": 1}], "93": [{"status": 1 if TRACEARR["iptv_up"] else 0}]},
+            "uptimeList": {}}
+
+
+# ---------------------------------------------------------------- Tracearr (2.4) – kun læsning, opdigtede brugere
+# Tracearr-bruger "tu1" = Plex-bruger 9001 (Kunde Testesen), "tu2" = Plex-bruger 9002 (ingen kunde), "tu3" = ukendt i Plex.
+TRACEARR = {"iptv_up": True, "violations": [], "history": {}, "streams": []}
+TR_USERS = [{"id": "tu1", "username": "testesen", "identity_name": "Kunde Testesen", "email": "x@eksempel.dk", "plex_account_id": None,
+             "accounts": [{"external_user_id": "9001", "server_id": "s1", "server_type": "plex", "server_user_id": "su1", "username": "testesen", "removed_at": None}]},
+            {"id": "tu2", "username": "naboen", "identity_name": "", "email": "", "plex_account_id": None,
+             "accounts": [{"external_user_id": "9002", "server_id": "s1", "server_type": "plex", "server_user_id": "su2", "username": "naboen", "removed_at": None}]},
+            {"id": "tu3", "username": "fremmed", "identity_name": "", "email": "", "plex_account_id": None, "accounts": []}]
+
+
+def _page(items, cursor, size):
+    i = int(cursor or 0)
+    nxt = i + size
+    return {"data": items[i:nxt], "meta": {"nextCursor": str(nxt) if nxt < len(items) else None, "pageSize": size}}
+
+
+@app.get("/tracearr/api/v2/public/users")
+def tr_users(cursor: str = None, pageSize: int = 100, include_removed: str = ""):
+    return _page(TR_USERS, cursor, pageSize)
+
+
+@app.get("/tracearr/api/v2/public/violations")
+def tr_violations(cursor: str = None, pageSize: int = 100, since: str = ""):
+    items = [v for v in TRACEARR["violations"] if not since or v["created_at"] >= since]
+    return _page(items, cursor, pageSize)
+
+
+@app.get("/tracearr/api/v2/public/users/{uid}/history")
+def tr_user_history(uid: str, cursor: str = None, pageSize: int = 100):
+    return _page(TRACEARR["history"].get(uid, []), cursor, pageSize)
+
+
+@app.get("/tracearr/api/v2/public/streams")
+def tr_streams():
+    return {"data": TRACEARR["streams"], "summary": {"total": len(TRACEARR["streams"])}}
+
+
+@app.get("/tracearr/api/v2/public/media/{ref}/stats")
+def tr_media_stats(ref: str):
+    return {"error": "not found"}
+
+
+def tr_violation(vid, user, rule, created, title="Fjordmord", acked=None):
+    """Opdigtet overtrædelse i Tracearrs form."""
+    u = {"tu1": "testesen", "tu2": "naboen", "tu3": "fremmed"}[user]
+    return {"id": vid, "created_at": created, "acknowledged_at": acked, "severity": "high", "session_id": "s-" + vid,
+            "rule": {"id": "r-" + rule, "name": rule}, "server": {"id": "s1"},
+            "user": {"id": user, "username": u, "server_user_id": "su", "avatar_url": None, "thumb_url": None},
+            "data": {"ruleName": rule, "mediaTitle": title, "ipAddress": "192.0.2.10", "evidence": [{"field": "Device Type", "value": "TV"}]}}
+
+
 # ---------------------------------------------------------------- Telegram og Tautulli (2.1)
 TG = {"sent": [], "edits": [], "answers": [], "updates": []}
 TAUTULLI = {"streams": 3}
@@ -198,7 +261,8 @@ def env(port):
             "UPTIME_URL": base + "/uptime", "APPS_DOMAIN": "eksempel.dk",
             "TELEGRAM_TOKEN": "test", "TELEGRAM_CHAT_ID": "731397952", "TELEGRAM_API": base + "/tg",
             "TAUTULLI_URL": base + "/tautulli", "TAUTULLI_APIKEY": "test",
-            "QBIT_URL": base + "/qbit", "QBIT_USER": "test", "QBIT_PASS": "test"}
+            "QBIT_URL": base + "/qbit", "QBIT_USER": "test", "QBIT_PASS": "test",
+            "TRACEARR_URL": base + "/tracearr", "TRACEARR_APIKEY": "test"}
 
 
 if __name__ == "__main__":

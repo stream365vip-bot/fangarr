@@ -63,7 +63,8 @@ async function poll(job, progId, onDone) {
 // ====================================================================== menu og sider (2.0)
 // Hvert menupunkt er en <section> i index.html. Underfanerne står i SUBDEF; den første er standard.
 const SUBDEF = {log: "tilfoejet", wait: "venter", tr: "status", rules: "regler", cust: "liste", pay: "opkraevning",
-                besk: "koe", guide: "besoeg", drift: "huskeliste", bib: "tjekliste", settings: "telegram"};
+                besk: "koe", guide: "besoeg", drift: "huskeliste", bib: "tjekliste", settings: "telegram",
+                share: "analyse"};
 const TAB_IDS = ["home", "log", "wait", "tr", "bib", "rules", "cust", "pay", "besk", "oensker", "share", "guide", "drift", "settings", "hjaelp", "search"];
 // Gamle adresser (bogmærker, widgetten) sendes videre til den nye plads: "gammel" eller "gammel/underfane" → [side, underfane]
 const OLD_HASH = {
@@ -104,7 +105,7 @@ function go(tab, sub) {
   if (tab === "besk") { if (s === "koe") loadQueues(); else if (s === "klar") loadReady(); else if (s === "aendring") loadPrices();
     else kState().then(() => { renderKSet(); renderNews(); if (s === "skabeloner") loadTemplates(); }).catch(e => toast(e.message, true)); }
   if (tab === "oensker") loadOensker();
-  if (tab === "share") loadShare();
+  if (tab === "share") { if (s === "blokeringer") loadBlk(); else if (s === "indst") loadShareCfg(); else { loadShare(); shAutoShow(); } }
   if (tab === "guide") { if (s === "nyheder") nwLoad(); else if (s === "soegninger") loadSearches(); else loadGuide(); }
   if (tab === "drift") { loadConn(0); if (s === "trackere") { loadGrab(); loadTrk(0); } if (s === "sikkerhed") loadSik(); if (s === "huskeliste") loadHuske(); }
   if (tab === "settings") { loadBackups(); loadAppsCfg(); renderTelegram(); loadTgStatus(); }

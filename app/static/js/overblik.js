@@ -58,7 +58,9 @@ function driftBadge() {
 async function loadHome() {
   try { OV = await api("/api/overview"); } catch (e) { return; }
   const t = OV.translator || {}, sh = (OV.sharing || {}).buckets || {};
-  setBadge("wait", OV.suggestions, false); setBadge("tr", t.problems, true); setBadge("share", sh.bloker, true);
+  const bn = (OV.blokeringer || {}).new || 0, shn = OV.sharing_new || 0;
+  setBadge("wait", OV.suggestions, false); setBadge("tr", t.problems, true); setBadge("share", (sh.bloker || 0) + bn, !!(sh.bloker || bn));
+  setBadge("blk", bn, true); setBadge("shnew", shn, true);
   setBadge("oensker", (OV.oensker || {}).problems, true);
   const hc = (OV.huske || {}).count || 0; setBadge("huske", hc, false); driftBadge();
   const bk = OV.beskeder || {}; setBadge("klar", bk.klar, false); setBadge("koe", bk.koe, false); setBadge("besk", (bk.klar || 0) + (bk.koe || 0), false);
@@ -83,6 +85,9 @@ function renderHome() {
   const dr = OV.drift || {};
   if (dr.sikkerhed) add(dr.sikkerhed, true, dr.sikkerhed === 1 ? "Fund i sikkerhedstjekket" : "Fund i sikkerhedstjekket", "En adresse er åben uden Authelia, eller en ny port er åben udefra. Fangarr har ikke ændret noget.", "Se sikkerhed", "go('drift','sikkerhed')");
   if (dr.trackere) add(dr.trackere, true, dr.trackere === 1 ? "Torrent står stille før seedingkravet" : "Torrents står stille før seedingkravet", "Risiko for hit-and-run hos trackeren. Start dem igen i qBittorrent.", "Se trackerne", "go('drift','trackere')");
+  const bl = (OV.blokeringer || {}).new || 0;
+  if (bl) add(bl, true, bl === 1 ? "Ny overtrædelse i Tracearr" : "Nye overtrædelser i Tracearr", "Tracearr har stoppet eller meldt en afspilning. Se hvem, og markér som set, når du har taget stilling.", "Se blokeringer", "go('share','blokeringer')");
+  if (OV.sharing_new) add(OV.sharing_new, true, OV.sharing_new === 1 ? "Ny konto i kontodeling" : "Nye konti i kontodeling", "Mandag nats analyse fandt konti, der er nye under Kan blokeres eller Afgør selv.", "Se analysen", "go('share','analyse')");
   if (dr.qbit_down) add("!", true, "Fangarr kan ikke læse qBittorrent", "Trackerne kan ikke tjekkes. Se Drift › Trackere.", "Se trackerne", "go('drift','trackere')");
   const bk = OV.beskeder || {};
   if (bk.klar) add(bk.klar, false, bk.klar === 1 ? "Kunde venter på besked om sit ønske" : "Kunder venter på besked om deres ønske", "Ønsket er klar i Plex. Send kunden beskeden fra Fangarr – den åbnes klar i Telegram eller Messenger.", "Ønsker klar", "go('besk','klar')");

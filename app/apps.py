@@ -115,12 +115,14 @@ def parse_config(links_text, extra_text):
 
 # ---------------------------------------------------------------- hent fra Uptime Kuma
 
-def _fetch():
-    """Statussiden fra Uptime Kuma: grupper med navn og seneste tilstand for hver monitor."""
+def _fetch(slug=None):
+    """Statussiden fra Uptime Kuma: grupper med navn og seneste tilstand for hver monitor.
+    slug: en anden statusside end apps (fx "kunder" til Fejlsøg i 2.4.0)."""
+    slug = slug or UPTIME_SLUG
     base = f"{UPTIME_URL}/api/status-page"
-    page = httpx.get(f"{base}/{UPTIME_SLUG}", timeout=8)
+    page = httpx.get(f"{base}/{slug}", timeout=8)
     page.raise_for_status()
-    beats = httpx.get(f"{base}/heartbeat/{UPTIME_SLUG}", timeout=8)
+    beats = httpx.get(f"{base}/heartbeat/{slug}", timeout=8)
     beats.raise_for_status()
     p, b = page.json(), beats.json()
     hb, up = b.get("heartbeatList") or {}, b.get("uptimeList") or {}

@@ -166,6 +166,31 @@ def seed():
     c.get("/api/trackere?refresh_now=1")
     main.trackere.notify(*main.trackere.refresh())
     main.tjekliste.run(manual=True)
+    # 2.4: overtrædelser fra den efterlignede Tracearr, afspilninger til Fejlsøg og nye konti fra mandagens analyse
+    efterligning.TR_USERS[0]["accounts"][0]["external_user_id"] = "880000"
+    efterligning.TR_USERS[1]["accounts"][0]["external_user_id"] = "880001"
+    z = lambda d, h=0: (datetime.datetime.utcnow() - datetime.timedelta(days=d, hours=h)).strftime("%Y-%m-%dT%H:%M:%S.000Z")  # noqa: E731
+    V = efterligning.tr_violation
+    efterligning.TRACEARR["violations"] = [V("d1", "tu1", "Tv på flere adresser", z(12), "Fjordmord", acked=z(11)),
+                                           V("d2", "tu1", "Tv på flere adresser", z(6), "Den Opdigtede Film", acked=z(5)),
+                                           V("d3", "tu2", "Betaling", z(9), "Juleræset", acked=z(8)),
+                                           V("d4", "tu2", "Flere end 6 mobile enheder", z(4)),
+                                           V("d5", "tu3", "Chromecast på flere adresser", z(3), "Testby", acked=z(2))]
+    main.blokeringer.sync()
+    st = main.kv_get(main.blokeringer.STATE_KEY, {}); st["alert_from"] = main.iso(main.now() - datetime.timedelta(days=1))
+    main.kv_set(main.blokeringer.STATE_KEY, st)
+    efterligning.TRACEARR["violations"] += [V("d6", "tu1", "Tv på flere adresser", z(0, 3), "Fjordmord"),
+                                            V("d7", "tu2", "Chromecast på flere adresser", z(0, 1), "Testby")]
+    main.blokeringer.sync()
+    efterligning.TRACEARR["history"] = {"tu1": [
+        {"started_at": z(0, 1), "show_title": "Fjordmord", "season_number": 1, "episode_number": 3, "device": "Stuen", "product": "Plex for LG",
+         "resolution": "1080p", "is_transcode": True, "video_decision": "transcode", "audio_decision": "copy",
+         "transcode_info": {"videoReason": "båndbredden er sat for lavt i appen"}, "bitrate": 4200, "subtitle_info": {"language": "da", "codec": "srt"}, "percent_complete": 64},
+        {"started_at": z(1), "media_title": "Den Opdigtede Film", "year": 2026, "device": "Telefon", "product": "Plex for Android",
+         "resolution": "1080p", "is_transcode": False, "video_decision": "directplay", "bitrate": 9800, "percent_complete": 100}]}
+    efterligning.TRACEARR["streams"] = [{"user": {"id": "tu1"}, "show_title": "Fjordmord", "season_number": 1, "episode_number": 4,
+                                         "started_at": z(0), "device": "Stuen", "product": "Plex for LG", "is_transcode": False, "video_decision": "directplay"}]
+    main.kv_set(main.SH_AUTO_NEW, [{"user_id": "880002", "name": NAVNE[2], "bucket": "bloker", "evenings": 4, "at": main.iso(main.now())}])
     print("Testdata lagt ind.", flush=True)
 
 

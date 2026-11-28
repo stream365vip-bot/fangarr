@@ -10,6 +10,13 @@ Menu (2.0): **Overblik** · *Indhold:* Log (Tilføjet · Alle beslutninger) · V
 
 Sikringer: prøvetilstand, loft pr. døgn, pladsgrænse, kun præcise titelmatch, Seerr-tjek, Telegram ved fejl og "i orden igen", dagligt resumé.
 
+## Kontodeling og support (2.4.0)
+- **Kontodeling › Blokeringer** (`app/blokeringer.py`): Fangarr henter overtrædelser fra Tracearr hvert 15. minut (`/api/v2/public/violations`, kun læsning) og gemmer dem i tabellen `tc_viol`. De vises samlet pr. kunde med regel, titel, bevis, adresse, din sag og note (samme sag som under Analyse). Tracearrs bruger kobles til Plex-brugeren via `accounts[].external_user_id` og videre til kunden via tjenesten Plex. Første hentning tager 180 dage og giver ingen beskeder; derefter giver nye, uafgjorte overtrædelser én samlet besked i Stream365 Drift (navn, regel, titel – aldrig adresser). Kvitteret i Tracearr eller **Markér alle som set** = afgjort. Blokeringer laves og fjernes stadig i Tracearr – API'en kan ikke skrive.
+- **Kontodeling › Indstillinger:** hvad hver regel gør (Stopper afspilningen · Kun besked · Test) og om den vises. Standard (Jesper 28. nov.): Tv på flere adresser og Betaling stopper; Chromecast på flere adresser kun besked; Flere end 6 mobile enheder skjult; Blokeret: Jesper = test. Desuden **kontodeling af sig selv**: analysen kører mandag kl. 2 for de seneste 30 dage, og kun konti, der er nye under Kan blokeres eller Afgør selv, kommer under Kræver din handling og i Telegram.
+- **Fejlsøg** (`app/fejlsoeg.py`, knap på kundekortet og under Blokeringer): kundens seneste afspilninger fra Tracearr (enhed, opløsning, omkodning og hvorfor, bitrate, tekster), hvad kunden ser nu (`/streams`), stop fra Tracearr de seneste 7 dage, om en titel er skjult og venter på dansk tekst (Oversætteren), status fra Uptime Kumas statusside `kunder` og et forslag til svar. Sender intet.
+- Valgfrit i `fangarr.env`: `TRACEARR_PUBLIC_URL=https://tracearr.<domæne>` giver knappen **Åbn Tracearr** (ellers bruges `TRACEARR_URL`, hvis den er https).
+- Tilbage til 2.3.2: `git reset --hard a07d02f && docker compose up -d --build`. Tabellen `tc_viol` kan blive liggende.
+
 ## Drift og sikkerhed (2.3.0)
 - **2.3.2:** prøven af backuppen kræver nu, at den nyeste backup er under 20 timer gammel (så én mislykket nat opdages – set 28. nov., hvor Mediabox' backup fejlede på Traefiks access.log), og åbner den mindste tar-fil over 1 MB (ikke tomme mapper).
 - **2.3.1:** qBittorrent 5.2+ svarer `204` uden tekst ved login og kalder cookien `QBT_SID_<port>` – Fangarr forstår nu både den nye og den gamle form (fundet ved installationen 28. nov.).
